@@ -149,7 +149,8 @@ foreach ($dir in @((Join-Path $projectDir "bin\$Configuration"), (Join-Path $pro
 $env:SatelliteResourceLanguages = 'en;fr;de;es;it;ar'
 
 Write-Step 'Restore'
-Invoke-Native $Dotnet @('restore', $ProjectPath, '-r', 'win-x64')
+# PublishReadyToRun must also be set at restore time: it pulls the crossgen runtime pack (--no-restore below).
+Invoke-Native $Dotnet @('restore', $ProjectPath, '-r', 'win-x64', '-p:PublishReadyToRun=true')
 
 Write-Step 'Publish'
 $publishArgs = @(
