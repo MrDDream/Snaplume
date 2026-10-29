@@ -1,0 +1,570 @@
+using System.Windows;
+using System.Windows.Input;
+using System.Windows.Media;
+
+namespace Snaplume.Editor;
+
+public enum EditorTool
+{
+    Select, Arrow, Line, Rectangle, Ellipse, Text, Highlight, Pixelate, Spotlight, Step, Stamp, Pen, Crop,
+}
+
+/// <summary>
+/// Displays the document and handles mouse interaction. Its coordinate space is
+/// the image pixel space; zooming is done by a LayoutTransform on a parent.
+/// </summary>
+public sealed class AnnotationCanvas : FrameworkElement
+{
+    private enum DragMode { None, Create, Move, Handle, Crop }
+
+    /// <summary>Smallest drag, in screen pixels, that draws a shape (a plain click does not).</summary>
+    private const double MinDragOnScreen = 3;
+
+    private static readonly Brush AccentBrush = Frozen(new SolidColorBrush(Color.FromRgb(0x25, 0x63, 0xEB)));
+    private static readonly Brush CropShade = Frozen(new SolidColorBrush(Color.FromArgb(0x88, 0, 0, 0)));
+
+    private EditorDocument? _document;
+    private EditorTool _tool;
+    private Annotation? _selected;
+    private TextAnnotation? _editingText;
+    private double _viewScale = 1;
+
+    private DragMode _mode;
+    private Annotation? _creating;
+    private int _handleIndex;
+    private Point _dragStart, _lastPosition;
+    /// <summary>State before the drag in progress: committed as one undo step, or restored by Escape.</summary>
+    private EditorDocument.Snapshot? _checkpoint;
+    private Rect? _cropRect;
+
+    // Annotations below and above the one being drawn or dragged, recorded once instead of at each mouse move.
+    private DrawingGroup? _layerBelow, _layerAbove;
+    private Annotation? _layerActive;
+    private bool _layersValid;
+
+    // Pens one screen pixel wide, rebuilt when the zoom changes.
+    private Pen? _selectionPen, _selectionDashPen, _cropPen;
+
+    public event Action? SelectionChanged;
+    /// <summary>The text annotation to edit, and whether it is a new one.</summary>
+    public event Action<TextAnnotation, bool>? TextEditRequested;
+
+    /// <summary>Style of the next annotations drawn.</summary>
+    public DrawingStyle CurrentStyle { get; set; } = DrawingStyle.Default;
+    public string CurrentStampId { get; set; } = "ok-circle";
+    /// <summary>Stamp size factor (1 = 64 px for the square stamps).</summary>
+    public double CurrentStampScale { get; set; } = 1;
+
+    public AnnotationCanvas()
+    {
+        Focusable = true;
+        FocusVisualStyle = null;
+        ClipToBounds = true;
+        Cursor = Cursors.Arrow;
+    }
+
+    public EditorDocument? Document
+    {
+        get => _document;
+        set
+        {
+            if (_document != null) _document.Changed -= OnDocumentChanged;
+            _document = value;
+            if (_document != null) _document.Changed += OnDocumentChanged;
+            SetSelected(null);
+            InvalidateLayers();
+            InvalidateMeasure();
+        }
+    }
+
+    public EditorTool Tool
+    {
+        get => _tool;
+        set
+        {
+            CancelOperation();
+            _tool = value;
+            Cursor = value switch
+            {
+                EditorTool.Select => Cursors.Arrow,
+                EditorTool.Text => Cursors.IBeam,
+                _ => Cursors.Cross,
+            };
+            if (value == EditorTool.Crop) SetSelected(null);
+        }
+    }
+
+    /// <summary>Screen DIPs per image pixel; keeps handles a constant size on screen.</summary>
+    public double ViewScale
+    {
+        get => _viewScale;
+        set
+        {
+            _viewScale = value;
+            _selectionPen = _selectionDashPen = _cropPen = null;
+            InvalidateVisual();
+        }
+    }
+
+    public Annotation? Selected => _selected;
+
+    /// <summary>True while the mouse draws or drags something.</summary>
+    public bool IsDragging => _mode != DragMode.None;
+
+    /// <summary>Bounds of the image, in image pixels.</summary>
+    public Rect ImageArea => _document == null ? Rect.Empty : new Rect(0, 0, _document.BaseImage.PixelWidth, _document.BaseImage.PixelHeight);
+
+    /// <summary>Hides the text annotation while its text box is shown (null to show it again).</summary>
+    public void SetEditingText(TextAnnotation? text)
+    {
+        _editingText = text;
+        InvalidateLayers();
+    }
+
+    public void Select(Annotation? annotation) => SetSelected(annotation);
+
+    /// <summary>Applies a style change to the selection as one undoable step.</summary>
+    public void ApplyToSelection(Action<Annotation> change)
+    {
+        if (_selected == null || _document == null) return;
+        _document.PushUndo();
+        change(_selected);
+        InvalidateLayers();
+    }
+
+    /// <summary>
+    /// Aborts a drag in progress: a shape being drawn disappears, a moved or resized one goes back
+    /// where it was, without undo step. Returns false if nothing was in progress.
+    /// </summary>
+    public bool CancelOperation()
+    {
+        if (_mode == DragMode.None) return false;
+        var mode = _mode;
+        _mode = DragMode.None;
+        if (_document != null)
+        {
+            if (mode == DragMode.Create && _creating != null)
+            {
+                _document.Annotations.Remove(_creating);
+            }
+            else if (mode is DragMode.Move or DragMode.Handle && _checkpoint != null)
+            {
+                int index = _selected == null ? -1 : _document.Annotations.IndexOf(_selected);
+                _document.RevertChange(_checkpoint);
+                if (index >= 0 && index < _document.Annotations.Count) SetSelected(_document.Annotations[index]);
+            }
+        }
+        _selected?.EndHandleDrag();
+        _creating = null;
+        _checkpoint = null;
+        _cropRect = null;
+        ReleaseMouseCapture();
+        InvalidateLayers();
+        return true;
+    }
+
+    protected override Size MeasureOverride(Size availableSize) =>
+        _document == null ? new Size() : new Size(_document.BaseImage.PixelWidth, _document.BaseImage.PixelHeight);
+
+    protected override void OnRender(DrawingContext dc)
+    {
+        if (_document == null) return;
+        var image = _document.BaseImage;
+        var bounds = new Rect(0, 0, image.PixelWidth, image.PixelHeight);
+        dc.DrawImage(image, bounds);
+
+        var annotations = _document.Annotations;
+        var active = ActiveAnnotation();
+        if (active is SpotlightAnnotation)
+        {
+            // The shared shade follows the spotlight being drawn: everything is drawn live.
+            AnnotationRenderer.Render(dc, image, annotations, 0, annotations.Count, _editingText);
+        }
+        else
+        {
+            var (below, above) = UpdateLayers(active);
+            dc.DrawDrawing(below);
+            active?.Render(dc, image);
+            dc.DrawDrawing(above);
+        }
+
+        if (_mode == DragMode.Crop && _cropRect is Rect crop)
+        {
+            var shade = new GeometryGroup { FillRule = FillRule.EvenOdd };
+            shade.Children.Add(new RectangleGeometry(bounds));
+            shade.Children.Add(new RectangleGeometry(crop));
+            dc.DrawGeometry(CropShade, null, shade);
+            _cropPen ??= Frozen(new Pen(Brushes.White, 1 / _viewScale) { DashStyle = DashStyles.Dash });
+            dc.DrawRectangle(null, _cropPen, crop);
+        }
+
+        if (_selected != null && !ReferenceEquals(_selected, _editingText) && annotations.Contains(_selected))
+            DrawSelection(dc, _selected);
+    }
+
+    /// <summary>Annotation drawn live because the mouse changes it.</summary>
+    private Annotation? ActiveAnnotation() => _mode switch
+    {
+        DragMode.Create => _creating,
+        DragMode.Move or DragMode.Handle when _checkpoint != null => _selected,
+        _ => null,
+    };
+
+    private void InvalidateLayers()
+    {
+        _layersValid = false;
+        InvalidateVisual();
+    }
+
+    /// <summary>Records the annotations around the active one, when the document or the active annotation changed.</summary>
+    private (DrawingGroup Below, DrawingGroup Above) UpdateLayers(Annotation? active)
+    {
+        var annotations = _document!.Annotations;
+        int split = active == null ? -1 : annotations.IndexOf(active);
+        if (split < 0)
+        {
+            active = null;
+            split = annotations.Count;
+        }
+        if (_layersValid && ReferenceEquals(active, _layerActive) && _layerBelow != null && _layerAbove != null)
+            return (_layerBelow, _layerAbove);
+
+        var image = _document.BaseImage;
+        _layerBelow = Record(dc => AnnotationRenderer.Render(dc, image, annotations, 0, split, _editingText));
+        _layerAbove = Record(dc => AnnotationRenderer.Render(dc, image, annotations, Math.Min(split + 1, annotations.Count), annotations.Count, _editingText));
+        _layerActive = active;
+        _layersValid = true;
+        return (_layerBelow, _layerAbove);
+    }
+
+    private static DrawingGroup Record(Action<DrawingContext> draw)
+    {
+        var group = new DrawingGroup();
+        using (var dc = group.Open()) draw(dc);
+        if (group.CanFreeze) group.Freeze();
+        return group;
+    }
+
+    private void DrawSelection(DrawingContext dc, Annotation annotation)
+    {
+        double unit = 1 / _viewScale;
+        _selectionPen ??= Frozen(new Pen(AccentBrush, unit));
+        _selectionDashPen ??= Frozen(new Pen(AccentBrush, unit) { DashStyle = DashStyles.Dash });
+        if (annotation is not LineAnnotation)
+        {
+            var bounds = annotation.GetBounds();
+            bounds.Inflate(3 * unit, 3 * unit);
+            dc.DrawRectangle(null, _selectionDashPen, bounds);
+        }
+        double size = 9 * unit;
+        foreach (var h in annotation.GetHandles())
+            dc.DrawRectangle(Brushes.White, _selectionPen, new Rect(h.X - size / 2, h.Y - size / 2, size, size));
+    }
+
+    protected override void OnMouseLeftButtonDown(MouseButtonEventArgs e)
+    {
+        if (_document == null) return;
+        Focus();
+        e.Handled = true;
+        var p = e.GetPosition(this);
+
+        // The handles of the selection can be dragged whatever the current tool.
+        if (_selected != null && _tool != EditorTool.Crop)
+        {
+            int handle = HitHandle(_selected, p);
+            if (handle >= 0)
+            {
+                _handleIndex = handle;
+                _selected.BeginHandleDrag(handle);
+                BeginDrag(DragMode.Handle, p);
+                return;
+            }
+        }
+
+        switch (_tool)
+        {
+            case EditorTool.Select:
+                var hit = HitTestAll(p);
+                if (e.ClickCount == 2 && hit is TextAnnotation text)
+                {
+                    TextEditRequested?.Invoke(text, false);
+                    return;
+                }
+                SetSelected(hit);
+                if (hit != null) BeginDrag(DragMode.Move, p);
+                break;
+
+            case EditorTool.Text:
+                if (HitTestAll(p) is TextAnnotation existing)
+                {
+                    SetSelected(existing);
+                    TextEditRequested?.Invoke(existing, false);
+                }
+                else
+                {
+                    SetSelected(null);
+                    var created = new TextAnnotation { Position = p };
+                    CurrentStyle.ApplyTo(created);
+                    TextEditRequested?.Invoke(created, true);
+                }
+                break;
+
+            case EditorTool.Step:
+                var step = new StepAnnotation { Center = p, Number = _document.NextStepNumber };
+                CurrentStyle.ApplyTo(step, ImageArea);
+                _document.PushUndo();
+                _document.Annotations.Add(step);
+                SetSelected(step);
+                break;
+
+            case EditorTool.Stamp:
+                if (HitTestAll(p) is StampAnnotation existingStamp)
+                {
+                    // Clicking an existing stamp moves it instead of stacking a new one.
+                    SetSelected(existingStamp);
+                    BeginDrag(DragMode.Move, p);
+                    break;
+                }
+                if (StampLibrary.Find(CurrentStampId) is not { } definition) break;
+                _document.PushUndo();
+                var size = new Vector(definition.Width, definition.Height) * CurrentStampScale;
+                var stamp = new StampAnnotation { StampId = definition.Id, Start = p - size / 2, End = p + size / 2 };
+                _document.Annotations.Add(stamp);
+                SetSelected(stamp);
+                break;
+
+            case EditorTool.Crop:
+                SetSelected(null);
+                BeginDrag(DragMode.Crop, p);
+                _cropRect = new Rect(p, p);
+                break;
+
+            default:
+                var shape = CreateAnnotation(p);
+                if (shape == null) return;
+                // The undo step is recorded on release, only if the shape is kept.
+                _checkpoint = _document.BeginChange();
+                _document.Annotations.Add(shape);
+                _creating = shape;
+                SetSelected(null);
+                BeginDrag(DragMode.Create, p);
+                break;
+        }
+        InvalidateLayers();
+    }
+
+    protected override void OnMouseMove(MouseEventArgs e)
+    {
+        if (_document == null) return;
+        var p = e.GetPosition(this);
+        if (_mode == DragMode.None)
+        {
+            UpdateHoverCursor(p);
+            return;
+        }
+
+        bool shift = Keyboard.Modifiers.HasFlag(ModifierKeys.Shift);
+        switch (_mode)
+        {
+            case DragMode.Move when _selected != null:
+                if (p == _lastPosition) return;
+                EnsureCheckpoint();
+                _selected.Translate(p - _lastPosition);
+                break;
+
+            case DragMode.Handle when _selected != null:
+                EnsureCheckpoint();
+                if (shift && _selected is LineAnnotation line)
+                    p = Constrain(_handleIndex == 0 ? line.End : line.Start, p, isLine: true);
+                _selected.MoveHandle(_handleIndex, p);
+                break;
+
+            case DragMode.Create when _creating is FreehandAnnotation freehand:
+                if (freehand.Points.Count < FreehandAnnotation.MaxPoints) freehand.Points.Add(p);
+                break;
+
+            case DragMode.Create when _creating is TwoPointAnnotation shape:
+                shape.End = shift ? Constrain(shape.Start, p, shape is LineAnnotation) : p;
+                break;
+
+            case DragMode.Crop:
+                var image = ImageArea;
+                var crop = new Rect(_dragStart, p);
+                crop.Intersect(image);
+                _cropRect = crop.IsEmpty ? null : crop;
+                break;
+        }
+        _lastPosition = p;
+        InvalidateVisual();
+    }
+
+    protected override void OnMouseLeftButtonUp(MouseButtonEventArgs e)
+    {
+        if (_mode == DragMode.None || _document == null) return;
+        var mode = _mode;
+        var checkpoint = _checkpoint;
+        _mode = DragMode.None;
+        _checkpoint = null;
+        ReleaseMouseCapture();
+
+        switch (mode)
+        {
+            case DragMode.Create when _creating != null:
+                var created = _creating;
+                _creating = null;
+                if (IsTooSmall(created))
+                {
+                    _document.Annotations.Remove(created);
+                }
+                else
+                {
+                    if (checkpoint != null) _document.CommitChange(checkpoint);
+                    SetSelected(created);
+                }
+                break;
+
+            case DragMode.Crop:
+                if (_cropRect is Rect r && r.Width >= 2 && r.Height >= 2)
+                {
+                    _document.Crop(new Int32Rect((int)Math.Round(r.X), (int)Math.Round(r.Y),
+                        (int)Math.Round(r.Width), (int)Math.Round(r.Height)));
+                }
+                _cropRect = null;
+                break;
+
+            default:
+                _selected?.EndHandleDrag();
+                // A click that did not move anything leaves no undo step.
+                if (checkpoint != null) _document.CommitChange(checkpoint);
+                break;
+        }
+        InvalidateLayers();
+    }
+
+    /// <summary>A shape drawn by a click or a tiny drag is dropped; the limit is on screen, whatever the zoom.</summary>
+    private bool IsTooSmall(Annotation created)
+    {
+        double min = MinDragOnScreen / _viewScale;
+        return created switch
+        {
+            FreehandAnnotation f => f.Points.Count < 2,
+            // Less than a pixel high or wide would be invisible.
+            BoxAnnotation b => (b.End - b.Start).Length < min || b.GetRect().Width < 1 || b.GetRect().Height < 1,
+            TwoPointAnnotation t => (t.End - t.Start).Length < min,
+            _ => false,
+        };
+    }
+
+    protected override void OnLostMouseCapture(MouseEventArgs e)
+    {
+        base.OnLostMouseCapture(e);
+        if (_mode != DragMode.None && Mouse.LeftButton != MouseButtonState.Pressed) CancelOperation();
+    }
+
+    private void BeginDrag(DragMode mode, Point p)
+    {
+        _mode = mode;
+        _dragStart = _lastPosition = p;
+        CaptureMouse();
+    }
+
+    /// <summary>Saves the state before the first change of a move or resize.</summary>
+    private void EnsureCheckpoint()
+    {
+        if (_checkpoint != null || _document == null) return;
+        _checkpoint = _document.BeginChange();
+        InvalidateLayers();
+    }
+
+    private Annotation? CreateAnnotation(Point p)
+    {
+        Annotation? annotation = _tool switch
+        {
+            EditorTool.Arrow => new ArrowAnnotation(),
+            EditorTool.Line => new LineAnnotation(),
+            EditorTool.Rectangle => new RectangleAnnotation(),
+            EditorTool.Ellipse => new EllipseAnnotation(),
+            EditorTool.Highlight => new HighlightAnnotation(),
+            EditorTool.Pixelate => new PixelateAnnotation(),
+            EditorTool.Spotlight => new SpotlightAnnotation(),
+            EditorTool.Pen => new FreehandAnnotation(),
+            _ => null,
+        };
+        if (annotation == null) return null;
+        CurrentStyle.ApplyTo(annotation);
+        if (annotation is TwoPointAnnotation shape) shape.Start = shape.End = p;
+        if (annotation is FreehandAnnotation freehand) freehand.Points.Add(p);
+        return annotation;
+    }
+
+    /// <summary>Shift: 45° steps for lines, squares/circles for boxes.</summary>
+    private static Point Constrain(Point origin, Point p, bool isLine)
+    {
+        var v = p - origin;
+        if (isLine)
+        {
+            double step = Math.PI / 4;
+            double angle = Math.Round(Math.Atan2(v.Y, v.X) / step) * step;
+            return origin + new Vector(Math.Cos(angle), Math.Sin(angle)) * v.Length;
+        }
+        double d = Math.Max(Math.Abs(v.X), Math.Abs(v.Y));
+        return origin + new Vector(Math.Sign(v.X) * d, Math.Sign(v.Y) * d);
+    }
+
+    private Annotation? HitTestAll(Point p)
+    {
+        if (_document == null) return null;
+        double tolerance = 4 / _viewScale;
+        for (int i = _document.Annotations.Count - 1; i >= 0; i--)
+        {
+            if (_document.Annotations[i].HitTest(p, tolerance)) return _document.Annotations[i];
+        }
+        return null;
+    }
+
+    private int HitHandle(Annotation annotation, Point p)
+    {
+        double tolerance = 7 / _viewScale;
+        var handles = annotation.GetHandles();
+        for (int i = 0; i < handles.Count; i++)
+        {
+            if (Math.Abs(handles[i].X - p.X) <= tolerance && Math.Abs(handles[i].Y - p.Y) <= tolerance) return i;
+        }
+        return -1;
+    }
+
+    private void UpdateHoverCursor(Point p)
+    {
+        Cursor cursor;
+        if (_selected != null && _tool != EditorTool.Crop && HitHandle(_selected, p) >= 0) cursor = Cursors.Hand;
+        else if (_tool == EditorTool.Select && HitTestAll(p) != null) cursor = Cursors.SizeAll;
+        else cursor = _tool switch
+        {
+            EditorTool.Select => Cursors.Arrow,
+            EditorTool.Text => Cursors.IBeam,
+            _ => Cursors.Cross,
+        };
+        if (Cursor != cursor) Cursor = cursor;
+    }
+
+    private void SetSelected(Annotation? annotation)
+    {
+        if (ReferenceEquals(_selected, annotation)) return;
+        _selected = annotation;
+        InvalidateVisual();
+        SelectionChanged?.Invoke();
+    }
+
+    private void OnDocumentChanged()
+    {
+        if (_selected != null && _document != null && !_document.Annotations.Contains(_selected)) SetSelected(null);
+        InvalidateLayers();
+        InvalidateMeasure();
+    }
+
+    private static T Frozen<T>(T freezable) where T : Freezable
+    {
+        freezable.Freeze();
+        return freezable;
+    }
+}

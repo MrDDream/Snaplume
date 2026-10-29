@@ -1,0 +1,53 @@
+﻿<Project Sdk="Microsoft.NET.Sdk">
+
+  <PropertyGroup>
+    <OutputType>WinExe</OutputType>
+    <!-- Windows 10 SDK projection: gives access to the built-in offline OCR (Windows.Media.Ocr). -->
+    <TargetFramework>net10.0-windows10.0.19041.0</TargetFramework>
+    <!-- 20H1 minimum: excluding windows from captures (SetWindowDisplayAffinity) needs it. -->
+    <SupportedOSPlatformVersion>10.0.19041.0</SupportedOSPlatformVersion>
+    <Nullable>enable</Nullable>
+    <ImplicitUsings>enable</ImplicitUsings>
+    <UseWPF>true</UseWPF>
+    <!-- WinForms is only used for the notification-area icon and the color picker dialog. -->
+    <UseWindowsForms>true</UseWindowsForms>
+    <ApplicationManifest>app.manifest</ApplicationManifest>
+    <ApplicationIcon>Assets\app.ico</ApplicationIcon>
+    <AssemblyName>Snaplume</AssemblyName>
+    <RootNamespace>Snaplume</RootNamespace>
+    <Version>0.1.0</Version>
+    <!-- The DPI mode is set by app.manifest, as WPF requires (WinForms analyzer suggestion not applicable). -->
+    <NoWarn>$(NoWarn);WFO0003</NoWarn>
+    <Product>Snaplume</Product>
+    <Description>Logiciel libre de capture d'écran et d'annotation, sans service en ligne.</Description>
+    <Copyright>Contributeurs Snaplume — licence MIT</Copyright>
+  </PropertyGroup>
+
+  <ItemGroup>
+    <!-- Avoid WPF/WinForms type name clashes (Point, Color, Application...). -->
+    <Using Remove="System.Windows.Forms" />
+    <Using Remove="System.Drawing" />
+    <Using Include="System.IO" />
+  </ItemGroup>
+
+  <ItemGroup>
+    <Resource Include="Assets\app.ico" />
+    <!-- Interface translations, read by Core/Loc.cs. -->
+    <EmbeddedResource Include="Languages\*.json" LogicalName="Snaplume.Languages.%(Filename).json" />
+  </ItemGroup>
+
+  <!--
+    Video recording (MIT, Media Foundation). The package's own targets require a solution
+    platform; reference its x64 assembly directly instead so "dotnet build/run" just works.
+  -->
+  <PropertyGroup>
+    <PlatformTarget>x64</PlatformTarget>
+  </PropertyGroup>
+  <ItemGroup>
+    <PackageReference Include="ScreenRecorderLib" Version="7.0.1" ExcludeAssets="build" GeneratePathProperty="true" />
+    <Reference Include="ScreenRecorderLib">
+      <HintPath>$(PkgScreenRecorderLib)\build\x64\ScreenRecorderLib.dll</HintPath>
+    </Reference>
+  </ItemGroup>
+
+</Project>

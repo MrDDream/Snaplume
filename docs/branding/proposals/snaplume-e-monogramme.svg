@@ -1,0 +1,9 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 120 120" width="240" height="240">
+  <title>Snaplume E — monogramme S en coins de recadrage</title>
+  <defs>
+    <linearGradient id="bg" x1="0" y1="0" x2="1" y2="1"><stop offset="0" stop-color="#7C3AED"/><stop offset="1" stop-color="#4C1D95"/></linearGradient>
+  </defs>
+  <rect width="120" height="120" rx="26" fill="url(#bg)"/>
+  <path d="M80 34 H38 V58 H82 V86 H34" fill="none" stroke="#FFFFFF" stroke-width="10" stroke-linecap="round" stroke-linejoin="round"/>
+  <path transform="translate(92 30) scale(0.5)" d="M0 -26 C2 -8 8 -2 26 0 C8 2 2 8 0 26 C-2 8 -8 2 -26 0 C-8 -2 -2 -8 0 -26 Z" fill="#FBBF24"/>
+</svg>

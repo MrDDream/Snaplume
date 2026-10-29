@@ -1,0 +1,10 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 120 120" width="240" height="240">
+  <title>Lumashot — shutter iris with a light core</title>
+  <rect width="120" height="120" rx="26" fill="#1F2937"/>
+  <circle cx="60" cy="60" r="36" fill="none" stroke="#FBBF24" stroke-width="6"/>
+  <g stroke="#FBBF24" stroke-width="5" stroke-linecap="round">
+    <path d="M96 60 L67 72.1"/><path d="M78 91.2 L53 72.1"/><path d="M42 91.2 L46 60"/>
+    <path d="M24 60 L53 47.9"/><path d="M42 28.8 L67 47.9"/><path d="M78 28.8 L74 60"/>
+  </g>
+  <circle cx="60" cy="60" r="8" fill="#FEF3C7"/>
+</svg>

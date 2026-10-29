@@ -1,0 +1,10 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 120 120" width="240" height="240">
+  <title>Clearsnip — scissors cutting a dashed selection</title>
+  <rect width="120" height="120" rx="26" fill="#2563EB"/>
+  <rect x="34" y="22" width="64" height="50" rx="4" fill="none" stroke="#FFFFFF" stroke-width="4.5" stroke-dasharray="9 6"/>
+  <g fill="none" stroke="#FFFFFF" stroke-width="5" stroke-linecap="round">
+    <circle cx="32" cy="90" r="9"/><circle cx="54" cy="98" r="9"/>
+    <path d="M39 84 L80 54"/><path d="M47 91 L84 66"/>
+  </g>
+  <circle cx="63" cy="73" r="3" fill="#FBBF24"/>
+</svg>

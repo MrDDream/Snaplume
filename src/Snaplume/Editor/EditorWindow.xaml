@@ -1,0 +1,266 @@
+<Window x:Class="Snaplume.Editor.EditorWindow"
+        xmlns="http://schemas.microsoft.com/winfx/2006/xaml/presentation"
+        xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+        xmlns:l="clr-namespace:Snaplume.Core"
+        xmlns:local="clr-namespace:Snaplume.Editor"
+        Title="{l:T Editor.Title}" Width="1240" Height="820" MinWidth="760" MinHeight="460"
+        Icon="pack://application:,,,/Assets/app.ico"
+        WindowStartupLocation="CenterScreen" UseLayoutRounding="True" Background="{DynamicResource WindowBrush}" Foreground="{DynamicResource TextBrush}">
+    <DockPanel>
+        <!-- Actions -->
+        <Border DockPanel.Dock="Top" Style="{StaticResource Toolbar}" Padding="8,6">
+            <DockPanel>
+                <StackPanel DockPanel.Dock="Right" Orientation="Horizontal">
+                    <Button Style="{StaticResource FlatButton}" Click="OnReadText" ToolTip="{l:T Ocr.EditorTip}">
+                        <StackPanel Orientation="Horizontal">
+                            <Path Style="{StaticResource Icon}" Data="{StaticResource IconOcr}" />
+                            <TextBlock Style="{StaticResource ButtonLabel}" Text="{l:T Ocr.TextButton}" />
+                        </StackPanel>
+                    </Button>
+                    <Button Style="{StaticResource FlatButton}" Click="OnResize" ToolTip="{l:T Editor.ResizeTip}">
+                        <StackPanel Orientation="Horizontal">
+                            <Path Style="{StaticResource Icon}" Data="{StaticResource IconResize}" />
+                            <TextBlock Style="{StaticResource ButtonLabel}" Text="{l:T Editor.Resize}" />
+                        </StackPanel>
+                    </Button>
+                    <Button Style="{StaticResource FlatButton}" Click="OnCropTool" ToolTip="{l:T Editor.CropTip}">
+                        <StackPanel Orientation="Horizontal">
+                            <Path Style="{StaticResource Icon}" Data="{StaticResource IconCrop}" />
+                            <TextBlock Style="{StaticResource ButtonLabel}" Text="{l:T Editor.Tool.Crop}" />
+                        </StackPanel>
+                    </Button>
+                </StackPanel>
+                <StackPanel Orientation="Horizontal">
+                    <Button Style="{StaticResource AccentButton}" Click="OnSave" ToolTip="{l:T Editor.SaveTip}">
+                        <StackPanel Orientation="Horizontal">
+                            <Path Style="{StaticResource Icon}" Data="{StaticResource IconSave}" Stroke="{DynamicResource OnAccentBrush}" />
+                            <TextBlock Style="{StaticResource ButtonLabel}" Text="{l:T Editor.Save}" FontWeight="SemiBold" />
+                        </StackPanel>
+                    </Button>
+                    <Button Style="{StaticResource FlatButton}" Click="OnCopy" ToolTip="{l:T Editor.CopyTip}">
+                        <StackPanel Orientation="Horizontal">
+                            <Path Style="{StaticResource Icon}" Data="{StaticResource IconCopy}" />
+                            <TextBlock Style="{StaticResource ButtonLabel}" Text="{l:T Editor.Copy}" />
+                        </StackPanel>
+                    </Button>
+                    <Button Style="{StaticResource FlatButton}" Click="OnExport" ToolTip="{l:T Editor.ExportTip}">
+                        <StackPanel Orientation="Horizontal">
+                            <Path Style="{StaticResource Icon}" Data="{StaticResource IconExport}" />
+                            <TextBlock Style="{StaticResource ButtonLabel}" Text="{l:T Editor.Export}" />
+                        </StackPanel>
+                    </Button>
+                    <Rectangle Style="{StaticResource ToolbarSeparator}" />
+                    <Button x:Name="UndoButton" Style="{StaticResource FlatButton}" Click="OnUndo" ToolTip="{l:T Editor.UndoTip}">
+                        <Path Style="{StaticResource Icon}" Data="{StaticResource IconUndo}" />
+                    </Button>
+                    <Button x:Name="RedoButton" Style="{StaticResource FlatButton}" Click="OnRedo" ToolTip="{l:T Editor.RedoTip}">
+                        <Path Style="{StaticResource Icon}" Data="{StaticResource IconRedo}" />
+                    </Button>
+                </StackPanel>
+            </DockPanel>
+        </Border>
+
+        <!-- Contextual properties of the current tool or selection -->
+        <Border DockPanel.Dock="Top" Background="{DynamicResource WindowBrush}" BorderBrush="{DynamicResource LineBrush}" BorderThickness="0,0,0,1" Padding="12,0" Height="46">
+            <DockPanel>
+                <TextBlock x:Name="ToolHint" DockPanel.Dock="Right" VerticalAlignment="Center" Margin="12,0,0,0"
+                           Foreground="{DynamicResource MutedTextBrush}" FontSize="11.5" TextTrimming="CharacterEllipsis" MaxWidth="360" />
+                <StackPanel Orientation="Horizontal" VerticalAlignment="Center">
+                    <TextBlock x:Name="ToolName" FontWeight="SemiBold" FontSize="13.5" VerticalAlignment="Center" MinWidth="96" />
+
+                    <StackPanel x:Name="ColorSection" Orientation="Horizontal" Margin="8,0,0,0">
+                        <Rectangle Style="{StaticResource ToolbarSeparator}" />
+                        <StackPanel x:Name="PalettePanel" Orientation="Horizontal" VerticalAlignment="Center" />
+                        <Button Style="{StaticResource FlatButton}" Click="OnCustomColor" ToolTip="{l:T Editor.CurrentColorTip}" Margin="4,0" Padding="3">
+                            <Border x:Name="CurrentColorSwatch" Width="24" Height="24" CornerRadius="12" BorderBrush="{DynamicResource MutedTextBrush}" BorderThickness="1.5" Background="Red" />
+                        </Button>
+                    </StackPanel>
+
+                    <StackPanel x:Name="ThicknessSection" Orientation="Horizontal">
+                        <Rectangle Style="{StaticResource ToolbarSeparator}" />
+                        <TextBlock x:Name="ThicknessLabel" Style="{StaticResource PropertyLabel}" Text="{l:T Editor.Thickness}" />
+                        <ComboBox x:Name="ThicknessBox" Width="74" VerticalAlignment="Center" SelectionChanged="OnThicknessChanged" ItemStringFormat="0 px" />
+                    </StackPanel>
+
+                    <StackPanel x:Name="FontSection" Orientation="Horizontal">
+                        <Rectangle Style="{StaticResource ToolbarSeparator}" />
+                        <TextBlock Style="{StaticResource PropertyLabel}" Text="{l:T Editor.FontSize}" />
+                        <ComboBox x:Name="FontSizeBox" Width="74" VerticalAlignment="Center" SelectionChanged="OnFontSizeChanged" ItemStringFormat="0 pt" />
+                    </StackPanel>
+
+                    <StackPanel x:Name="VariantSection" Orientation="Horizontal">
+                        <Rectangle Style="{StaticResource ToolbarSeparator}" />
+                        <TextBlock x:Name="VariantLabel" Style="{StaticResource PropertyLabel}" Text="{l:T Editor.Shape}" />
+                        <ComboBox x:Name="VariantBox" MinWidth="110" VerticalAlignment="Center" SelectionChanged="OnVariantChanged" />
+                    </StackPanel>
+
+                    <StackPanel x:Name="FillSection" Orientation="Horizontal">
+                        <Rectangle Style="{StaticResource ToolbarSeparator}" />
+                        <CheckBox x:Name="FillBox" Content="{l:T Editor.Fill}" VerticalAlignment="Center" Focusable="False"
+                                  Checked="OnFillChanged" Unchecked="OnFillChanged" ToolTip="{l:T Editor.FillTip}" />
+                    </StackPanel>
+
+                    <StackPanel x:Name="StampSection" Orientation="Horizontal">
+                        <Rectangle Style="{StaticResource ToolbarSeparator}" />
+                        <ToggleButton x:Name="StampPickerButton" Style="{StaticResource ToolToggle}" Padding="6,2"
+                                      ToolTip="{l:T Editor.StampPickerTip}" Checked="OnStampPickerOpen">
+                            <StackPanel Orientation="Horizontal">
+                                <Image x:Name="CurrentStampImage" Height="28" MaxWidth="90" Stretch="Uniform" FlowDirection="LeftToRight" />
+                                <TextBlock Margin="8,0,2,0" VerticalAlignment="Center"><Run Text="{l:T Editor.StampPicker}" /><Run Text=" ▾" /></TextBlock>
+                            </StackPanel>
+                        </ToggleButton>
+                        <TextBlock Style="{StaticResource PropertyLabel}" Text="{l:T Editor.Size}" Margin="12,0,6,0" />
+                        <Slider x:Name="StampSizeSlider" Width="110" Minimum="0.25" Maximum="3" Value="1" VerticalAlignment="Center"
+                                Focusable="False" IsMoveToPointEnabled="True" ValueChanged="OnStampSizeChanged" />
+                        <TextBlock x:Name="StampSizeText" Width="44" Margin="6,0,0,0" VerticalAlignment="Center" />
+                    </StackPanel>
+
+                    <StackPanel x:Name="DeleteSection" Orientation="Horizontal">
+                        <Rectangle Style="{StaticResource ToolbarSeparator}" />
+                        <Button x:Name="DeleteButton" Style="{StaticResource FlatButton}" Click="OnDeleteSelected" ToolTip="{l:T Editor.DeleteTip}">
+                            <StackPanel Orientation="Horizontal">
+                                <Path Style="{StaticResource Icon}" Data="{StaticResource IconDelete}" />
+                                <TextBlock Style="{StaticResource ButtonLabel}" Text="{l:T Editor.Delete}" />
+                            </StackPanel>
+                        </Button>
+                    </StackPanel>
+                </StackPanel>
+            </DockPanel>
+        </Border>
+
+        <!-- Stamp picker -->
+        <Popup x:Name="StampPopup" PlacementTarget="{Binding ElementName=StampPickerButton}" Placement="Bottom"
+               StaysOpen="False" AllowsTransparency="True" Closed="OnStampPickerClosed" PopupAnimation="Fade">
+            <Border Background="{DynamicResource PopupBrush}" BorderBrush="{DynamicResource PopupBorderBrush}" BorderThickness="1" CornerRadius="8" Margin="8" Padding="4">
+                <Border.Effect>
+                    <DropShadowEffect BlurRadius="16" ShadowDepth="3" Opacity="0.25" />
+                </Border.Effect>
+                <ScrollViewer MaxHeight="460" Width="560" VerticalScrollBarVisibility="Auto">
+                    <StackPanel x:Name="StampCatalog" Margin="8,4,8,8" />
+                </ScrollViewer>
+            </Border>
+        </Popup>
+
+        <!-- Presets of the clicked tool; closes as soon as the user draws -->
+        <Popup x:Name="PresetPopup" Placement="Right" HorizontalOffset="4" VerticalOffset="-12"
+               StaysOpen="True" AllowsTransparency="True" PopupAnimation="Fade">
+            <Border Background="{DynamicResource PopupBrush}" BorderBrush="{DynamicResource PopupBorderBrush}" BorderThickness="1" CornerRadius="8" Margin="8" Padding="12,10,12,10">
+                <Border.Effect>
+                    <DropShadowEffect BlurRadius="16" ShadowDepth="3" Opacity="0.25" />
+                </Border.Effect>
+                <StackPanel Width="396">
+                    <DockPanel Margin="0,0,0,8">
+                        <Button DockPanel.Dock="Right" Style="{StaticResource FlatButton}" Padding="4" Click="OnPresetPopupClose" ToolTip="{l:T Preset.CloseTip}">
+                            <Path Style="{StaticResource Icon}" Data="{StaticResource IconClose}" Width="10" Height="10" Stretch="Uniform" Margin="3" />
+                        </Button>
+                        <TextBlock x:Name="PresetTitle" FontWeight="SemiBold" FontSize="13" VerticalAlignment="Center" />
+                    </DockPanel>
+                    <WrapPanel x:Name="PresetPanel" />
+                    <DockPanel Margin="0,8,0,0">
+                        <Button DockPanel.Dock="Right" Style="{StaticResource FlatButton}" Click="OnPresetReset"
+                                ToolTip="{l:T Preset.ResetTip}">
+                            <TextBlock Text="{l:T Preset.Reset}" Foreground="{DynamicResource MutedTextBrush}" />
+                        </Button>
+                        <Button Style="{StaticResource FlatButton}" HorizontalAlignment="Left" Click="OnPresetAdd"
+                                ToolTip="{l:T Preset.AddTip}">
+                            <StackPanel Orientation="Horizontal">
+                                <Path Style="{StaticResource Icon}" Data="{StaticResource IconAdd}" />
+                                <TextBlock Style="{StaticResource ButtonLabel}" Text="{l:T Preset.Add}" />
+                            </StackPanel>
+                        </Button>
+                    </DockPanel>
+                </StackPanel>
+            </Border>
+        </Popup>
+
+        <Border DockPanel.Dock="Bottom" Style="{StaticResource StatusBar}" Padding="10,1">
+            <DockPanel>
+                <StackPanel DockPanel.Dock="Right" Orientation="Horizontal">
+                    <Button Style="{StaticResource FlatButton}" Click="OnZoomOut" ToolTip="{l:T Editor.ZoomOutTip}">
+                        <Path Style="{StaticResource Icon}" Data="{StaticResource IconZoomOut}" />
+                    </Button>
+                    <TextBlock x:Name="ZoomText" Width="52" TextAlignment="Center" VerticalAlignment="Center" />
+                    <Button Style="{StaticResource FlatButton}" Click="OnZoomIn" ToolTip="{l:T Editor.ZoomInTip}">
+                        <Path Style="{StaticResource Icon}" Data="{StaticResource IconZoomIn}" />
+                    </Button>
+                    <Button Style="{StaticResource FlatButton}" Click="OnZoomActual" ToolTip="{l:T Editor.ZoomActualTip}">
+                        <TextBlock Text="1:1" FontWeight="SemiBold" Margin="2,0" />
+                    </Button>
+                    <Button Style="{StaticResource FlatButton}" Click="OnZoomFit" ToolTip="{l:T Editor.ZoomFitTip}">
+                        <Path Style="{StaticResource Icon}" Data="{StaticResource IconFit}" />
+                    </Button>
+                </StackPanel>
+                <TextBlock x:Name="InfoText" VerticalAlignment="Center" />
+            </DockPanel>
+        </Border>
+
+        <!-- Tools -->
+        <Border DockPanel.Dock="Left" Background="{DynamicResource ToolbarBrush}" BorderBrush="{DynamicResource LineBrush}" BorderThickness="0,0,1,0" Padding="6,8">
+            <StackPanel x:Name="ToolButtons">
+                <RadioButton Style="{StaticResource RailToggle}" GroupName="Tools" Tag="Select" IsChecked="True" Checked="OnToolChecked" Click="OnToolClicked" ToolTip="{l:T Editor.Tool.SelectTip}">
+                    <Path Style="{StaticResource Icon}" Data="{StaticResource IconSelect}" />
+                </RadioButton>
+                <Rectangle Style="{StaticResource RailSeparator}" />
+                <RadioButton Style="{StaticResource RailToggle}" GroupName="Tools" Tag="Arrow" Checked="OnToolChecked" Click="OnToolClicked" ToolTip="{l:T Editor.Tool.ArrowTip}">
+                    <Path Style="{StaticResource Icon}" Data="{StaticResource IconArrow}" />
+                </RadioButton>
+                <RadioButton Style="{StaticResource RailToggle}" GroupName="Tools" Tag="Line" Checked="OnToolChecked" Click="OnToolClicked" ToolTip="{l:T Editor.Tool.LineTip}">
+                    <Path Style="{StaticResource Icon}" Data="{StaticResource IconLine}" />
+                </RadioButton>
+                <RadioButton Style="{StaticResource RailToggle}" GroupName="Tools" Tag="Rectangle" Checked="OnToolChecked" Click="OnToolClicked" ToolTip="{l:T Editor.Tool.RectangleTip}">
+                    <Path Style="{StaticResource Icon}" Data="{StaticResource IconRectangle}" />
+                </RadioButton>
+                <RadioButton Style="{StaticResource RailToggle}" GroupName="Tools" Tag="Ellipse" Checked="OnToolChecked" Click="OnToolClicked" ToolTip="{l:T Editor.Tool.EllipseTip}">
+                    <Path Style="{StaticResource Icon}" Data="{StaticResource IconEllipse}" />
+                </RadioButton>
+                <RadioButton Style="{StaticResource RailToggle}" GroupName="Tools" Tag="Pen" Checked="OnToolChecked" Click="OnToolClicked" ToolTip="{l:T Editor.Tool.PenTip}">
+                    <Path Style="{StaticResource Icon}" Data="{StaticResource IconPen}" />
+                </RadioButton>
+                <Rectangle Style="{StaticResource RailSeparator}" />
+                <RadioButton Style="{StaticResource RailToggle}" GroupName="Tools" Tag="Text" Checked="OnToolChecked" Click="OnToolClicked" ToolTip="{l:T Editor.Tool.TextTip}">
+                    <Path Style="{StaticResource Icon}" Data="{StaticResource IconText}" />
+                </RadioButton>
+                <RadioButton Style="{StaticResource RailToggle}" GroupName="Tools" Tag="Step" Checked="OnToolChecked" Click="OnToolClicked" ToolTip="{l:T Editor.Tool.StepTip}">
+                    <Path Style="{StaticResource Icon}" Data="{StaticResource IconStep}" />
+                </RadioButton>
+                <RadioButton Style="{StaticResource RailToggle}" GroupName="Tools" Tag="Stamp" Checked="OnToolChecked" Click="OnToolClicked" ToolTip="{l:T Editor.Tool.StampTip}">
+                    <Path Style="{StaticResource Icon}" Data="{StaticResource IconStamp}" />
+                </RadioButton>
+                <Rectangle Style="{StaticResource RailSeparator}" />
+                <RadioButton Style="{StaticResource RailToggle}" GroupName="Tools" Tag="Highlight" Checked="OnToolChecked" Click="OnToolClicked" ToolTip="{l:T Editor.Tool.HighlightTip}">
+                    <Path Style="{StaticResource Icon}" Data="{StaticResource IconHighlight}" />
+                </RadioButton>
+                <RadioButton Style="{StaticResource RailToggle}" GroupName="Tools" Tag="Spotlight" Checked="OnToolChecked" Click="OnToolClicked" ToolTip="{l:T Editor.Tool.SpotlightTip}">
+                    <Path Style="{StaticResource Icon}" Data="{StaticResource IconSpotlight}" />
+                </RadioButton>
+                <RadioButton Style="{StaticResource RailToggle}" GroupName="Tools" Tag="Pixelate" Checked="OnToolChecked" Click="OnToolClicked" ToolTip="{l:T Editor.Tool.PixelateTip}">
+                    <Path Style="{StaticResource Icon}" Data="{StaticResource IconPixelate}" />
+                </RadioButton>
+                <Rectangle Style="{StaticResource RailSeparator}" />
+                <RadioButton Style="{StaticResource RailToggle}" GroupName="Tools" Tag="Crop" Checked="OnToolChecked" Click="OnToolClicked" ToolTip="{l:T Editor.Tool.CropTip}">
+                    <Path Style="{StaticResource Icon}" Data="{StaticResource IconCrop}" />
+                </RadioButton>
+            </StackPanel>
+        </Border>
+
+        <!-- The image and its drawings are never mirrored, even in a right-to-left language -->
+        <ScrollViewer x:Name="Scroller" HorizontalScrollBarVisibility="Auto" VerticalScrollBarVisibility="Auto"
+                      Background="{DynamicResource CanvasBrush}" PreviewMouseWheel="OnScrollerWheel" Focusable="False" FlowDirection="LeftToRight">
+            <Grid Margin="32" HorizontalAlignment="Center" VerticalAlignment="Center">
+                <!-- Shadow on a separate layer so the image itself stays pixel-sharp -->
+                <Border Background="White"><!-- page under the image: stays white in dark mode -->
+                    <Border.Effect>
+                        <DropShadowEffect BlurRadius="18" ShadowDepth="2" Opacity="0.22" RenderingBias="Performance" />
+                    </Border.Effect>
+                </Border>
+                <Grid x:Name="Surface">
+                    <Grid.LayoutTransform>
+                        <ScaleTransform x:Name="ZoomTransform" ScaleX="1" ScaleY="1" />
+                    </Grid.LayoutTransform>
+                    <local:AnnotationCanvas x:Name="AnnotCanvas" />
+                    <Canvas x:Name="TextLayer" />
+                </Grid>
+            </Grid>
+        </ScrollViewer>
+    </DockPanel>
+</Window>

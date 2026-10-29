@@ -1,0 +1,8 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 120 120" width="240" height="240">
+  <title>Snaplume D — objectif et éclat</title>
+  <rect width="120" height="120" rx="26" fill="#5B21B6"/>
+  <circle cx="60" cy="62" r="33" fill="none" stroke="#FFFFFF" stroke-width="7"/>
+  <rect x="44" y="20" width="32" height="10" rx="4" fill="#FFFFFF"/>
+  <path transform="translate(60 62) scale(0.8)" d="M0 -26 C2 -8 8 -2 26 0 C8 2 2 8 0 26 C-2 8 -8 2 -26 0 C-8 -2 -2 -8 0 -26 Z" fill="#FDE68A"/>
+  <circle cx="86" cy="36" r="5" fill="#FDE68A"/>
+</svg>

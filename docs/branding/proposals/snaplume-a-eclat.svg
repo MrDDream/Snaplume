@@ -1,0 +1,8 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 120 120" width="240" height="240">
+  <title>Snaplume — spark of light in a crop frame</title>
+  <rect width="120" height="120" rx="26" fill="#7C3AED"/>
+  <g fill="none" stroke="#FFFFFF" stroke-width="6" stroke-linecap="round" stroke-linejoin="round">
+    <path d="M24 44 V24 H44"/><path d="M76 24 H96 V44"/><path d="M96 76 V96 H76"/><path d="M44 96 H24 V76"/>
+  </g>
+  <path d="M60 34 C62 52 68 58 86 60 C68 62 62 68 60 86 C58 68 52 62 34 60 C52 58 58 52 60 34 Z" fill="#FDE68A"/>
+</svg>

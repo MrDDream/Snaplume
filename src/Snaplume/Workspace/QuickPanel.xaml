@@ -1,0 +1,271 @@
+<local:CaptureHostWindow x:Class="Snaplume.Workspace.QuickPanel"
+        xmlns="http://schemas.microsoft.com/winfx/2006/xaml/presentation"
+        xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+        xmlns:l="clr-namespace:Snaplume.Core"
+        xmlns:sys="clr-namespace:System;assembly=System.Runtime"
+        xmlns:local="clr-namespace:Snaplume.Workspace"
+        Title="Snaplume" Width="760" Height="480" MinWidth="560" MinHeight="320"
+        Icon="pack://application:,,,/Assets/app.ico"
+        WindowStyle="None" ResizeMode="CanResizeWithGrip" WindowStartupLocation="Manual"
+        UseLayoutRounding="True" Background="{DynamicResource PanelBrush}" Foreground="{DynamicResource TextBrush}">
+    <Window.Resources>
+        <!-- Smaller gallery items than in the workspace -->
+        <sys:Double x:Key="GalleryItemWidth">150</sys:Double>
+        <sys:Double x:Key="GalleryThumbnailHeight">96</sys:Double>
+        <TextAlignment x:Key="GalleryTextAlignment">Center</TextAlignment>
+
+        <Style x:Key="TitleButton" TargetType="Button">
+            <Setter Property="Width" Value="40" />
+            <Setter Property="Height" Value="36" />
+            <Setter Property="Focusable" Value="False" />
+            <Setter Property="Background" Value="Transparent" />
+            <Setter Property="Template">
+                <Setter.Value>
+                    <ControlTemplate TargetType="Button">
+                        <Border x:Name="Bd" Background="{TemplateBinding Background}">
+                            <ContentPresenter HorizontalAlignment="Center" VerticalAlignment="Center" />
+                        </Border>
+                        <ControlTemplate.Triggers>
+                            <Trigger Property="IsMouseOver" Value="True">
+                                <Setter TargetName="Bd" Property="Background" Value="{DynamicResource HoverBrush}" />
+                            </Trigger>
+                        </ControlTemplate.Triggers>
+                    </ControlTemplate>
+                </Setter.Value>
+            </Setter>
+        </Style>
+
+        <Style x:Key="Chevron" TargetType="Path">
+            <Setter Property="Data" Value="M0,0 L4.5,4.5 L9,0" />
+            <Setter Property="StrokeThickness" Value="1.8" />
+            <Setter Property="StrokeStartLineCap" Value="Round" />
+            <Setter Property="StrokeEndLineCap" Value="Round" />
+            <Setter Property="StrokeLineJoin" Value="Round" />
+            <Setter Property="VerticalAlignment" Value="Center" />
+        </Style>
+
+        <!-- Workspace selector of the title bar: current workspace name + drop-down menu -->
+        <Style x:Key="WorkspaceSelector" TargetType="Button">
+            <Setter Property="Height" Value="28" />
+            <Setter Property="Padding" Value="8,0,10,0" />
+            <Setter Property="Focusable" Value="False" />
+            <Setter Property="Foreground" Value="{DynamicResource TextBrush}" />
+            <Setter Property="Template">
+                <Setter.Value>
+                    <ControlTemplate TargetType="Button">
+                        <Border x:Name="Bd" Background="Transparent" BorderBrush="{DynamicResource PanelBorderBrush}" BorderThickness="1"
+                                CornerRadius="6" Padding="{TemplateBinding Padding}">
+                            <ContentPresenter VerticalAlignment="Center" />
+                        </Border>
+                        <ControlTemplate.Triggers>
+                            <Trigger Property="IsMouseOver" Value="True">
+                                <Setter TargetName="Bd" Property="Background" Value="{DynamicResource HoverBrush}" />
+                            </Trigger>
+                            <Trigger Property="IsPressed" Value="True">
+                                <Setter TargetName="Bd" Property="Background" Value="{DynamicResource PressedBrush}" />
+                            </Trigger>
+                        </ControlTemplate.Triggers>
+                    </ControlTemplate>
+                </Setter.Value>
+            </Setter>
+        </Style>
+
+        <!--
+          Split button: main action and its menu, drawn as one pill. The Tag holds the corner
+          radius: rounded on the left for the action, on the right for the menu arrow.
+        -->
+        <Style x:Key="SplitMain" TargetType="Button">
+            <Setter Property="Height" Value="38" />
+            <Setter Property="Padding" Value="14,0,12,0" />
+            <Setter Property="Foreground" Value="{DynamicResource TextBrush}" />
+            <Setter Property="Focusable" Value="False" />
+            <Setter Property="Cursor" Value="Hand" />
+            <Setter Property="Tag">
+                <Setter.Value>
+                    <CornerRadius>19,0,0,19</CornerRadius>
+                </Setter.Value>
+            </Setter>
+            <Setter Property="Template">
+                <Setter.Value>
+                    <ControlTemplate TargetType="Button">
+                        <Border Background="{TemplateBinding Background}"
+                                CornerRadius="{Binding Tag, RelativeSource={RelativeSource TemplatedParent}}">
+                            <Grid>
+                                <Border x:Name="Shade" Background="{DynamicResource OverlayBrush}" Opacity="0"
+                                        CornerRadius="{Binding Tag, RelativeSource={RelativeSource TemplatedParent}}" />
+                                <ContentPresenter Margin="{TemplateBinding Padding}" VerticalAlignment="Center" />
+                            </Grid>
+                        </Border>
+                        <ControlTemplate.Triggers>
+                            <Trigger Property="IsMouseOver" Value="True">
+                                <Setter TargetName="Shade" Property="Opacity" Value="1" />
+                            </Trigger>
+                            <Trigger Property="IsPressed" Value="True">
+                                <Setter TargetName="Shade" Property="Background" Value="{DynamicResource OverlayPressedBrush}" />
+                            </Trigger>
+                        </ControlTemplate.Triggers>
+                    </ControlTemplate>
+                </Setter.Value>
+            </Setter>
+        </Style>
+        <Style x:Key="SplitArrow" TargetType="Button" BasedOn="{StaticResource SplitMain}">
+            <Setter Property="Padding" Value="10,0,12,0" />
+            <Setter Property="Tag">
+                <Setter.Value>
+                    <CornerRadius>0,19,19,0</CornerRadius>
+                </Setter.Value>
+            </Setter>
+        </Style>
+
+        <!-- Action on the selected captures: icon above its label -->
+        <Style x:Key="SelectionAction" TargetType="Button">
+            <Setter Property="Width" Value="68" />
+            <Setter Property="Height" Value="52" />
+            <Setter Property="Margin" Value="2,0" />
+            <Setter Property="Focusable" Value="False" />
+            <Setter Property="Template">
+                <Setter.Value>
+                    <ControlTemplate TargetType="Button">
+                        <Border x:Name="Bd" Background="Transparent" CornerRadius="8">
+                            <StackPanel VerticalAlignment="Center">
+                                <ContentPresenter HorizontalAlignment="Center" />
+                                <TextBlock Text="{TemplateBinding Tag}" FontSize="11.5" HorizontalAlignment="Center" Margin="0,2,0,0"
+                                           Foreground="{DynamicResource TextBrush}" TextTrimming="CharacterEllipsis" />
+                            </StackPanel>
+                        </Border>
+                        <ControlTemplate.Triggers>
+                            <Trigger Property="IsMouseOver" Value="True">
+                                <Setter TargetName="Bd" Property="Background" Value="{DynamicResource HoverBrush}" />
+                            </Trigger>
+                            <Trigger Property="IsPressed" Value="True">
+                                <Setter TargetName="Bd" Property="Background" Value="{DynamicResource PressedBrush}" />
+                            </Trigger>
+                            <Trigger Property="IsEnabled" Value="False">
+                                <Setter Property="Opacity" Value="0.35" />
+                            </Trigger>
+                        </ControlTemplate.Triggers>
+                    </ControlTemplate>
+                </Setter.Value>
+            </Setter>
+        </Style>
+    </Window.Resources>
+
+    <Border BorderBrush="{DynamicResource PanelBorderBrush}" BorderThickness="1">
+        <DockPanel>
+            <!-- Title bar -->
+            <DockPanel DockPanel.Dock="Top" Background="{DynamicResource PanelChromeBrush}" Height="38" MouseLeftButtonDown="OnTitleMouseDown">
+                <StackPanel DockPanel.Dock="Right" Orientation="Horizontal">
+                    <Button Style="{StaticResource TitleButton}" Click="OnOpenFolder" ToolTip="{l:T Panel.OpenFolderTip}">
+                        <Path Style="{StaticResource Icon}" Data="{StaticResource IconFolder}" />
+                    </Button>
+                    <Button Style="{StaticResource TitleButton}" Click="OnSettings" ToolTip="{l:T Panel.SettingsTip}">
+                        <Path Style="{StaticResource Icon}" Data="{StaticResource IconSettings}" />
+                    </Button>
+                    <Button Style="{StaticResource TitleButton}" Click="OnOpenWorkspace" ToolTip="{l:T Panel.OpenWorkspaceTip}">
+                        <Path Style="{StaticResource Icon}" Data="{StaticResource IconExpand}" />
+                    </Button>
+                    <Button Style="{StaticResource TitleButton}" Click="OnHide" ToolTip="{l:T Panel.HideTip}">
+                        <Path Style="{StaticResource Icon}" Data="{StaticResource IconClose}" />
+                    </Button>
+                </StackPanel>
+                <Image DockPanel.Dock="Left" Source="{StaticResource LogoImage}" Width="20" Height="20" Margin="12,0,0,0" />
+                <TextBlock DockPanel.Dock="Left" Text="Snaplume" FontSize="14" FontWeight="SemiBold" Margin="9,0,0,0" VerticalAlignment="Center" />
+                <Button x:Name="WorkspaceButton" DockPanel.Dock="Left" Style="{StaticResource WorkspaceSelector}" Margin="12,0,0,0"
+                        Click="OnWorkspaceMenu" ToolTip="{l:T Panel.WorkspaceTip}">
+                    <StackPanel Orientation="Horizontal">
+                        <Path Style="{StaticResource Icon}" Data="{StaticResource IconWorkspace}">
+                            <Path.LayoutTransform>
+                                <ScaleTransform ScaleX="0.7" ScaleY="0.7" />
+                            </Path.LayoutTransform>
+                        </Path>
+                        <TextBlock x:Name="WorkspaceName" Margin="6,0,0,0" MaxWidth="160" TextTrimming="CharacterEllipsis" VerticalAlignment="Center" />
+                        <Path Style="{StaticResource Chevron}" Stroke="{DynamicResource MutedTextBrush}" Margin="8,1,0,0" />
+                    </StackPanel>
+                    <Button.ContextMenu>
+                        <!-- Filled when opened: the workspaces, then "New..." -->
+                        <ContextMenu />
+                    </Button.ContextMenu>
+                </Button>
+                <TextBlock x:Name="SummaryText" Foreground="{DynamicResource MutedTextBrush}" Margin="12,1,8,0" VerticalAlignment="Center"
+                           TextTrimming="CharacterEllipsis" />
+            </DockPanel>
+
+            <!-- Action bar -->
+            <Border DockPanel.Dock="Bottom" Background="{DynamicResource PanelChromeBrush}" BorderBrush="{DynamicResource PanelBorderBrush}"
+                    BorderThickness="0,1,0,0" Padding="14,10,10,10">
+                <DockPanel>
+                    <!-- Actions on the selection -->
+                    <StackPanel DockPanel.Dock="Right" Orientation="Horizontal" VerticalAlignment="Center">
+                        <Button x:Name="EditButton" Style="{StaticResource SelectionAction}" Tag="{l:T Panel.Edit}" Click="OnEdit" ToolTip="{l:T Panel.EditTip}">
+                            <Path Style="{StaticResource Icon}" Data="{StaticResource IconEdit}" />
+                        </Button>
+                        <Button x:Name="ReadTextButton" Style="{StaticResource SelectionAction}" Tag="{l:T Ocr.ReadTextShort}" Click="OnReadText" ToolTip="{l:T Ocr.ReadTextTip}">
+                            <Path Style="{StaticResource Icon}" Data="{StaticResource IconOcr}" />
+                        </Button>
+                        <Button x:Name="CopyButton" Style="{StaticResource SelectionAction}" Tag="{l:T Panel.Copy}" Click="OnCopy" ToolTip="{l:T Panel.CopyTip}">
+                            <Path Style="{StaticResource Icon}" Data="{StaticResource IconCopy}" />
+                        </Button>
+                    </StackPanel>
+
+                    <StackPanel Orientation="Horizontal" VerticalAlignment="Center">
+                        <!-- Capture: the main action, in the accent color -->
+                        <StackPanel Orientation="Horizontal">
+                            <Button Style="{StaticResource SplitMain}" Background="{DynamicResource AccentBrush}" Click="OnCaptureRegion"
+                                    ToolTip="{l:T Panel.CaptureRegionTip}">
+                                <StackPanel Orientation="Horizontal">
+                                    <Path Style="{StaticResource Icon}" Data="{StaticResource IconCamera}" Stroke="{DynamicResource OnAccentBrush}" />
+                                    <TextBlock Text="{l:T Panel.CaptureRegion}" Foreground="{DynamicResource OnAccentBrush}" FontWeight="SemiBold"
+                                               Margin="7,0,0,0" VerticalAlignment="Center" TextTrimming="CharacterEllipsis" />
+                                </StackPanel>
+                            </Button>
+                            <Rectangle Width="1" Fill="{DynamicResource OnAccentLineBrush}" Height="38" />
+                            <Button x:Name="CaptureMenuButton" Style="{StaticResource SplitArrow}" Background="{DynamicResource AccentBrush}"
+                                    Click="OnCaptureMenu" ToolTip="{l:T Panel.MoreCapturesTip}">
+                                <Path Style="{StaticResource Chevron}" Stroke="{DynamicResource OnAccentBrush}" />
+                                <Button.ContextMenu>
+                                    <ContextMenu>
+                                        <MenuItem Header="{l:T Panel.Menu.CaptureScreen}" Click="OnCaptureScreen" />
+                                        <MenuItem Header="{l:T Panel.Menu.CaptureAllScreens}" Click="OnCaptureAllScreens" />
+                                        <MenuItem Header="{l:T Panel.Menu.RepeatLast}" Click="OnCaptureRepeat" />
+                                        <MenuItem Header="{l:T Ocr.CaptureText}" Click="OnCaptureText" />
+                                        <Separator />
+                                        <MenuItem Header="{l:T Panel.Menu.Delay3}" Tag="3" Click="OnDelayedCapture" />
+                                        <MenuItem Header="{l:T Panel.Menu.Delay5}" Tag="5" Click="OnDelayedCapture" />
+                                        <MenuItem Header="{l:T Panel.Menu.Delay10}" Tag="10" Click="OnDelayedCapture" />
+                                    </ContextMenu>
+                                </Button.ContextMenu>
+                            </Button>
+                        </StackPanel>
+
+                        <!-- Video: secondary, with the red "record" dot (a square while recording: stop) -->
+                        <StackPanel Orientation="Horizontal" Margin="10,0,0,0">
+                            <Button x:Name="VideoButton" Style="{StaticResource SplitMain}" Background="{DynamicResource SecondaryActionBrush}"
+                                    Click="OnRecordVideo" ToolTip="{l:T Panel.RecordVideoTip}">
+                                <StackPanel Orientation="Horizontal">
+                                    <Grid Width="11" Height="11" VerticalAlignment="Center" Margin="2,0,1,0">
+                                        <Ellipse x:Name="RecordDot" Fill="{DynamicResource RecordBrush}" />
+                                        <Rectangle x:Name="StopSquare" Fill="{DynamicResource RecordBrush}" RadiusX="1.5" RadiusY="1.5" Visibility="Collapsed" />
+                                    </Grid>
+                                    <TextBlock x:Name="VideoButtonText" Text="{l:T Panel.RecordVideo}" FontWeight="SemiBold" Margin="8,0,0,0"
+                                               VerticalAlignment="Center" TextTrimming="CharacterEllipsis" />
+                                </StackPanel>
+                            </Button>
+                            <Rectangle Width="1" Fill="{DynamicResource LineBrush}" Height="38" />
+                            <Button x:Name="VideoMenuButton" Style="{StaticResource SplitArrow}" Background="{DynamicResource SecondaryActionBrush}"
+                                    Click="OnVideoMenu" ToolTip="{l:T Panel.MoreRecordingsTip}">
+                                <Path Style="{StaticResource Chevron}" Stroke="{DynamicResource IconBrush}" />
+                                <Button.ContextMenu>
+                                    <ContextMenu>
+                                        <MenuItem Header="{l:T Panel.Menu.RecordScreen}" Click="OnRecordScreen" />
+                                    </ContextMenu>
+                                </Button.ContextMenu>
+                            </Button>
+                        </StackPanel>
+                    </StackPanel>
+                </DockPanel>
+            </Border>
+
+            <local:CaptureGallery x:Name="Gallery" />
+        </DockPanel>
+    </Border>
+</local:CaptureHostWindow>

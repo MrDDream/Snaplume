@@ -1,0 +1,11 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 120 120" width="240" height="240">
+  <title>Snaplume F — version claire</title>
+  <defs>
+    <linearGradient id="sp" x1="0" y1="0" x2="1" y2="1"><stop offset="0" stop-color="#8B5CF6"/><stop offset="1" stop-color="#EC4899"/></linearGradient>
+  </defs>
+  <rect x="2" y="2" width="116" height="116" rx="25" fill="#FFFFFF" stroke="#E5E1F5" stroke-width="2"/>
+  <g fill="none" stroke="#6D28D9" stroke-width="6" stroke-linecap="round" stroke-linejoin="round">
+    <path d="M24 44 V24 H44"/><path d="M76 24 H96 V44"/><path d="M96 76 V96 H76"/><path d="M44 96 H24 V76"/>
+  </g>
+  <path transform="translate(60 60) scale(1.05)" d="M0 -26 C2 -8 8 -2 26 0 C8 2 2 8 0 26 C-2 8 -8 2 -26 0 C-8 -2 -2 -8 0 -26 Z" fill="url(#sp)"/>
+</svg>

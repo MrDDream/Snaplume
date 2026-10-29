@@ -1,0 +1,9 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 120 120" width="240" height="240">
+  <title>Snaplume C — deux coins et une étincelle</title>
+  <rect width="120" height="120" rx="26" fill="#1E1B2E"/>
+  <g fill="none" stroke="#A78BFA" stroke-width="9" stroke-linecap="round" stroke-linejoin="round">
+    <path d="M26 58 V26 H58"/><path d="M94 62 V94 H62"/>
+  </g>
+  <path transform="translate(74 46) scale(1.05)" d="M0 -26 C2 -8 8 -2 26 0 C8 2 2 8 0 26 C-2 8 -8 2 -26 0 C-8 -2 -2 -8 0 -26 Z" fill="#FBBF24"/>
+  <path transform="translate(44 76) scale(0.38)" d="M0 -26 C2 -8 8 -2 26 0 C8 2 2 8 0 26 C-2 8 -8 2 -26 0 C-8 -2 -2 -8 0 -26 Z" fill="#FDE68A"/>
+</svg>
