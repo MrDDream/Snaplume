@@ -1,9 +1,5 @@
-using System.Runtime.InteropServices;
-using System.Windows.Media;
 using System.Windows.Media.Imaging;
 using static Snaplume.Native.NativeMethods;
-using Gdi = System.Drawing;
-using GdiImaging = System.Drawing.Imaging;
 using WinForms = System.Windows.Forms;
 
 namespace Snaplume.Capturing;
@@ -85,49 +81,8 @@ public sealed class ScreenSnapshot
 
     private static BitmapSource CaptureScreen(PixelRect bounds, bool includeCursor)
     {
-        using var bmp = new Gdi.Bitmap(bounds.Width, bounds.Height, GdiImaging.PixelFormat.Format32bppRgb);
-        using (var g = Gdi.Graphics.FromImage(bmp))
-        {
-            g.CopyFromScreen(bounds.X, bounds.Y, 0, 0, new Gdi.Size(bounds.Width, bounds.Height), Gdi.CopyPixelOperation.SourceCopy);
-            if (includeCursor) DrawCursor(g, bounds.X, bounds.Y);
-        }
-
-        var data = bmp.LockBits(new Gdi.Rectangle(0, 0, bmp.Width, bmp.Height), GdiImaging.ImageLockMode.ReadOnly, GdiImaging.PixelFormat.Format32bppRgb);
-        try
-        {
-            var source = BitmapSource.Create(bmp.Width, bmp.Height, 96, 96, PixelFormats.Bgr32, null,
-                data.Scan0, data.Stride * bmp.Height, data.Stride);
-            source.Freeze();
-            return source;
-        }
-        finally
-        {
-            bmp.UnlockBits(data);
-        }
-    }
-
-    private static void DrawCursor(Gdi.Graphics g, int originX, int originY)
-    {
-        var info = new CURSORINFO { cbSize = Marshal.SizeOf<CURSORINFO>() };
-        if (!GetCursorInfo(ref info) || (info.flags & CURSOR_SHOWING) == 0) return;
-        if (!GetIconInfo(info.hCursor, out var icon)) return;
-        try
-        {
-            var hdc = g.GetHdc();
-            try
-            {
-                DrawIconEx(hdc, info.ptScreenPos.X - icon.xHotspot - originX, info.ptScreenPos.Y - icon.yHotspot - originY,
-                    info.hCursor, 0, 0, 0, IntPtr.Zero, DI_NORMAL);
-            }
-            finally
-            {
-                g.ReleaseHdc(hdc);
-            }
-        }
-        finally
-        {
-            if (icon.hbmMask != IntPtr.Zero) DeleteObject(icon.hbmMask);
-            if (icon.hbmColor != IntPtr.Zero) DeleteObject(icon.hbmColor);
-        }
+        using var grabber = new ScreenGrabber(bounds);
+        grabber.Grab(includeCursor);
+        return grabber.ToBitmapSource();
     }
 }

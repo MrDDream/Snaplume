@@ -1,0 +1,14 @@
+<Project>
+  <!--
+    Imported by build/build-release.ps1 through CustomAfterMicrosoftCommonTargets when publishing as a
+    single file. ScreenRecorderLib is a mixed-mode (C++/CLI) assembly: it cannot be loaded from inside a
+    single-file bundle, so it is kept as a separate file next to Snaplume.exe.
+  -->
+  <Target Name="SnaplumeKeepMixedModeOutsideBundle" AfterTargets="ComputeResolvedFilesToPublishList">
+    <ItemGroup>
+      <ResolvedFileToPublish Condition="'%(ResolvedFileToPublish.Filename)' == 'ScreenRecorderLib'">
+        <ExcludeFromSingleFile>true</ExcludeFromSingleFile>
+      </ResolvedFileToPublish>
+    </ItemGroup>
+  </Target>
+</Project>

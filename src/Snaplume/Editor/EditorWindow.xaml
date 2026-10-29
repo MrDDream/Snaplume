@@ -11,6 +11,12 @@
         <Border DockPanel.Dock="Top" Style="{StaticResource Toolbar}" Padding="8,6">
             <DockPanel>
                 <StackPanel DockPanel.Dock="Right" Orientation="Horizontal">
+                    <ToggleButton x:Name="EffectsButton" Style="{StaticResource FlatButton}" Checked="OnEffectsOpen" ToolTip="{l:T Effects.ButtonTip}">
+                        <StackPanel Orientation="Horizontal">
+                            <Path Style="{StaticResource Icon}" Data="{StaticResource IconEffects}" />
+                            <TextBlock Style="{StaticResource ButtonLabel}" Text="{l:T Effects.Button}" />
+                        </StackPanel>
+                    </ToggleButton>
                     <Button Style="{StaticResource FlatButton}" Click="OnReadText" ToolTip="{l:T Ocr.EditorTip}">
                         <StackPanel Orientation="Horizontal">
                             <Path Style="{StaticResource Icon}" Data="{StaticResource IconOcr}" />
@@ -48,6 +54,12 @@
                             <Path Style="{StaticResource Icon}" Data="{StaticResource IconExport}" />
                             <TextBlock Style="{StaticResource ButtonLabel}" Text="{l:T Editor.Export}" />
                         </StackPanel>
+                    </Button>
+                    <Button Style="{StaticResource FlatButton}" Click="OnPrint" ToolTip="{l:T Editor.PrintTip}" AutomationProperties.Name="{l:T Editor.Print}">
+                        <Path Style="{StaticResource Icon}" Data="{StaticResource IconPrinter}" />
+                    </Button>
+                    <Button Style="{StaticResource FlatButton}" Click="OnEmail" ToolTip="{l:T Editor.EmailTip}" AutomationProperties.Name="{l:T Editor.Email}">
+                        <Path Style="{StaticResource Icon}" Data="{StaticResource IconEnvelope}" />
                     </Button>
                     <Rectangle Style="{StaticResource ToolbarSeparator}" />
                     <Button x:Name="UndoButton" Style="{StaticResource FlatButton}" Click="OnUndo" ToolTip="{l:T Editor.UndoTip}">
@@ -92,6 +104,12 @@
                         <Rectangle Style="{StaticResource ToolbarSeparator}" />
                         <TextBlock x:Name="VariantLabel" Style="{StaticResource PropertyLabel}" Text="{l:T Editor.Shape}" />
                         <ComboBox x:Name="VariantBox" MinWidth="110" VerticalAlignment="Center" SelectionChanged="OnVariantChanged" />
+                    </StackPanel>
+
+                    <StackPanel x:Name="LensZoomSection" Orientation="Horizontal">
+                        <Rectangle Style="{StaticResource ToolbarSeparator}" />
+                        <TextBlock Style="{StaticResource PropertyLabel}" Text="{l:T Editor.Zoom}" />
+                        <ComboBox x:Name="LensZoomBox" Width="74" VerticalAlignment="Center" SelectionChanged="OnLensZoomChanged" ToolTip="{l:T Editor.ZoomTip}" />
                     </StackPanel>
 
                     <StackPanel x:Name="FillSection" Orientation="Horizontal">
@@ -173,6 +191,119 @@
             </Border>
         </Popup>
 
+        <!-- Image effects, applied live; each change is one undo step -->
+        <Popup x:Name="EffectsPopup" PlacementTarget="{Binding ElementName=EffectsButton}" Placement="Bottom"
+               StaysOpen="False" AllowsTransparency="True" Closed="OnEffectsClosed" PopupAnimation="Fade">
+            <Border Background="{DynamicResource PopupBrush}" BorderBrush="{DynamicResource PopupBorderBrush}" BorderThickness="1" CornerRadius="8" Margin="8" Padding="14,10,14,12"
+                    PreviewMouseLeftButtonUp="OnEffectsMouseUp" TextElement.Foreground="{DynamicResource TextBrush}">
+                <Border.Effect>
+                    <DropShadowEffect BlurRadius="16" ShadowDepth="3" Opacity="0.25" />
+                </Border.Effect>
+                <StackPanel Width="340" Grid.IsSharedSizeScope="True">
+                    <DockPanel Margin="0,0,0,6">
+                        <Button DockPanel.Dock="Right" Style="{StaticResource FlatButton}" Click="OnEffectsNone" ToolTip="{l:T Effects.NoneTip}">
+                            <TextBlock Text="{l:T Effects.None}" Foreground="{DynamicResource MutedTextBrush}" />
+                        </Button>
+                        <TextBlock Text="{l:T Effects.Title}" FontWeight="SemiBold" FontSize="13" VerticalAlignment="Center" />
+                    </DockPanel>
+
+                    <!-- Drop shadow -->
+                    <CheckBox x:Name="ShadowCheck" Content="{l:T Effects.Shadow}" FontWeight="SemiBold" Focusable="False" Margin="0,6,0,4"
+                              Checked="OnEffectsCheck" Unchecked="OnEffectsCheck" />
+                    <Grid Margin="22,0,0,0">
+                        <Grid.ColumnDefinitions>
+                            <ColumnDefinition Width="Auto" SharedSizeGroup="EffectLabel" />
+                            <ColumnDefinition Width="*" />
+                            <ColumnDefinition Width="50" />
+                        </Grid.ColumnDefinitions>
+                        <Grid.RowDefinitions>
+                            <RowDefinition Height="Auto" />
+                            <RowDefinition Height="Auto" />
+                            <RowDefinition Height="Auto" />
+                        </Grid.RowDefinitions>
+                        <TextBlock Style="{StaticResource PropertyLabel}" Text="{l:T Effects.Blur}" Margin="0,0,10,0" />
+                        <Slider x:Name="ShadowBlurSlider" Grid.Column="1" Minimum="0" Maximum="60" VerticalAlignment="Center" Margin="0,3"
+                                Focusable="False" IsMoveToPointEnabled="True" ValueChanged="OnEffectsSlider" />
+                        <TextBlock x:Name="ShadowBlurText" Grid.Column="2" VerticalAlignment="Center" TextAlignment="Right" Foreground="{DynamicResource MutedTextBrush}" />
+                        <TextBlock Grid.Row="1" Style="{StaticResource PropertyLabel}" Text="{l:T Effects.Opacity}" Margin="0,0,10,0" />
+                        <Slider x:Name="ShadowOpacitySlider" Grid.Row="1" Grid.Column="1" Minimum="0" Maximum="100" VerticalAlignment="Center" Margin="0,3"
+                                Focusable="False" IsMoveToPointEnabled="True" ValueChanged="OnEffectsSlider" />
+                        <TextBlock x:Name="ShadowOpacityText" Grid.Row="1" Grid.Column="2" VerticalAlignment="Center" TextAlignment="Right" Foreground="{DynamicResource MutedTextBrush}" />
+                        <TextBlock Grid.Row="2" Style="{StaticResource PropertyLabel}" Text="{l:T Effects.Offset}" Margin="0,0,10,0" />
+                        <Slider x:Name="ShadowOffsetSlider" Grid.Row="2" Grid.Column="1" Minimum="0" Maximum="40" VerticalAlignment="Center" Margin="0,3"
+                                Focusable="False" IsMoveToPointEnabled="True" ValueChanged="OnEffectsSlider" />
+                        <TextBlock x:Name="ShadowOffsetText" Grid.Row="2" Grid.Column="2" VerticalAlignment="Center" TextAlignment="Right" Foreground="{DynamicResource MutedTextBrush}" />
+                    </Grid>
+
+                    <!-- Border -->
+                    <CheckBox x:Name="BorderCheck" Content="{l:T Effects.Border}" FontWeight="SemiBold" Focusable="False" Margin="0,10,0,4"
+                              Checked="OnEffectsCheck" Unchecked="OnEffectsCheck" />
+                    <Grid Margin="22,0,0,0">
+                        <Grid.ColumnDefinitions>
+                            <ColumnDefinition Width="Auto" SharedSizeGroup="EffectLabel" />
+                            <ColumnDefinition Width="*" />
+                            <ColumnDefinition Width="50" />
+                        </Grid.ColumnDefinitions>
+                        <Grid.RowDefinitions>
+                            <RowDefinition Height="Auto" />
+                            <RowDefinition Height="Auto" />
+                        </Grid.RowDefinitions>
+                        <TextBlock Style="{StaticResource PropertyLabel}" Text="{l:T Effects.Color}" Margin="0,0,10,0" />
+                        <StackPanel x:Name="BorderColors" Grid.Column="1" Grid.ColumnSpan="2" Orientation="Horizontal" Margin="0,3" />
+                        <TextBlock Grid.Row="1" Style="{StaticResource PropertyLabel}" Text="{l:T Effects.Width}" Margin="0,0,10,0" />
+                        <Slider x:Name="BorderWidthSlider" Grid.Row="1" Grid.Column="1" Minimum="1" Maximum="40" VerticalAlignment="Center" Margin="0,3"
+                                Focusable="False" IsMoveToPointEnabled="True" ValueChanged="OnEffectsSlider" />
+                        <TextBlock x:Name="BorderWidthText" Grid.Row="1" Grid.Column="2" VerticalAlignment="Center" TextAlignment="Right" Foreground="{DynamicResource MutedTextBrush}" />
+                    </Grid>
+
+                    <!-- Rounded corners -->
+                    <Grid Margin="0,10,0,0">
+                        <Grid.ColumnDefinitions>
+                            <ColumnDefinition Width="Auto" />
+                            <ColumnDefinition Width="*" />
+                            <ColumnDefinition Width="50" />
+                        </Grid.ColumnDefinitions>
+                        <TextBlock Text="{l:T Effects.Corners}" FontWeight="SemiBold" VerticalAlignment="Center" Margin="0,0,10,0" />
+                        <Slider x:Name="CornerSlider" Grid.Column="1" Minimum="0" Maximum="80" VerticalAlignment="Center" Margin="0,3"
+                                Focusable="False" IsMoveToPointEnabled="True" ValueChanged="OnEffectsSlider" />
+                        <TextBlock x:Name="CornerText" Grid.Column="2" VerticalAlignment="Center" TextAlignment="Right" Foreground="{DynamicResource MutedTextBrush}" />
+                    </Grid>
+
+                    <!-- Torn edges -->
+                    <TextBlock Text="{l:T Effects.Torn}" FontWeight="SemiBold" Margin="0,10,0,4" />
+                    <StackPanel Margin="22,0,0,0">
+                        <WrapPanel>
+                            <CheckBox x:Name="TornTopCheck" Content="{l:T Effects.Top}" Focusable="False" Margin="0,2,14,2" Checked="OnEffectsCheck" Unchecked="OnEffectsCheck" />
+                            <CheckBox x:Name="TornBottomCheck" Content="{l:T Effects.Bottom}" Focusable="False" Margin="0,2,14,2" Checked="OnEffectsCheck" Unchecked="OnEffectsCheck" />
+                            <CheckBox x:Name="TornLeftCheck" Content="{l:T Effects.Left}" Focusable="False" Margin="0,2,14,2" Checked="OnEffectsCheck" Unchecked="OnEffectsCheck" />
+                            <CheckBox x:Name="TornRightCheck" Content="{l:T Effects.Right}" Focusable="False" Margin="0,2,14,2" Checked="OnEffectsCheck" Unchecked="OnEffectsCheck" />
+                        </WrapPanel>
+                        <Grid>
+                            <Grid.ColumnDefinitions>
+                                <ColumnDefinition Width="Auto" SharedSizeGroup="EffectLabel" />
+                                <ColumnDefinition Width="*" />
+                                <ColumnDefinition Width="50" />
+                            </Grid.ColumnDefinitions>
+                            <TextBlock Style="{StaticResource PropertyLabel}" Text="{l:T Effects.TornSize}" Margin="0,0,10,0" />
+                            <Slider x:Name="TornSizeSlider" Grid.Column="1" Minimum="4" Maximum="40" VerticalAlignment="Center" Margin="0,3"
+                                    Focusable="False" IsMoveToPointEnabled="True" ValueChanged="OnEffectsSlider" />
+                            <TextBlock x:Name="TornSizeText" Grid.Column="2" VerticalAlignment="Center" TextAlignment="Right" Foreground="{DynamicResource MutedTextBrush}" />
+                        </Grid>
+                        <Button Style="{StaticResource FlatButton}" HorizontalAlignment="Left" Click="OnTornReseed" ToolTip="{l:T Effects.ReseedTip}">
+                            <TextBlock Text="{l:T Effects.Reseed}" />
+                        </Button>
+                    </StackPanel>
+
+                    <!-- Background of the margins and of the parts cut off -->
+                    <DockPanel Margin="0,10,0,0">
+                        <TextBlock Text="{l:T Effects.Background}" FontWeight="SemiBold" VerticalAlignment="Center" Margin="0,0,10,0" />
+                        <StackPanel x:Name="BackgroundColors" Orientation="Horizontal" />
+                    </DockPanel>
+                    <TextBlock Text="{l:T Effects.BackgroundNote}" Foreground="{DynamicResource MutedTextBrush}" FontSize="11.5" TextWrapping="Wrap" Margin="0,6,0,0" />
+                </StackPanel>
+            </Border>
+        </Popup>
+
         <Border DockPanel.Dock="Bottom" Style="{StaticResource StatusBar}" Padding="10,1">
             <DockPanel>
                 <StackPanel DockPanel.Dock="Right" Orientation="Horizontal">
@@ -236,6 +367,9 @@
                 <RadioButton Style="{StaticResource RailToggle}" GroupName="Tools" Tag="Pixelate" Checked="OnToolChecked" Click="OnToolClicked" ToolTip="{l:T Editor.Tool.PixelateTip}">
                     <Path Style="{StaticResource Icon}" Data="{StaticResource IconPixelate}" />
                 </RadioButton>
+                <RadioButton Style="{StaticResource RailToggle}" GroupName="Tools" Tag="Magnifier" Checked="OnToolChecked" Click="OnToolClicked" ToolTip="{l:T Editor.Tool.MagnifierTip}">
+                    <Path Style="{StaticResource Icon}" Data="{StaticResource IconMagnifier}" />
+                </RadioButton>
                 <Rectangle Style="{StaticResource RailSeparator}" />
                 <RadioButton Style="{StaticResource RailToggle}" GroupName="Tools" Tag="Crop" Checked="OnToolChecked" Click="OnToolClicked" ToolTip="{l:T Editor.Tool.CropTip}">
                     <Path Style="{StaticResource Icon}" Data="{StaticResource IconCrop}" />
@@ -248,7 +382,8 @@
                       Background="{DynamicResource CanvasBrush}" PreviewMouseWheel="OnScrollerWheel" Focusable="False" FlowDirection="LeftToRight">
             <Grid Margin="32" HorizontalAlignment="Center" VerticalAlignment="Center">
                 <!-- Shadow on a separate layer so the image itself stays pixel-sharp -->
-                <Border Background="White"><!-- page under the image: stays white in dark mode -->
+                <!-- Page under the image: stays white in dark mode; hidden when the image effects draw their own shadow -->
+                <Border x:Name="ImagePage" Background="White">
                     <Border.Effect>
                         <DropShadowEffect BlurRadius="18" ShadowDepth="2" Opacity="0.22" RenderingBias="Performance" />
                     </Border.Effect>
@@ -257,8 +392,12 @@
                     <Grid.LayoutTransform>
                         <ScaleTransform x:Name="ZoomTransform" ScaleX="1" ScaleY="1" />
                     </Grid.LayoutTransform>
-                    <local:AnnotationCanvas x:Name="AnnotCanvas" />
-                    <Canvas x:Name="TextLayer" />
+                    <!-- Margins and shadow of the image effects; the image keeps its coordinates over it -->
+                    <local:EffectsBackdrop x:Name="Backdrop" HorizontalAlignment="Left" VerticalAlignment="Top" />
+                    <Grid x:Name="ImageLayer" HorizontalAlignment="Left" VerticalAlignment="Top">
+                        <local:AnnotationCanvas x:Name="AnnotCanvas" />
+                        <Canvas x:Name="TextLayer" />
+                    </Grid>
                 </Grid>
             </Grid>
         </ScrollViewer>

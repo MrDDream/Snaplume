@@ -17,6 +17,12 @@ namespace Snaplume;
 public partial class App : Application
 {
     /// <summary>Names are per user: two accounts in the same session each get their own instance.</summary>
+    /// <remarks>
+    /// The Local\ names live in the session's namespace: another user logged on to the same session
+    /// (e.g. "run as" another account) could create this mutex or event first and keep Snaplume from
+    /// starting for this user. That is only a local denial of service; the command line pipe, which
+    /// carries data, is protected by its owner and access rules (see <see cref="CreatePipeServer"/>).
+    /// </remarks>
     private static readonly SecurityIdentifier? User = CurrentUser();
     private static readonly string UserSid = User?.Value ?? Environment.UserName;
     private static readonly string MutexName = $@"Local\Snaplume.SingleInstance.{UserSid}";
@@ -36,6 +42,8 @@ public partial class App : Application
     private EventWaitHandle? _showEvent;
     private RegisteredWaitHandle? _showWait;
     private CancellationTokenSource? _pipeCancel;
+    /// <summary>Pipe instance waiting for a client: closed on exit, so that a restarted instance can create its own.</summary>
+    private NamedPipeServerStream? _pipeServer;
     private HotkeyManager? _hotkeys;
     private WorkspaceWindow? _workspace;
     private QuickPanel? _quickPanel;
@@ -175,7 +183,11 @@ public partial class App : Application
         }
         else if (args.Text)
         {
-            _ = RunCommandLineTextAsync(exit);
+            _ = RunCommandLineWindowAsync(Captures.CaptureTextAsync(settleMs: 100), exit);
+        }
+        else if (args.Qr)
+        {
+            _ = RunCommandLineWindowAsync(Captures.CaptureQrAsync(settleMs: 100), exit);
         }
         else if (args.Record != null)
         {
@@ -221,10 +233,10 @@ public partial class App : Application
         if (exit) ExitApp();
     }
 
-    /// <summary>"--capture text --exit": quits once the text window is closed (or the selection cancelled).</summary>
-    private async Task RunCommandLineTextAsync(bool exit)
+    /// <summary>"--capture text|qr --exit": quits once the result window is closed (or the selection cancelled).</summary>
+    private async Task RunCommandLineWindowAsync(Task<Window?> capture, bool exit)
     {
-        var window = await Captures.CaptureTextAsync(settleMs: 100);
+        var window = await capture;
         if (!exit) return;
         if (window == null) ExitApp();
         else window.Closed += (_, _) => ExitApp();
@@ -276,20 +288,18 @@ public partial class App : Application
         int failures = 0;
         while (!token.IsCancellationRequested)
         {
+            NamedPipeServerStream? server = null;
             try
             {
-                using var server = CreatePipeServer();
+                server = CreatePipeServer();
+                _pipeServer = server;
                 await server.WaitForConnectionAsync(token);
-                var args = await ReadForwardedArgumentsAsync(server, token);
                 failures = 0;
-                if (args != null) _ = Dispatcher.BeginInvoke(() => HandleArgs(CommandLine.Parse(args), startup: false));
-            }
-            catch (OperationCanceledException) when (token.IsCancellationRequested)
-            {
-                return;
             }
             catch (Exception ex)
             {
+                ClosePipeServer(server);
+                if (token.IsCancellationRequested) return;
                 ErrorLog.Write("Réception d'une ligne de commande", ex);
                 // The pipe cannot be created (name taken...): the Show event still works.
                 if (++failures >= 3) return;
@@ -301,8 +311,36 @@ public partial class App : Application
                 {
                     return;
                 }
+                continue;
+            }
+
+            try
+            {
+                var args = await ReadForwardedArgumentsAsync(server, token);
+                if (args != null) _ = Dispatcher.BeginInvoke(() => HandleArgs(CommandLine.Parse(args), startup: false));
+            }
+            catch (Exception ex) when (!token.IsCancellationRequested)
+            {
+                // One bad client (malformed or too long data, too slow, gone before the end): it is
+                // ignored and the next one is awaited; the pipe itself works.
+                ErrorLog.Write("Réception d'une ligne de commande", ex);
+            }
+            catch (Exception)
+            {
+                return;
+            }
+            finally
+            {
+                ClosePipeServer(server);
             }
         }
+    }
+
+    private void ClosePipeServer(NamedPipeServerStream? server)
+    {
+        if (server == null) return;
+        if (_pipeServer == server) _pipeServer = null;
+        server.Dispose();
     }
 
     /// <summary>Pipe only this user can open; FirstPipeInstance fails if another process already took the name.</summary>
@@ -316,6 +354,8 @@ public partial class App : Application
             PipeOptions.Asynchronous | PipeOptions.FirstPipeInstance, 0, 0, security);
     }
 
+    /// <returns>The arguments, or null if there are none or they are not a list of texts (e.g. "null", [null]).</returns>
+    /// <exception cref="Exception">Invalid JSON, too much data, or the client too slow (5 s).</exception>
     private static async Task<string[]?> ReadForwardedArgumentsAsync(Stream stream, CancellationToken token)
     {
         using var timeout = CancellationTokenSource.CreateLinkedTokenSource(token);
@@ -328,7 +368,14 @@ public partial class App : Application
             data.Write(chunk, 0, read);
             if (data.Length > MaxForwardedBytes) throw new InvalidDataException("Forwarded command line too long");
         }
-        return data.Length == 0 ? null : JsonSerializer.Deserialize<string[]>(data.ToArray());
+        if (data.Length == 0) return null;
+        var args = JsonSerializer.Deserialize<string?[]>(data.ToArray());
+        if (args == null || args.Any(a => a == null))
+        {
+            ErrorLog.Write("Réception d'une ligne de commande", "Arguments invalides, ignorés");
+            return null;
+        }
+        return Array.ConvertAll(args, a => a!);
     }
 
     public void RegisterHotkeys(bool showWarnings)
@@ -388,6 +435,21 @@ public partial class App : Application
         _workspace.Activate();
     }
 
+    private static bool IsAnimatedGif(string path)
+    {
+        if (!path.EndsWith(".gif", StringComparison.OrdinalIgnoreCase)) return false;
+        try
+        {
+            using var stream = File.OpenRead(path);
+            return new System.Windows.Media.Imaging.GifBitmapDecoder(stream, System.Windows.Media.Imaging.BitmapCreateOptions.DelayCreation,
+                System.Windows.Media.Imaging.BitmapCacheOption.None).Frames.Count > 1;
+        }
+        catch (Exception)
+        {
+            return false;
+        }
+    }
+
     public void OpenEditor(string path)
     {
         try
@@ -396,6 +458,12 @@ public partial class App : Application
             if (ImageIO.IsVideo(path))
             {
                 OpenPlayer(path);
+                return;
+            }
+            // The editor keeps a single frame: animated GIFs (exported from videos) open in the default viewer.
+            if (IsAnimatedGif(path))
+            {
+                if (!FileOps.OpenWithDefaultApp(path)) MessageBox.Show(Loc.T("App.OpenImageFailed", path), "Snaplume", MessageBoxButton.OK, MessageBoxImage.Error);
                 return;
             }
             if (Windows.OfType<EditorWindow>().FirstOrDefault(w => IsSamePath(w.FilePath, path)) is { } existing)
@@ -479,6 +547,9 @@ public partial class App : Application
         }
     }
 
+    /// <summary>QR codes and barcodes in an image file (gallery, editor).</summary>
+    public void ShowQr(string path) => Qr.QrService.ShowForFile(path);
+
     public void ShowSettings()
     {
         if (IsExiting) return;
@@ -495,8 +566,10 @@ public partial class App : Application
             if (_settingsWindow.ShowDialog() == true)
             {
                 var result = _settingsWindow.Result;
-                // The active workspace may have been changed from the tray menu meanwhile.
+                // The active workspace may have been changed from the tray menu meanwhile,
+                // and the OCR language from a text window: the dialog does not edit them.
                 result.ActiveWorkspace = Settings.ActiveWorkspace;
+                result.OcrLanguage = Settings.OcrLanguage;
                 result.Sanitize();
                 bool folderChanged = !string.Equals(Settings.WorkspaceFolder, result.WorkspaceFolder, StringComparison.OrdinalIgnoreCase);
                 bool languageChanged = Settings.Language != result.Language;
@@ -563,6 +636,13 @@ public partial class App : Application
             Videos.StopThen(() => ExitApp(restart));
             return;
         }
+        if (Captures is { IsBusy: true })
+        {
+            // Let the capture in progress stop cleanly first: countdown or selection cancelled, scrolling
+            // stopped with the mouse put back and the image saved; then quit.
+            Captures.StopThen(() => ExitApp(restart));
+            return;
+        }
         // Let editors ask about unsaved changes first.
         foreach (var editor in Windows.OfType<EditorWindow>().ToList())
         {
@@ -612,6 +692,9 @@ public partial class App : Application
         IsExiting = true;
         SystemEvents.SessionEnding -= OnSystemSessionEnding;
         _pipeCancel?.Cancel();
+        // Closed now, not when the listener wakes up (it may never run again): a restarted instance
+        // must be able to create the pipe while this process ends.
+        ClosePipeServer(_pipeServer);
         _showWait?.Unregister(null);
         _hotkeys?.Dispose();
         Tray?.Dispose();
@@ -661,12 +744,12 @@ public partial class App : Application
 }
 
 /// <summary>
-/// Command line: [--tray] [--capture region|screen|all|window|repeat|text] [--delay N]
+/// Command line: [--tray] [--capture region|screen|all|window|repeat|scrolling|text|qr] [--delay N]
 /// [--record region|screen] [--duration N] [--workspace name] [--exit] [--settings] [--window] [image to edit or video to play]
 /// </summary>
 /// <remarks>When Snaplume is already running, the command line is run by that instance ("--exit" is then ignored).</remarks>
 public sealed record CommandLine(bool Tray, CaptureKind? Capture, int DelaySeconds, bool Exit, string? EditPath,
-    string? Record, int DurationSeconds, bool Settings, bool Text, string? Workspace, bool Window = false)
+    string? Record, int DurationSeconds, bool Settings, bool Text, string? Workspace, bool Window = false, bool Qr = false)
 {
     /// <summary>Options followed by a value.</summary>
     private static readonly HashSet<string> ValueOptions = new(StringComparer.OrdinalIgnoreCase)
@@ -676,7 +759,7 @@ public sealed record CommandLine(bool Tray, CaptureKind? Capture, int DelaySecon
 
     public static CommandLine Parse(string[] args)
     {
-        bool tray = false, exit = false, settings = false, text = false, window = false;
+        bool tray = false, exit = false, settings = false, text = false, window = false, qr = false;
         CaptureKind? capture = null;
         int delay = 0, duration = 0;
         string? editPath = null, record = null, workspace = null;
@@ -695,6 +778,8 @@ public sealed record CommandLine(bool Tray, CaptureKind? Capture, int DelaySecon
                     switch (kind)
                     {
                         case "text": text = true; break;
+                        case "qr": qr = true; break;
+                        case "scrolling" or "scroll": capture = CaptureKind.Scrolling; break;
                         case "region": capture = CaptureKind.Region; break;
                         case "screen": capture = CaptureKind.Screen; break;
                         case "all": capture = CaptureKind.AllScreens; break;
@@ -724,7 +809,7 @@ public sealed record CommandLine(bool Tray, CaptureKind? Capture, int DelaySecon
                     break;
             }
         }
-        return new CommandLine(tray, capture, delay, exit, editPath, record, duration, settings, text, workspace, window);
+        return new CommandLine(tray, capture, delay, exit, editPath, record, duration, settings, text, workspace, window, qr);
     }
 
     /// <summary>The arguments with file paths made absolute, for the instance already running (other current folder).</summary>

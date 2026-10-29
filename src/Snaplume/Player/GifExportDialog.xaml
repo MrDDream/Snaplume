@@ -1,0 +1,50 @@
+<Window x:Class="Snaplume.Player.GifExportDialog"
+        xmlns="http://schemas.microsoft.com/winfx/2006/xaml/presentation"
+        xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+        xmlns:l="clr-namespace:Snaplume.Core"
+        Title="{l:T Player.Gif.Title}" Width="420" SizeToContent="Height" ResizeMode="NoResize"
+        WindowStartupLocation="CenterOwner" ShowInTaskbar="False" UseLayoutRounding="True" Background="{DynamicResource WindowBrush}" Foreground="{DynamicResource TextBrush}">
+    <Window.Resources>
+        <Style x:Key="Label" TargetType="TextBlock">
+            <Setter Property="FontWeight" Value="SemiBold" />
+            <Setter Property="Margin" Value="0,0,0,4" />
+        </Style>
+    </Window.Resources>
+    <StackPanel Margin="20,16,20,18">
+        <TextBlock Style="{StaticResource Label}" Text="{l:T Player.Gif.Range}" />
+        <ComboBox x:Name="RangeBox" DisplayMemberPath="Name" Padding="8,5,26,5" SelectionChanged="OnChanged" Margin="0,0,0,12" />
+
+        <Grid Margin="0,0,0,12">
+            <Grid.ColumnDefinitions>
+                <ColumnDefinition Width="*" />
+                <ColumnDefinition Width="16" />
+                <ColumnDefinition Width="*" />
+            </Grid.ColumnDefinitions>
+            <StackPanel>
+                <TextBlock Style="{StaticResource Label}" Text="{l:T Player.Gif.FramesPerSecond}" />
+                <TextBox x:Name="FpsBox" Padding="6,4" TextChanged="OnChanged" />
+            </StackPanel>
+            <StackPanel Grid.Column="2">
+                <TextBlock Style="{StaticResource Label}" Text="{l:T Player.Gif.Speed}" />
+                <ComboBox x:Name="SpeedBox" DisplayMemberPath="Name" Padding="8,5,26,5" SelectionChanged="OnChanged" />
+            </StackPanel>
+        </Grid>
+
+        <TextBlock Style="{StaticResource Label}" Text="{l:T Player.Gif.Width}" />
+        <DockPanel Margin="0,0,0,12">
+            <TextBlock x:Name="HeightText" DockPanel.Dock="Right" Foreground="{DynamicResource MutedTextBrush}" VerticalAlignment="Center" Margin="10,0,0,0" MinWidth="120" />
+            <TextBox x:Name="WidthBox" Padding="6,4" TextChanged="OnChanged" />
+        </DockPanel>
+
+        <CheckBox x:Name="LoopCheck" Content="{l:T Player.Gif.Loop}" IsChecked="True" Margin="0,0,0,6" />
+        <CheckBox x:Name="DitherCheck" Content="{l:T Player.Gif.Dither}" Margin="0,0,0,0" />
+
+        <TextBlock x:Name="SummaryText" Foreground="{DynamicResource MutedTextBrush}" TextWrapping="Wrap" Margin="0,12,0,0" />
+        <TextBlock x:Name="ErrorText" Foreground="{DynamicResource ErrorTextBrush}" Margin="0,8,0,0" Visibility="Collapsed" TextWrapping="Wrap" />
+
+        <StackPanel Orientation="Horizontal" HorizontalAlignment="Right" Margin="0,16,0,0">
+            <Button Content="{l:T Player.Gif.Export}" IsDefault="True" Padding="14,4" Click="OnOk" />
+            <Button Content="{l:T Common.Cancel}" IsCancel="True" Padding="14,4" Margin="8,0,0,0" />
+        </StackPanel>
+    </StackPanel>
+</Window>

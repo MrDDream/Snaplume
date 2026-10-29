@@ -6,6 +6,7 @@ using System.Windows.Input;
 using System.Windows.Media;
 using System.Windows.Threading;
 using Snaplume.Core;
+using Snaplume.Export;
 using WinForms = System.Windows.Forms;
 
 namespace Snaplume.Editor;
@@ -26,6 +27,17 @@ public partial class EditorWindow : Window
 
     private static readonly double[] Thicknesses = { 1, 2, 3, 4, 6, 8, 12, 16, 24 };
     private static readonly double[] FontSizes = { 10, 12, 14, 16, 20, 24, 32, 40, 48, 64, 80 };
+    /// <summary>Zoom factors of the magnifier offered in the properties bar.</summary>
+    private static readonly double[] LensZooms = { 1.5, 2, 2.5, 3, 4 };
+
+    /// <summary>Colors offered for the background of the image effects (files have no transparency).</summary>
+    private static readonly (Color Color, string Name)[] EffectBackgrounds =
+    {
+        (Colors.White, Loc.T("Editor.Color.White")),
+        (Color.FromRgb(0xF3, 0xF4, 0xF6), Loc.T("Effects.LightGray")),
+        (Color.FromRgb(0x1F, 0x29, 0x37), Loc.T("Effects.DarkGray")),
+        (Colors.Black, Loc.T("Editor.Color.Black")),
+    };
 
     /// <summary>Formats the export can write, the first one being the default.</summary>
     private static readonly string[] ExportExtensions = { ".png", ".jpg", ".bmp" };
@@ -45,6 +57,7 @@ public partial class EditorWindow : Window
         [Key.S] = EditorTool.Stamp,
         [Key.P] = EditorTool.Pen,
         [Key.C] = EditorTool.Crop,
+        [Key.M] = EditorTool.Magnifier,
     };
 
     /// <summary>Name and usage hint shown in the properties bar.</summary>
@@ -63,6 +76,7 @@ public partial class EditorWindow : Window
         [EditorTool.Spotlight] = (Loc.T("Editor.Tool.Spotlight"), Loc.T("Editor.Hint.Spotlight")),
         [EditorTool.Pixelate] = (Loc.T("Editor.Tool.Pixelate"), Loc.T("Editor.Hint.Pixelate")),
         [EditorTool.Crop] = (Loc.T("Editor.Tool.Crop"), Loc.T("Editor.Hint.Crop")),
+        [EditorTool.Magnifier] = (Loc.T("Editor.Tool.Magnifier"), Loc.T("Editor.Hint.Magnifier")),
     };
 
     private readonly EditorDocument _document;
@@ -87,6 +101,8 @@ public partial class EditorWindow : Window
         Loc.T("Editor.StepShape.Circle"), Loc.T("Editor.StepShape.Leader"), Loc.T("Editor.StepShape.Tail"),
         Loc.T("Editor.StepShape.Pin"), Loc.T("Editor.StepShape.Dark"),
     };
+    // Same order as the MagnifierShape enum.
+    private static readonly string[] LensShapeNames = { Loc.T("Editor.Lens.Circle"), Loc.T("Editor.Lens.RoundedRect") };
     private double _zoom = 1;
 
     private TextBox? _textEditor;
@@ -99,6 +115,15 @@ public partial class EditorWindow : Window
     private Annotation? _nudged;
     private long _nudgeVersion = -1;
 
+    // Moves of the same effect slider, with nothing else in between, make one undo step (see ChangeEffects).
+    private bool _syncingEffects;
+    private string? _effectsKey;
+    private long _effectsVersion = -1;
+    /// <summary>Effects shown in the panel (see <see cref="ShowEffects"/>); null when it must be filled again.</summary>
+    private ImageEffects? _shownEffects;
+    /// <summary>Last slider move not applied yet: the moves are applied once per idle moment, not at each tick.</summary>
+    private (string Slider, Func<ImageEffects, ImageEffects> Change)? _pendingSlider;
+
     public string FilePath => _document.FilePath;
 
     public EditorWindow(string path)
@@ -106,6 +131,7 @@ public partial class EditorWindow : Window
         InitializeComponent();
         _document = EditorDocument.Load(path);
         AnnotCanvas.Document = _document;
+        Backdrop.Document = _document;
 
         foreach (var (color, name) in Palette)
         {
@@ -115,6 +141,8 @@ public partial class EditorWindow : Window
         }
         foreach (var t in Thicknesses) ThicknessBox.Items.Add(t);
         foreach (var f in FontSizes) FontSizeBox.Items.Add(f);
+        foreach (var z in LensZooms) LensZoomBox.Items.Add(z.ToString("0.#", Loc.Culture) + " ×");
+        BuildEffectSwatches();
         SetCurrentColor(Palette[0].Color, applyToSelection: false);
         StampSizeText.Text = StampSizeSlider.Value.ToString("P0", Loc.Culture);
         BuildStampCatalog();
@@ -186,22 +214,29 @@ public partial class EditorWindow : Window
             _ => Loc.T("Editor.Thickness"),
         };
         Show(FontSection, kind == EditorTool.Text);
-        Show(FillSection, kind is EditorTool.Rectangle or EditorTool.Ellipse or EditorTool.Text or EditorTool.Step);
+        Show(LensZoomSection, kind == EditorTool.Magnifier);
+        Show(FillSection, kind is EditorTool.Rectangle or EditorTool.Ellipse or EditorTool.Text or EditorTool.Step or EditorTool.Magnifier);
         FillBox.Content = kind switch
         {
             EditorTool.Step => Loc.T("Editor.Letters"),
             EditorTool.Text => Loc.T("Editor.WhiteBackground"),
+            EditorTool.Magnifier => Loc.T("Editor.Connector"),
             _ => Loc.T("Editor.Fill"),
         };
-        Show(VariantSection, kind is EditorTool.Arrow or EditorTool.Step);
-        if (kind != _variantKind && kind is EditorTool.Arrow or EditorTool.Step)
+        Show(VariantSection, kind is EditorTool.Arrow or EditorTool.Step or EditorTool.Magnifier);
+        if (kind != _variantKind && kind is EditorTool.Arrow or EditorTool.Step or EditorTool.Magnifier)
         {
             _syncingUi = true;
             try
             {
                 _variantKind = kind;
                 VariantLabel.Text = kind == EditorTool.Arrow ? Loc.T("Editor.ArrowHeads") : Loc.T("Editor.Shape");
-                VariantBox.ItemsSource = kind == EditorTool.Arrow ? ArrowHeadNames : StepShapeNames;
+                VariantBox.ItemsSource = kind switch
+                {
+                    EditorTool.Arrow => ArrowHeadNames,
+                    EditorTool.Magnifier => LensShapeNames,
+                    _ => StepShapeNames,
+                };
             }
             finally
             {
@@ -226,6 +261,8 @@ public partial class EditorWindow : Window
             FillBox.IsChecked = _contextKind == EditorTool.Step ? style.Letters : style.Fill;
             if (_contextKind == EditorTool.Arrow) VariantBox.SelectedIndex = (int)style.Heads;
             else if (_contextKind == EditorTool.Step) VariantBox.SelectedIndex = (int)style.Shape;
+            else if (_contextKind == EditorTool.Magnifier) VariantBox.SelectedIndex = (int)style.Lens;
+            LensZoomBox.SelectedIndex = Array.IndexOf(LensZooms, style.Zoom);
         }
         finally
         {
@@ -278,14 +315,7 @@ public partial class EditorWindow : Window
 
     private void OnCustomColor(object sender, RoutedEventArgs e)
     {
-        var current = AnnotCanvas.CurrentStyle.Color;
-        using var dialog = new WinForms.ColorDialog
-        {
-            FullOpen = true,
-            Color = System.Drawing.Color.FromArgb(current.R, current.G, current.B),
-        };
-        if (dialog.ShowDialog() == WinForms.DialogResult.OK)
-            SetCurrentColor(Color.FromRgb(dialog.Color.R, dialog.Color.G, dialog.Color.B), applyToSelection: true);
+        if (PickColor(AnnotCanvas.CurrentStyle.Color) is Color color) SetCurrentColor(color, applyToSelection: true);
     }
 
     private void OnThicknessChanged(object sender, SelectionChangedEventArgs e)
@@ -309,6 +339,15 @@ public partial class EditorWindow : Window
         int index = VariantBox.SelectedIndex;
         if (_contextKind == EditorTool.Arrow) ChangeStyle(s => s with { Heads = (ArrowHeads)index });
         else if (_contextKind == EditorTool.Step) ChangeStyle(s => s with { Shape = (StepShape)index });
+        else if (_contextKind == EditorTool.Magnifier) ChangeStyle(s => s with { Lens = (MagnifierShape)index });
+        AnnotCanvas.Focus();
+    }
+
+    private void OnLensZoomChanged(object sender, SelectionChangedEventArgs e)
+    {
+        if (!_ready || _syncingUi || LensZoomBox.SelectedIndex < 0) return;
+        double zoom = LensZooms[LensZoomBox.SelectedIndex];
+        ChangeStyle(s => s with { Zoom = zoom });
         AnnotCanvas.Focus();
     }
 
@@ -388,6 +427,7 @@ public partial class EditorWindow : Window
         [EditorTool.Text] = Loc.T("Preset.Title.Text"),
         [EditorTool.Step] = Loc.T("Preset.Title.Step"),
         [EditorTool.Highlight] = Loc.T("Preset.Title.Highlight"),
+        [EditorTool.Magnifier] = Loc.T("Preset.Title.Magnifier"),
     };
 
     /// <summary>A mouse click on a tool button shows its presets (keyboard shortcuts do not).</summary>
@@ -545,8 +585,16 @@ public partial class EditorWindow : Window
             _ => Loc.T("Editor.Info.Annotations", count),
         };
         InfoText.Text = Loc.T("Editor.Info.Size", image.PixelWidth, image.PixelHeight) + "   •   " + annotations
-                        + (_document.IsDirty ? "   •   " + Loc.T("Editor.Info.Modified") : "");
+                        + (_document.IsDirty ? "   •   " + Loc.T("Editor.Info.Modified") : "")
+                        + (_document.PreviewShadowFailed ? "   •   " + Loc.T("Effects.ShadowUnavailable") : "");
         Title = (_document.IsDirty ? "• " : "") + Loc.T("Editor.WindowTitle", Path.GetFileName(_document.FilePath));
+        // The image keeps its coordinates; the effects add margins around it.
+        var margin = Backdrop.ImageMargin;
+        if (ImageLayer.Margin != margin) ImageLayer.Margin = margin;
+        // The shadow of the effects replaces the decorative one of the page.
+        var page = _document.PreviewLayout?.Effects.Shadow == true ? Visibility.Collapsed : Visibility.Visible;
+        if (ImagePage.Visibility != page) ImagePage.Visibility = page;
+        if (EffectsPopup.IsOpen) ShowEffects();
         bool deleteShown = DeleteSection.Visibility == Visibility.Visible;
         if (deleteShown != hasSelection) UpdateContext();
     }
@@ -573,6 +621,13 @@ public partial class EditorWindow : Window
             Padding = new Thickness(0),
             AcceptsReturn = true,
             MinWidth = 80,
+            // Arabic or Hebrew text is typed right to left, as it will be drawn (see TextAnnotation.DirectionOf).
+            FlowDirection = TextAnnotation.DirectionOf(text.Text),
+        };
+        box.TextChanged += (_, _) =>
+        {
+            var direction = TextAnnotation.DirectionOf(box.Text);
+            if (box.FlowDirection != direction) box.FlowDirection = direction;
         };
         box.SetResourceReference(BorderBrushProperty, "AccentBrush");
         Canvas.SetLeft(box, text.Position.X + TextAnnotation.Pad - 3);
@@ -630,12 +685,206 @@ public partial class EditorWindow : Window
         else _document.NotifyChanged();
     }
 
+    // ---- Image effects ----
+
+    private void BuildEffectSwatches()
+    {
+        foreach (var (color, name) in Palette.Append((Color.FromRgb(0x9C, 0xA3, 0xAF), Loc.T("Effects.Gray"))))
+            BorderColors.Children.Add(CreateEffectSwatch(color, name, c => e => e with { Border = true, BorderColor = c }));
+        BorderColors.Children.Add(CreateCustomColorButton(nameof(ImageEffects.BorderColor),
+            () => _document.Effects.BorderColor, c => e => e with { Border = true, BorderColor = c }));
+        foreach (var (color, name) in EffectBackgrounds)
+            BackgroundColors.Children.Add(CreateEffectSwatch(color, name, c => e => e with { Background = c }));
+        BackgroundColors.Children.Add(CreateCustomColorButton(nameof(ImageEffects.Background),
+            () => _document.Effects.Background, c => e => e with { Background = c }));
+    }
+
+    private Button CreateEffectSwatch(Color color, string name, Func<Color, Func<ImageEffects, ImageEffects>> change)
+    {
+        var swatch = new Button { Style = (Style)FindResource("SwatchButton"), Background = new SolidColorBrush(color), ToolTip = name };
+        swatch.Click += (_, _) => ChangeEffects(null, change(color));
+        return swatch;
+    }
+
+    /// <summary>Round button showing the current color; it opens the color dialog.</summary>
+    private Button CreateCustomColorButton(string tag, Func<Color> current, Func<Color, Func<ImageEffects, ImageEffects>> change)
+    {
+        var dot = new Border { Width = 20, Height = 20, CornerRadius = new CornerRadius(10), BorderThickness = new Thickness(1.5), Tag = tag };
+        dot.SetResourceReference(Border.BorderBrushProperty, "MutedTextBrush");
+        var button = new Button
+        {
+            Style = (Style)FindResource("FlatButton"),
+            Padding = new Thickness(2),
+            Margin = new Thickness(4, 0, 0, 0),
+            ToolTip = Loc.T("Effects.CustomColorTip"),
+            Content = dot,
+        };
+        button.Click += (_, _) =>
+        {
+            // The dialog closes the panel: it is shown again with the new color.
+            if (PickColor(current()) is Color color) ChangeEffects(null, change(color));
+            EffectsButton.IsChecked = true;
+        };
+        return button;
+    }
+
+    private static Color? PickColor(Color current)
+    {
+        using var dialog = new WinForms.ColorDialog
+        {
+            FullOpen = true,
+            Color = System.Drawing.Color.FromArgb(current.R, current.G, current.B),
+        };
+        return dialog.ShowDialog() == WinForms.DialogResult.OK ? Color.FromRgb(dialog.Color.R, dialog.Color.G, dialog.Color.B) : null;
+    }
+
+    private void OnEffectsOpen(object sender, RoutedEventArgs e)
+    {
+        EndTextEdit();
+        AnnotCanvas.CancelOperation();
+        PresetPopup.IsOpen = false;
+        ShowEffects();
+        EffectsPopup.IsOpen = true;
+    }
+
+    private void OnEffectsClosed(object? sender, EventArgs e)
+    {
+        ApplyPendingSlider();
+        EffectsButton.IsChecked = false;
+        _effectsKey = null;
+    }
+
+    /// <summary>A slider released: its last move is applied, its next move starts a new undo step.</summary>
+    private void OnEffectsMouseUp(object sender, MouseButtonEventArgs e)
+    {
+        ApplyPendingSlider();
+        _effectsKey = null;
+    }
+
+    /// <summary>Shows the effects of the document in the panel (also after an undo); nothing to do when they are already shown.</summary>
+    private void ShowEffects()
+    {
+        var effects = _document.Effects;
+        if (effects == _shownEffects) return;
+        var shown = _shownEffects;
+        _shownEffects = effects;
+        _syncingEffects = true;
+        try
+        {
+            ShadowCheck.IsChecked = effects.Shadow;
+            ShadowBlurSlider.Value = effects.ShadowBlur;
+            ShadowOpacitySlider.Value = effects.ShadowOpacity * 100;
+            ShadowOffsetSlider.Value = (effects.ShadowOffsetX + effects.ShadowOffsetY) / 2;
+            BorderCheck.IsChecked = effects.Border;
+            BorderWidthSlider.Value = effects.BorderWidth;
+            CornerSlider.Value = effects.CornerRadius;
+            TornTopCheck.IsChecked = effects.TornEdges.HasFlag(TornEdges.Top);
+            TornBottomCheck.IsChecked = effects.TornEdges.HasFlag(TornEdges.Bottom);
+            TornLeftCheck.IsChecked = effects.TornEdges.HasFlag(TornEdges.Left);
+            TornRightCheck.IsChecked = effects.TornEdges.HasFlag(TornEdges.Right);
+            TornSizeSlider.Value = effects.TornSize;
+
+            ShadowBlurText.Text = Pixels(effects.ShadowBlur);
+            ShadowOpacityText.Text = effects.ShadowOpacity.ToString("P0", Loc.Culture);
+            ShadowOffsetText.Text = Pixels((effects.ShadowOffsetX + effects.ShadowOffsetY) / 2);
+            BorderWidthText.Text = Pixels(effects.BorderWidth);
+            CornerText.Text = Pixels(effects.CornerRadius);
+            TornSizeText.Text = Pixels(effects.TornSize);
+            if (shown == null || shown.BorderColor != effects.BorderColor || shown.Background != effects.Background)
+            {
+                foreach (var dot in new[] { BorderColors, BackgroundColors }.SelectMany(p => p.Children.OfType<Button>()).Select(b => b.Content).OfType<Border>())
+                {
+                    dot.Background = new SolidColorBrush((string)dot.Tag == nameof(ImageEffects.BorderColor) ? effects.BorderColor : effects.Background);
+                }
+            }
+        }
+        finally
+        {
+            _syncingEffects = false;
+        }
+    }
+
+    private static string Pixels(double value) => Loc.T("Effects.Pixels", Math.Round(value));
+
+    /// <summary>
+    /// Applies a change of the effects to the document, shown at once. One undo step per change; the moves of
+    /// the same slider during one drag (<paramref name="sliderKey"/>) amend the same step.
+    /// </summary>
+    private void ChangeEffects(string? sliderKey, Func<ImageEffects, ImageEffects> change)
+    {
+        if (!_ready || _syncingEffects) return;
+        // A slider move still waiting comes first: changes are applied in the order they were made.
+        if (sliderKey == null) ApplyPendingSlider();
+        EndTextEdit();
+        AnnotCanvas.CancelOperation();
+        var current = _document.Effects;
+        var updated = change(current);
+        if (updated == current) return;
+        bool amend = sliderKey != null && sliderKey == _effectsKey && _document.Version == _effectsVersion;
+        _document.SetEffects(updated, amend);
+        _effectsKey = sliderKey;
+        _effectsVersion = _document.Version;
+    }
+
+    private void OnEffectsSlider(object sender, RoutedPropertyChangedEventArgs<double> e)
+    {
+        if (!_ready || _syncingEffects || sender is not Slider slider) return;
+        double v = Math.Round(e.NewValue);
+        Func<ImageEffects, ImageEffects>? change = slider.Name switch
+        {
+            nameof(ShadowBlurSlider) => fx => fx with { Shadow = true, ShadowBlur = v },
+            nameof(ShadowOpacitySlider) => fx => fx with { Shadow = true, ShadowOpacity = v / 100 },
+            nameof(ShadowOffsetSlider) => fx => fx with { Shadow = true, ShadowOffsetX = v, ShadowOffsetY = v },
+            nameof(BorderWidthSlider) => fx => fx with { Border = true, BorderWidth = v },
+            nameof(CornerSlider) => fx => fx with { CornerRadius = v },
+            nameof(TornSizeSlider) => fx => fx with { TornSize = v },
+            _ => null,
+        };
+        if (change == null) return;
+        // A drag sends many ticks: only the last one waiting is applied, once the window has drawn the previous one.
+        if (_pendingSlider is { } pending && pending.Slider != slider.Name) ApplyPendingSlider();
+        bool scheduled = _pendingSlider != null;
+        _pendingSlider = (slider.Name, change);
+        if (!scheduled) Dispatcher.BeginInvoke(DispatcherPriority.Background, ApplyPendingSlider);
+    }
+
+    private void ApplyPendingSlider()
+    {
+        if (_pendingSlider is not { } pending) return;
+        _pendingSlider = null;
+        ChangeEffects(pending.Slider, pending.Change);
+    }
+
+    private void OnEffectsCheck(object sender, RoutedEventArgs e)
+    {
+        if (!_ready || _syncingEffects) return;
+        var torn = (TornTopCheck.IsChecked == true ? TornEdges.Top : TornEdges.None)
+                   | (TornBottomCheck.IsChecked == true ? TornEdges.Bottom : TornEdges.None)
+                   | (TornLeftCheck.IsChecked == true ? TornEdges.Left : TornEdges.None)
+                   | (TornRightCheck.IsChecked == true ? TornEdges.Right : TornEdges.None);
+        bool shadow = ShadowCheck.IsChecked == true, border = BorderCheck.IsChecked == true;
+        ChangeEffects(null, fx => fx with { Shadow = shadow, Border = border, TornEdges = torn });
+    }
+
+    /// <summary>Draws other teeth for the torn edges.</summary>
+    private void OnTornReseed(object sender, RoutedEventArgs e) =>
+        ChangeEffects(null, fx => fx with
+        {
+            TornSeed = fx.TornSeed == int.MaxValue ? 1 : fx.TornSeed + 1,
+            TornEdges = fx.TornEdges == TornEdges.None ? TornEdges.Bottom : fx.TornEdges,
+        });
+
+    /// <summary>"None": every effect off, their settings kept for this session.</summary>
+    private void OnEffectsNone(object sender, RoutedEventArgs e) =>
+        ChangeEffects(null, fx => fx with { Shadow = false, Border = false, CornerRadius = 0, TornEdges = TornEdges.None });
+
     // ---- Commands ----
 
     private void OnSave(object sender, RoutedEventArgs e) => Save();
 
     private bool Save()
     {
+        ApplyPendingSlider();
         EndTextEdit();
         try
         {
@@ -666,6 +915,12 @@ public partial class EditorWindow : Window
             // The clipboard stayed locked by another application.
             ErrorLog.Write("Copie dans le presse-papiers", ex);
             MessageBox.Show(this, Loc.T("Editor.CopyError"), "Snaplume", MessageBoxButton.OK, MessageBoxImage.Warning);
+        }
+        catch (Exception ex)
+        {
+            // Image too big with its margins, not enough memory...
+            ErrorLog.Write("Copie dans le presse-papiers", ex);
+            MessageBox.Show(this, Loc.T("Editor.CopyFailed", ex.Message), "Snaplume", MessageBoxButton.OK, MessageBoxImage.Error);
         }
     }
 
@@ -710,11 +965,61 @@ public partial class EditorWindow : Window
         }
     }
 
+    private void OnPrint(object sender, RoutedEventArgs e) => Print();
+
+    /// <summary>Prints the image as it is now, annotations and effects included.</summary>
+    private void Print()
+    {
+        EndTextEdit();
+        AnnotCanvas.CancelOperation();
+        try
+        {
+            // Rendered before the print dialog, even if it is cancelled: the orientation of the page comes from
+            // the size of the image (ShareService.Print takes the image itself).
+            ShareService.Print(this, _document.Flatten(), Path.GetFileName(_document.FilePath));
+        }
+        catch (Exception ex)
+        {
+            ErrorLog.Write("Impression", ex);
+            MessageBox.Show(this, Loc.T("Editor.PrintError", ex.Message), "Snaplume", MessageBoxButton.OK, MessageBoxImage.Error);
+        }
+    }
+
+    /// <summary>Sends the capture file by e-mail, saved first if the user wants the changes in it.</summary>
+    private void OnEmail(object sender, RoutedEventArgs e)
+    {
+        EndTextEdit();
+        AnnotCanvas.CancelOperation();
+        if (_document.IsDirty)
+        {
+            var answer = MessageBox.Show(this, Loc.T("Editor.SaveBeforeEmailQuestion"), "Snaplume",
+                MessageBoxButton.YesNoCancel, MessageBoxImage.Question);
+            if (answer == MessageBoxResult.Cancel || (answer == MessageBoxResult.Yes && !Save())) return;
+        }
+        try
+        {
+            ShareService.Email(this, new[] { _document.FilePath });
+        }
+        catch (Exception ex)
+        {
+            ErrorLog.Write("Envoi par e-mail", ex);
+            MessageBox.Show(this, Loc.T("Editor.EmailError", ex.Message), "Snaplume", MessageBoxButton.OK, MessageBoxImage.Error);
+        }
+    }
+
     /// <summary>Text of the image as it is now, annotations included.</summary>
     private void OnReadText(object sender, RoutedEventArgs e)
     {
         EndTextEdit();
-        App.Instance.ShowOcr(_document.Flatten());
+        try
+        {
+            App.Instance.ShowOcr(_document.Flatten());
+        }
+        catch (Exception ex)
+        {
+            ErrorLog.Write("OCR de l'image modifiée", ex);
+            MessageBox.Show(this, Loc.T("Editor.ReadTextError", ex.Message), "Snaplume", MessageBoxButton.OK, MessageBoxImage.Error);
+        }
     }
 
     private void OnResize(object sender, RoutedEventArgs e) => Resize();
@@ -723,8 +1028,7 @@ public partial class EditorWindow : Window
     {
         EndTextEdit();
         AnnotCanvas.CancelOperation();
-        var image = _document.BaseImage;
-        var dialog = new ResizeDialog(this, image.PixelWidth, image.PixelHeight);
+        var dialog = new ResizeDialog(this, _document);
         if (dialog.ShowDialog() != true) return;
         try
         {
@@ -747,6 +1051,7 @@ public partial class EditorWindow : Window
 
     private void Undo()
     {
+        ApplyPendingSlider();
         EndTextEdit();
         // During a drawing or a drag, undo only cancels it.
         if (AnnotCanvas.CancelOperation()) return;
@@ -755,6 +1060,7 @@ public partial class EditorWindow : Window
 
     private void Redo()
     {
+        ApplyPendingSlider();
         EndTextEdit();
         AnnotCanvas.CancelOperation();
         _document.Redo();
@@ -812,6 +1118,7 @@ public partial class EditorWindow : Window
                 case Key.Y: Redo(); break;
                 case Key.C: Copy(); break;
                 case Key.R: Resize(); break;
+                case Key.P: Print(); break;
                 case Key.D0 or Key.NumPad0: SetZoom(1); break;
                 case Key.OemPlus or Key.Add: SetZoom(_zoom * 1.25); break;
                 case Key.OemMinus or Key.Subtract: SetZoom(_zoom / 1.25); break;
@@ -838,6 +1145,11 @@ public partial class EditorWindow : Window
                 if (PresetPopup.IsOpen)
                 {
                     PresetPopup.IsOpen = false;
+                    break;
+                }
+                if (EffectsPopup.IsOpen)
+                {
+                    EffectsPopup.IsOpen = false;
                     break;
                 }
                 if (AnnotCanvas.CancelOperation()) break;
@@ -877,10 +1189,11 @@ public partial class EditorWindow : Window
     private void ZoomToFit(bool onlyShrink)
     {
         double dpi = VisualTreeHelper.GetDpi(this).DpiScaleX;
-        var image = _document.BaseImage;
+        // The whole result, margins of the effects included.
+        var size = _document.OutputSize;
         double availableWidth = Math.Max(50, Scroller.ActualWidth - 72);
         double availableHeight = Math.Max(50, Scroller.ActualHeight - 72);
-        double fit = Math.Min(availableWidth * dpi / image.PixelWidth, availableHeight * dpi / image.PixelHeight);
+        double fit = Math.Min(availableWidth * dpi / size.Width, availableHeight * dpi / size.Height);
         SetZoom(onlyShrink ? Math.Min(1, fit) : fit);
     }
 

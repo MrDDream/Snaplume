@@ -47,7 +47,7 @@ public partial class QuickPanel : CaptureHostWindow
     protected override void UpdateState()
     {
         EditButton.IsEnabled = CopyButton.IsEnabled = Gallery.SelectedCount > 0;
-        ReadTextButton.IsEnabled = Gallery.SelectedPaths.Any(ImageIO.IsImage);
+        ReadTextButton.IsEnabled = ReadQrButton.IsEnabled = Gallery.SelectedPaths.Any(ImageIO.IsImage);
         if (!IsShowingMessage) SummaryText.Text = Gallery.SummaryText;
     }
 
@@ -109,6 +109,9 @@ public partial class QuickPanel : CaptureHostWindow
     private void OnEdit(object sender, RoutedEventArgs e) => Gallery.EditSelection();
     private void OnCopy(object sender, RoutedEventArgs e) => Gallery.CopySelection();
     private void OnReadText(object sender, RoutedEventArgs e) => Gallery.ReadTextOfSelection();
+
+    /// <summary>QR codes and barcodes of the first selected image.</summary>
+    private void OnReadQrOfSelection(object sender, RoutedEventArgs e) => Gallery.ReadQrOfSelection();
 
     private void OnOpenWorkspace(object sender, RoutedEventArgs e)
     {

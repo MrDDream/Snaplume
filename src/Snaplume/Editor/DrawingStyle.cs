@@ -6,9 +6,11 @@ namespace Snaplume.Editor;
 /// <summary>
 /// Style settings of the drawing tools. Each annotation kind only uses some of them:
 /// <see cref="Fill"/> is the fill of rectangles and ellipses or the white background of texts,
-/// <see cref="Heads"/> is for arrows, <see cref="Shape"/> and <see cref="Letters"/> for numbered bullets.
+/// <see cref="Heads"/> is for arrows, <see cref="Shape"/> and <see cref="Letters"/> for numbered bullets,
+/// <see cref="Zoom"/> and <see cref="Lens"/> for magnifiers (whose connector line is <see cref="Fill"/>).
 /// </summary>
-public sealed record DrawingStyle(Color Color, double Thickness, bool Fill, double FontSize, ArrowHeads Heads, StepShape Shape, bool Letters)
+public sealed record DrawingStyle(Color Color, double Thickness, bool Fill, double FontSize, ArrowHeads Heads, StepShape Shape, bool Letters,
+    double Zoom = 2, MagnifierShape Lens = MagnifierShape.Circle)
 {
     public static readonly DrawingStyle Default = new(Colors.Red, 4, false, 24, ArrowHeads.End, StepShape.Circle, false);
 
@@ -38,6 +40,12 @@ public sealed record DrawingStyle(Color Color, double Thickness, bool Fill, doub
                 step.Letters = Letters;
                 step.EnsureTarget(area);
                 break;
+            case MagnifierAnnotation magnifier:
+                magnifier.Zoom = Zoom;
+                magnifier.LensShape = Lens;
+                magnifier.Connector = Fill;
+                magnifier.MakeSquare();
+                break;
         }
     }
 
@@ -56,6 +64,7 @@ public sealed record DrawingStyle(Color Color, double Thickness, bool Fill, doub
             EllipseAnnotation ellipse => style with { Fill = ellipse.Filled },
             TextAnnotation text => style with { Fill = text.HasBackground, FontSize = text.FontSize },
             StepAnnotation step => style with { Shape = step.Shape, Letters = step.Letters },
+            MagnifierAnnotation magnifier => style with { Zoom = magnifier.Zoom, Lens = magnifier.LensShape, Fill = magnifier.Connector },
             _ => style,
         };
     }
@@ -70,6 +79,7 @@ public sealed record DrawingStyle(Color Color, double Thickness, bool Fill, doub
             EditorTool.Rectangle or EditorTool.Ellipse => style with { Fill = source.Fill },
             EditorTool.Text => style with { Fill = source.Fill, FontSize = source.FontSize },
             EditorTool.Step => style with { Shape = source.Shape, Letters = source.Letters },
+            EditorTool.Magnifier => style with { Zoom = source.Zoom, Lens = source.Lens, Fill = source.Fill },
             _ => style,
         };
     }

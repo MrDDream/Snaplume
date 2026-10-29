@@ -119,6 +119,18 @@
                             <TextBlock Style="{StaticResource ButtonLabel}" Text="{l:T Ocr.TextButton}" />
                         </StackPanel>
                     </Button>
+                    <Button Style="{StaticResource FlatButton}" Click="OnCaptureScrolling" ToolTip="{l:T Workspace.ScrollingTip}">
+                        <StackPanel Orientation="Horizontal">
+                            <Path Style="{StaticResource Icon}" Data="{StaticResource IconScroll}" />
+                            <TextBlock Style="{StaticResource ButtonLabel}" Text="{l:T Workspace.Scrolling}" />
+                        </StackPanel>
+                    </Button>
+                    <Button Style="{StaticResource FlatButton}" Click="OnReadQr" ToolTip="{l:T Workspace.QrTip}">
+                        <StackPanel Orientation="Horizontal">
+                            <Path Style="{StaticResource Icon}" Data="{StaticResource IconQr}" />
+                            <TextBlock Style="{StaticResource ButtonLabel}" Text="{l:T Workspace.Qr}" />
+                        </StackPanel>
+                    </Button>
 
                     <Rectangle Style="{StaticResource ToolbarSeparator}" />
 

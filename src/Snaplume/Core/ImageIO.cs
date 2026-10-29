@@ -110,13 +110,46 @@ public static class ImageIO
 
 public static class ClipboardHelper
 {
-    public static void SetImage(BitmapSource image)
+    /// <param name="png">The image already encoded by <see cref="ImageIO.ToPng"/> (e.g. in the background), else encoded here.</param>
+    public static void SetImage(BitmapSource image, MemoryStream? png = null)
     {
         var data = new DataObject();
         data.SetImage(new FormatConvertedBitmap(image, PixelFormats.Bgr32, null, 0));
         // PNG flavour for applications that support it (keeps exact colors).
-        data.SetData("PNG", ImageIO.ToPng(image), false);
+        data.SetData("PNG", png ?? ImageIO.ToPng(image), false);
         SetWithRetry(data);
+    }
+
+    /// <summary>Copies the text; a clipboard held by another application is logged, not thrown.</summary>
+    /// <returns>False if the text could not be copied.</returns>
+    public static bool TrySetText(string text)
+    {
+        try
+        {
+            SetText(text);
+            return true;
+        }
+        catch (Exception ex)
+        {
+            ErrorLog.Write("Copie du texte", ex);
+            return false;
+        }
+    }
+
+    /// <summary>Copies the image; a clipboard held by another application is logged, not thrown.</summary>
+    /// <returns>False if the image could not be copied.</returns>
+    public static bool TrySetImage(BitmapSource image, MemoryStream? png = null)
+    {
+        try
+        {
+            SetImage(image, png);
+            return true;
+        }
+        catch (Exception ex)
+        {
+            ErrorLog.Write("Copie de l'image", ex);
+            return false;
+        }
     }
 
     public static void SetFiles(IEnumerable<string> paths)

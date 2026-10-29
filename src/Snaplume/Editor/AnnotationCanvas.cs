@@ -1,12 +1,14 @@
 using System.Windows;
 using System.Windows.Input;
 using System.Windows.Media;
+using static Snaplume.Editor.Freezables;
 
 namespace Snaplume.Editor;
 
 public enum EditorTool
 {
-    Select, Arrow, Line, Rectangle, Ellipse, Text, Highlight, Pixelate, Spotlight, Step, Stamp, Pen, Crop,
+    // New tools go at the end: older presets.json files may store tools as numbers.
+    Select, Arrow, Line, Rectangle, Ellipse, Text, Highlight, Pixelate, Spotlight, Step, Stamp, Pen, Crop, Magnifier,
 }
 
 /// <summary>
@@ -59,7 +61,9 @@ public sealed class AnnotationCanvas : FrameworkElement
     {
         Focusable = true;
         FocusVisualStyle = null;
-        ClipToBounds = true;
+        // The image and its annotations are clipped while rendering; the selection handles may stick out
+        // into the margins of the effects, so that the handles at the edges of the image stay usable.
+        ClipToBounds = false;
         Cursor = Cursors.Arrow;
     }
 
@@ -171,22 +175,29 @@ public sealed class AnnotationCanvas : FrameworkElement
         if (_document == null) return;
         var image = _document.BaseImage;
         var bounds = new Rect(0, 0, image.PixelWidth, image.PixelHeight);
+        // Rounded corners and torn edges cut the image and its annotations, as in the saved image;
+        // the margins and the shadow are drawn around the canvas by EffectsBackdrop. The layout is
+        // built by the document when it changes, not here.
+        var effects = _document.PreviewLayout;
+        dc.PushClip(new RectangleGeometry(bounds));
+        effects?.PushOutline(dc);
         dc.DrawImage(image, bounds);
 
         var annotations = _document.Annotations;
         var active = ActiveAnnotation();
-        if (active is SpotlightAnnotation)
+        if (NeedsLiveRendering(active))
         {
-            // The shared shade follows the spotlight being drawn: everything is drawn live.
             AnnotationRenderer.Render(dc, image, annotations, 0, annotations.Count, _editingText);
         }
         else
         {
             var (below, above) = UpdateLayers(active);
             dc.DrawDrawing(below);
-            active?.Render(dc, image);
+            if (active != null) AnnotationRenderer.RenderOne(dc, image, annotations, active, _editingText);
             dc.DrawDrawing(above);
         }
+        effects?.PopOutline(dc);
+        effects?.DrawBorder(dc);
 
         if (_mode == DragMode.Crop && _cropRect is Rect crop)
         {
@@ -197,9 +208,29 @@ public sealed class AnnotationCanvas : FrameworkElement
             _cropPen ??= Frozen(new Pen(Brushes.White, 1 / _viewScale) { DashStyle = DashStyles.Dash });
             dc.DrawRectangle(null, _cropPen, crop);
         }
+        dc.Pop();
 
         if (_selected != null && !ReferenceEquals(_selected, _editingText) && annotations.Contains(_selected))
             DrawSelection(dc, _selected);
+    }
+
+    /// <summary>
+    /// The annotation being drawn or dragged changes others, so everything is drawn live instead of from the
+    /// recorded layers: the shared shade follows a spotlight, and a lens shows the pixelated areas and the
+    /// annotations below it.
+    /// </summary>
+    private bool NeedsLiveRendering(Annotation? active)
+    {
+        if (active == null) return false;
+        if (active is SpotlightAnnotation) return true;
+        var annotations = _document!.Annotations;
+        int index = annotations.IndexOf(active);
+        for (int i = 0; i < annotations.Count; i++)
+        {
+            if (annotations[i] is MagnifierAnnotation && (i > index || active is PixelateAnnotation) && !ReferenceEquals(annotations[i], active))
+                return true;
+        }
+        return false;
     }
 
     /// <summary>Annotation drawn live because the mouse changes it.</summary>
@@ -291,7 +322,11 @@ public sealed class AnnotationCanvas : FrameworkElement
                     return;
                 }
                 SetSelected(hit);
-                if (hit != null) BeginDrag(DragMode.Move, p);
+                if (hit != null)
+                {
+                    hit.BeginMove(p);
+                    BeginDrag(DragMode.Move, p);
+                }
                 break;
 
             case EditorTool.Text:
@@ -322,6 +357,7 @@ public sealed class AnnotationCanvas : FrameworkElement
                 {
                     // Clicking an existing stamp moves it instead of stacking a new one.
                     SetSelected(existingStamp);
+                    existingStamp.BeginMove(p);
                     BeginDrag(DragMode.Move, p);
                     break;
                 }
@@ -331,6 +367,13 @@ public sealed class AnnotationCanvas : FrameworkElement
                 var stamp = new StampAnnotation { StampId = definition.Id, Start = p - size / 2, End = p + size / 2 };
                 _document.Annotations.Add(stamp);
                 SetSelected(stamp);
+                break;
+
+            case EditorTool.Magnifier when HitTestAll(p) is MagnifierAnnotation existingMagnifier:
+                // Clicking a magnifier moves its lens or its area instead of drawing a new one.
+                SetSelected(existingMagnifier);
+                existingMagnifier.BeginMove(p);
+                BeginDrag(DragMode.Move, p);
                 break;
 
             case EditorTool.Crop:
@@ -384,7 +427,10 @@ public sealed class AnnotationCanvas : FrameworkElement
                 break;
 
             case DragMode.Create when _creating is TwoPointAnnotation shape:
-                shape.End = shift ? Constrain(shape.Start, p, shape is LineAnnotation) : p;
+                // A circle magnifier always takes a square area.
+                bool square = shift || shape is MagnifierAnnotation { LensShape: MagnifierShape.Circle };
+                shape.End = square ? Constrain(shape.Start, p, shape is LineAnnotation) : p;
+                if (shape is MagnifierAnnotation magnifier) magnifier.PlaceLens(ImageArea);
                 break;
 
             case DragMode.Crop:
@@ -448,6 +494,8 @@ public sealed class AnnotationCanvas : FrameworkElement
         return created switch
         {
             FreehandAnnotation f => f.Points.Count < 2,
+            // The lens shows whole pixels: at least 2 of them each way.
+            MagnifierAnnotation m => (m.End - m.Start).Length < min || m.GetRect().Width < 2 || m.GetRect().Height < 2,
             // Less than a pixel high or wide would be invisible.
             BoxAnnotation b => (b.End - b.Start).Length < min || b.GetRect().Width < 1 || b.GetRect().Height < 1,
             TwoPointAnnotation t => (t.End - t.Start).Length < min,
@@ -488,11 +536,13 @@ public sealed class AnnotationCanvas : FrameworkElement
             EditorTool.Pixelate => new PixelateAnnotation(),
             EditorTool.Spotlight => new SpotlightAnnotation(),
             EditorTool.Pen => new FreehandAnnotation(),
+            EditorTool.Magnifier => new MagnifierAnnotation(),
             _ => null,
         };
         if (annotation == null) return null;
         CurrentStyle.ApplyTo(annotation);
         if (annotation is TwoPointAnnotation shape) shape.Start = shape.End = p;
+        if (annotation is MagnifierAnnotation magnifier) magnifier.LensCenter = p;
         if (annotation is FreehandAnnotation freehand) freehand.Points.Add(p);
         return annotation;
     }
@@ -538,6 +588,7 @@ public sealed class AnnotationCanvas : FrameworkElement
         Cursor cursor;
         if (_selected != null && _tool != EditorTool.Crop && HitHandle(_selected, p) >= 0) cursor = Cursors.Hand;
         else if (_tool == EditorTool.Select && HitTestAll(p) != null) cursor = Cursors.SizeAll;
+        else if (_tool == EditorTool.Magnifier && HitTestAll(p) is MagnifierAnnotation) cursor = Cursors.SizeAll;
         else cursor = _tool switch
         {
             EditorTool.Select => Cursors.Arrow,
@@ -557,14 +608,15 @@ public sealed class AnnotationCanvas : FrameworkElement
 
     private void OnDocumentChanged()
     {
+        if (_document is { IsEffectsChange: true })
+        {
+            // Only the outline and the border change (a slider being dragged): the recorded layers stay valid.
+            InvalidateVisual();
+            return;
+        }
         if (_selected != null && _document != null && !_document.Annotations.Contains(_selected)) SetSelected(null);
         InvalidateLayers();
         InvalidateMeasure();
     }
 
-    private static T Frozen<T>(T freezable) where T : Freezable
-    {
-        freezable.Freeze();
-        return freezable;
-    }
 }

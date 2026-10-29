@@ -149,7 +149,13 @@ public partial class WorkspaceWindow : CaptureHostWindow
         SetDropTarget(null);
         if (DropTargetOf(e) is not { } target || e.Data.GetData(CaptureGallery.DragFormat) is not string data) return;
         e.Handled = true;
-        var paths = data.Split('\n', StringSplitOptions.RemoveEmptyEntries);
+        // The format is only a convention: any application can offer it. Only captures of the gallery's
+        // own folder (the active workspace) are moved.
+        var paths = data.Split('\n', StringSplitOptions.RemoveEmptyEntries)
+            .Where(p => System.IO.Path.IsPathFullyQualified(p) && ImageIO.IsCapture(p) &&
+                        CaptureGallery.SameFolder(System.IO.Path.GetDirectoryName(p), Workspaces.ActiveFolder))
+            .ToList();
+        if (paths.Count == 0) return;
         // After the drag-and-drop loop has ended (it may show messages).
         Dispatcher.BeginInvoke(() => Gallery.MoveToWorkspace(paths, target.Name));
     }

@@ -4,7 +4,6 @@ using System.Windows.Input;
 using System.Windows.Interop;
 using Snaplume.Capturing;
 using Snaplume.Core;
-using ScreenRecorderLib;
 using static Snaplume.Native.NativeMethods;
 
 namespace Snaplume.Recording;
@@ -12,8 +11,6 @@ namespace Snaplume.Recording;
 /// <summary>Floating bar shown during a recording; excluded from the video.</summary>
 public partial class RecordingControlBar : Window
 {
-    private const int Gap = 12;
-    private readonly PixelRect _area;
     private bool _paused;
 
     public event Action? PauseClicked;
@@ -23,14 +20,13 @@ public partial class RecordingControlBar : Window
     public RecordingControlBar(PixelRect area)
     {
         InitializeComponent();
-        _area = area;
         SourceInitialized += (_, _) =>
         {
             var hwnd = new WindowInteropHelper(this).Handle;
             AddExtendedStyle(hwnd, WS_EX_TOOLWINDOW | WS_EX_NOACTIVATE);
-            Recorder.SetExcludeFromCapture(hwnd, true);
+            ExcludeFromCapture(hwnd);
         };
-        Loaded += (_, _) => PlaceNearArea();
+        Loaded += (_, _) => FloatingBar.PlaceNearArea(this, area);
     }
 
     public void ShowCountdown(int seconds) => TimeText.Text = Loc.T("Recording.Countdown", seconds);
@@ -61,24 +57,6 @@ public partial class RecordingControlBar : Window
         t.TotalHours >= 1
             ? t.ToString(@"h\:mm\:ss", CultureInfo.InvariantCulture)
             : t.ToString(@"mm\:ss", CultureInfo.InvariantCulture);
-
-    /// <summary>Centered under the area, or above it, or inside its bottom edge when there is no room.</summary>
-    private void PlaceNearArea()
-    {
-        var hwnd = new WindowInteropHelper(this).Handle;
-        if (!GetWindowRect(hwnd, out var r)) return;
-        int width = r.Right - r.Left, height = r.Bottom - r.Top;
-
-        var screens = System.Windows.Forms.Screen.AllScreens;
-        var screen = screens.FirstOrDefault(s => PixelRect.From(s.Bounds).Contains(_area.X + _area.Width / 2, _area.Bottom - 1)) ?? screens[0];
-        var bounds = PixelRect.From(screen.WorkingArea);
-
-        int x = Math.Clamp(_area.X + (_area.Width - width) / 2, bounds.X, Math.Max(bounds.X, bounds.Right - width));
-        int y = _area.Bottom + Gap;
-        if (y + height > bounds.Bottom) y = _area.Y - Gap - height;
-        if (y < bounds.Y) y = _area.Bottom - Gap - height;
-        SetWindowPos(hwnd, HWND_TOPMOST, x, y, 0, 0, SWP_NOSIZE | SWP_NOACTIVATE | SWP_SHOWWINDOW);
-    }
 
     private void OnDrag(object sender, MouseButtonEventArgs e)
     {

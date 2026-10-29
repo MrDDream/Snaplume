@@ -6,6 +6,7 @@ using System.Windows.Media;
 using System.Windows.Threading;
 using Snaplume.Core;
 using Snaplume.Editor;
+using Snaplume.Export;
 using Snaplume.Player;
 
 namespace Snaplume.Workspace;
@@ -83,6 +84,56 @@ public partial class CaptureGallery : UserControl
     }
 
     private void OnReadText(object sender, RoutedEventArgs e) => ReadTextOfSelection();
+
+    /// <summary>Selected captures in the order shown in the gallery (not the order they were clicked).</summary>
+    public List<string> SelectedPathsInGalleryOrder
+    {
+        get
+        {
+            var selected = new HashSet<CaptureItem>(CaptureList.SelectedItems.Cast<CaptureItem>());
+            return _items.Where(selected.Contains).Select(i => i.Path).ToList();
+        }
+    }
+
+    /// <summary>Selected images, in gallery order (documents and printing leave the videos out).</summary>
+    private List<string> SelectedImages => SelectedPathsInGalleryOrder.Where(ImageIO.IsImage).ToList();
+
+    /// <summary>Decodes the QR code of the first selected image.</summary>
+    public void ReadQrOfSelection()
+    {
+        if (SelectedPaths.FirstOrDefault(ImageIO.IsImage) is { } path) App.Instance.ShowQr(path);
+    }
+
+    private void OnReadQr(object sender, RoutedEventArgs e) => ReadQrOfSelection();
+
+    /// <summary>"Create a document" dialog with the selected images.</summary>
+    public void CreateDocumentFromSelection()
+    {
+        var images = SelectedImages;
+        if (images.Count == 0) return;
+        new DocumentWindow(OwnerWindow, images).ShowDialog();
+    }
+
+    private void OnCreateDocument(object sender, RoutedEventArgs e) => CreateDocumentFromSelection();
+
+    public void PrintSelection()
+    {
+        var images = SelectedImages;
+        if (images.Count == 0 || OwnerWindow is not { } owner) return;
+        ShareService.Print(owner, images);
+    }
+
+    private void OnPrint(object sender, RoutedEventArgs e) => PrintSelection();
+
+    /// <summary>New message of the mail client with the selected captures attached (videos included).</summary>
+    public void EmailSelection()
+    {
+        var paths = SelectedPathsInGalleryOrder;
+        if (paths.Count == 0 || OwnerWindow is not { } owner) return;
+        ShareService.Email(owner, paths);
+    }
+
+    private void OnEmail(object sender, RoutedEventArgs e) => EmailSelection();
 
     public string SummaryText
     {
@@ -602,6 +653,10 @@ public partial class CaptureGallery : UserControl
         if (MoveToMenu.Items.Count == 0)
             MoveToMenu.Items.Add(new MenuItem { Header = Loc.T("Gallery.Menu.NoOtherWorkspace"), IsEnabled = false });
         MoveToMenu.IsEnabled = SelectedCount > 0;
+
+        bool hasImage = SelectedPaths.Any(ImageIO.IsImage);
+        ReadTextMenu.IsEnabled = ReadQrMenu.IsEnabled = CreateDocumentMenu.IsEnabled = PrintMenu.IsEnabled = hasImage;
+        EmailMenu.IsEnabled = SelectedCount > 0;
     }
 
     /// <summary>True when the capture is open in an editor or in the video player.</summary>
@@ -644,6 +699,7 @@ public partial class CaptureGallery : UserControl
             case Key.Delete: DeleteSelection(); break;
             case Key.F2: RenameSelection(); break;
             case Key.C when Keyboard.Modifiers == ModifierKeys.Control: CopySelection(); break;
+            case Key.P when Keyboard.Modifiers == ModifierKeys.Control: PrintSelection(); break;
             default: return;
         }
         e.Handled = true;

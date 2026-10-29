@@ -77,6 +77,12 @@ public class CaptureHostWindow : Window
 
     protected void OnCaptureText(object sender, RoutedEventArgs e) => _ = App.Instance.Captures.CaptureTextAsync(hide: this);
 
+    /// <summary>Scrolls a window or a control and stitches it into one tall capture.</summary>
+    protected void OnCaptureScrolling(object sender, RoutedEventArgs e) => Capture(CaptureKind.Scrolling);
+
+    /// <summary>Reads the QR codes and barcodes of an area of the screen.</summary>
+    protected void OnReadQr(object sender, RoutedEventArgs e) => _ = App.Instance.Captures.CaptureQrAsync(hide: this);
+
     /// <summary>Starts recording an area, or stops the recording in progress.</summary>
     protected void OnRecordVideo(object sender, RoutedEventArgs e) => _ = App.Instance.Videos.ToggleAsync(hide: this);
 

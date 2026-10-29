@@ -5,3 +5,6 @@ publish/
 .vscode/
 *.user
 *.suo
+
+# Release packaging (build/build-release.ps1)
+artifacts/

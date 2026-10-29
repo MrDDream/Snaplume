@@ -76,7 +76,13 @@
                     <MenuItem Header="{l:T Gallery.Menu.Edit}" Click="OnEdit" InputGestureText="{l:T Gallery.Menu.EditKey}" FontWeight="SemiBold" />
                     <MenuItem Header="{l:T Gallery.Menu.Copy}" Click="OnCopy" InputGestureText="Ctrl+C" />
                     <MenuItem Header="{l:T Gallery.Menu.CopyPath}" Click="OnCopyPath" />
-                    <MenuItem Header="{l:T Ocr.ReadText}" Click="OnReadText" />
+                    <MenuItem x:Name="ReadTextMenu" Header="{l:T Ocr.ReadText}" Click="OnReadText" />
+                    <MenuItem x:Name="ReadQrMenu" Header="{l:T Gallery.Menu.ReadQr}" Click="OnReadQr" />
+                    <Separator />
+                    <!-- Sharing: images only for documents and printing, videos too for e-mail -->
+                    <MenuItem x:Name="CreateDocumentMenu" Header="{l:T Gallery.Menu.CreateDocument}" Click="OnCreateDocument" />
+                    <MenuItem x:Name="PrintMenu" Header="{l:T Gallery.Menu.Print}" Click="OnPrint" InputGestureText="Ctrl+P" />
+                    <MenuItem x:Name="EmailMenu" Header="{l:T Gallery.Menu.Email}" Click="OnEmail" />
                     <Separator />
                     <MenuItem Header="{l:T Gallery.Menu.OpenDefault}" Click="OnOpenDefault" />
                     <MenuItem Header="{l:T Gallery.Menu.ShowInExplorer}" Click="OnShowInExplorer" />

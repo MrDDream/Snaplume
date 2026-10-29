@@ -1,0 +1,350 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>Snaplume: free screenshot, annotation and screen recording app for Windows</title>
+  <meta name="description" content="Snaplume is a free, open-source (MIT) screenshot, annotation and screen-recording app for Windows 10 and 11. Smart capture, scrolling capture, OCR, QR codes, a full editor, MP4 recording, GIF export. 100% offline: no account, no cloud, no telemetry.">
+  <meta name="color-scheme" content="light dark">
+  <meta name="theme-color" content="#1E1B2E">
+  <link rel="canonical" href="https://mrddream.github.io/Snaplume/">
+  <link rel="alternate" hreflang="en" href="https://mrddream.github.io/Snaplume/">
+  <link rel="alternate" hreflang="fr" href="https://mrddream.github.io/Snaplume/fr/">
+  <link rel="alternate" hreflang="x-default" href="https://mrddream.github.io/Snaplume/">
+  <link rel="icon" type="image/svg+xml" href="branding/snaplume.svg">
+  <meta property="og:type" content="website">
+  <meta property="og:title" content="Snaplume: screenshots, annotations and screen recording for Windows">
+  <meta property="og:description" content="Free, open source and 100% offline. No account, no cloud, no telemetry.">
+  <meta property="og:url" content="https://mrddream.github.io/Snaplume/">
+  <link rel="stylesheet" href="assets/site.css">
+  <script src="assets/site.js" defer></script>
+</head>
+<body>
+<a class="skip" href="#main">Skip to content</a>
+
+<svg width="0" height="0" style="position:absolute" aria-hidden="true" focusable="false">
+  <symbol id="i-download" viewBox="0 0 24 24"><path d="M12 3v12M7 10l5 5 5-5M4 20h16" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"/></symbol>
+  <symbol id="i-github" viewBox="0 0 24 24"><path fill="currentColor" d="M12 .5a11.5 11.5 0 0 0-3.64 22.41c.58.1.79-.25.79-.56v-2c-3.2.7-3.88-1.37-3.88-1.37-.52-1.33-1.28-1.69-1.28-1.69-1.05-.71.08-.7.08-.7 1.16.08 1.77 1.19 1.77 1.19 1.03 1.77 2.7 1.26 3.36.96.1-.75.4-1.26.73-1.55-2.55-.29-5.24-1.28-5.24-5.69 0-1.26.45-2.28 1.19-3.09-.12-.29-.52-1.46.11-3.05 0 0 .97-.31 3.17 1.18a10.9 10.9 0 0 1 5.77 0c2.2-1.49 3.17-1.18 3.17-1.18.63 1.59.23 2.76.11 3.05.74.81 1.19 1.83 1.19 3.09 0 4.42-2.69 5.39-5.26 5.68.41.36.78 1.06.78 2.14v3.17c0 .31.21.67.8.56A11.5 11.5 0 0 0 12 .5Z"/></symbol>
+  <symbol id="i-region" viewBox="0 0 24 24"><path d="M4,9 V4 H9 M15,4 H20 V9 M20,15 V20 H15 M9,20 H4 V15 M12,9 V15 M9,12 H15"/></symbol>
+  <symbol id="i-ocr" viewBox="0 0 24 24"><path d="M4,8 V5 H7 M17,5 H20 V8 M20,16 V19 H17 M7,19 H4 V16 M8,9 H16 M8,12 H16 M8,15 H13"/></symbol>
+  <symbol id="i-edit" viewBox="0 0 24 24"><path d="M4,20 L8,19 L19,8 L16,5 L5,16 Z M14,7 L17,10"/></symbol>
+  <symbol id="i-video" viewBox="0 0 24 24"><path d="M3,7 H15 V17 H3 Z M15,10.5 L21,7 V17 L15,13.5 Z"/></symbol>
+  <symbol id="i-workspace" viewBox="0 0 24 24"><path d="M3,13 L5.5,5 H18.5 L21,13 V19 H3 Z M3,13 H8 L9.5,15.5 H14.5 L16,13 H21"/></symbol>
+  <symbol id="i-globe" viewBox="0 0 24 24"><path d="M12 3a9 9 0 1 1-.01 0ZM3 12h18M12 3c2.5 2.6 3.8 5.6 3.8 9s-1.3 6.4-3.8 9c-2.5-2.6-3.8-5.6-3.8-9S9.5 5.6 12 3Z"/></symbol>
+  <symbol id="i-check" viewBox="0 0 24 24"><path d="M5 12.5l4.5 4.5L19 7.5"/></symbol>
+</svg>
+
+<header class="site-header">
+  <div class="wrap">
+    <a class="brand" href="#top" aria-label="Snaplume, back to top"><img src="branding/snaplume.svg" alt="" width="30" height="30">Snaplume</a>
+    <nav class="nav" aria-label="Main">
+      <a class="hide-sm" href="#features">Features</a>
+      <a class="hide-sm" href="#screenshots">Screenshots</a>
+      <a class="hide-sm" href="#privacy">Privacy</a>
+      <a class="hide-sm" href="#faq">FAQ</a>
+      <a class="hide-sm" href="https://github.com/MrDDream/Snaplume">GitHub</a>
+      <a class="lang" href="fr/" hreflang="fr" lang="fr" title="Version française">FR</a>
+      <a class="cta" href="#download">Download</a>
+    </nav>
+  </div>
+</header>
+
+<main id="main">
+  <div class="hero" id="top">
+    <div class="wrap hero-grid">
+      <img class="hero-logo" src="branding/snaplume.svg" alt="Snaplume logo" width="88" height="88">
+      <h1>Capture, annotate and record your screen<span class="spark">.</span></h1>
+      <p class="lead">Snaplume is a free, open-source screenshot and screen-recording app for Windows. Smart capture, a full editor, OCR, QR codes, MP4 recording and GIF export. <strong>100% offline</strong>: no account, no cloud, no telemetry.</p>
+      <div class="hero-actions">
+        <a class="btn btn-primary" href="https://github.com/MrDDream/Snaplume/releases/latest"><svg aria-hidden="true"><use href="#i-download"/></svg>Download for Windows</a>
+        <a class="btn btn-ghost" href="https://github.com/MrDDream/Snaplume"><svg aria-hidden="true"><use href="#i-github"/></svg>View on GitHub</a>
+      </div>
+      <p class="hero-meta"><span>Windows 10 (2004+) and 11, x64</span><span>Installer or portable</span><span>MIT license</span></p>
+      <div class="hero-shot">
+        <img src="assets/hero.svg" width="1400" height="820" alt="The Snaplume editor showing a screenshot annotated with an arrow, numbered steps, a highlighter, a pixelated e-mail address and an APPROVED stamp, with the dark My screenshots panel in front of it">
+      </div>
+    </div>
+  </div>
+
+  <section aria-labelledby="why-title">
+    <div class="wrap">
+      <div class="section-head">
+        <span class="eyebrow">Why Snaplume</span>
+        <h2 id="why-title">Everything you need, nothing you don't</h2>
+        <p>One small app to capture, explain, record and share, without sign-ups or uploads.</p>
+      </div>
+      <div class="why">
+        <div><strong>Fast by default</strong><p>Press <kbd>Print Screen</kbd>, click a window or drag a region: the capture is saved, named and in your gallery.</p></div>
+        <div><strong>Always editable</strong><p>Annotations stay editable after saving. Move that arrow or renumber those steps tomorrow.</p></div>
+        <div><strong>Private by design</strong><p>No account, no cloud, no telemetry, no ads. Your screenshots never leave your PC.</p></div>
+        <div><strong>Free forever</strong><p>MIT licensed and built in the open with C#, .NET 10 and WPF.</p></div>
+      </div>
+    </div>
+  </section>
+
+  <section class="alt" id="screenshots" aria-labelledby="shots-title">
+    <div class="wrap">
+      <div class="section-head">
+        <span class="eyebrow">Tour</span>
+        <h2 id="shots-title">A closer look</h2>
+        <p>Vector mockups drawn from the real interface.</p>
+      </div>
+      <ul class="tabs" role="tablist" aria-label="Screenshots">
+        <li role="presentation"><button type="button" role="tab" id="tab-panel" aria-controls="shot-panel" aria-selected="true">Quick panel</button></li>
+        <li role="presentation"><button type="button" role="tab" id="tab-editor" aria-controls="shot-editor" aria-selected="false" tabindex="-1">Editor</button></li>
+        <li role="presentation"><button type="button" role="tab" id="tab-workspace" aria-controls="shot-workspace" aria-selected="false" tabindex="-1">Workspaces</button></li>
+        <li role="presentation"><button type="button" role="tab" id="tab-player" aria-controls="shot-player" aria-selected="false" tabindex="-1">Video player</button></li>
+        <li role="presentation"><button type="button" role="tab" id="tab-themes" aria-controls="shot-themes" aria-selected="false" tabindex="-1">Themes</button></li>
+      </ul>
+      <div class="carousel">
+        <figure id="shot-panel" role="tabpanel" aria-labelledby="tab-panel">
+          <img src="assets/quick-panel.svg" width="1400" height="975" loading="lazy" alt="The dark My screenshots panel: Capture region button with its menu open (capture screen, all screens, repeat last region, scrolling capture, capture text, read QR code, timers), Record video, Edit, Text and Copy actions, workspace selector and a gallery of thumbnails">
+          <figcaption><strong>Quick panel.</strong> Capture, record, edit, read text and copy from the corner of your screen.</figcaption>
+        </figure>
+        <figure id="shot-editor" role="tabpanel" aria-labelledby="tab-editor">
+          <img src="assets/editor.svg" width="1320" height="950" loading="lazy" alt="The editor in the light theme with its tool rail, properties bar and a screenshot annotated with an arrow, three numbered steps, a highlighter, a pixelated e-mail, a magnifier and an APPROVED stamp">
+          <figcaption><strong>Editor.</strong> Arrows, steps, stamps, pixelate, spotlight, magnifier, effects and more.</figcaption>
+        </figure>
+        <figure id="shot-workspace" role="tabpanel" aria-labelledby="tab-workspace">
+          <img src="assets/workspace.svg" width="1320" height="890" loading="lazy" alt="The workspace window with the workspaces sidebar (Base, Project Atlas, Bug reports, Documentation, Release 1.0, Tutorials) and two captures being dragged onto a workspace">
+          <figcaption><strong>Workspaces.</strong> One sub-folder per project; drag captures between them.</figcaption>
+        </figure>
+        <figure id="shot-player" role="tabpanel" aria-labelledby="tab-player">
+          <img src="assets/player.svg" width="1320" height="828" loading="lazy" alt="The built-in video player showing a recording with a webcam overlay and a highlighted click, a trim selection on the timeline, and Trim, GIF and Frame export buttons">
+          <figcaption><strong>Video player.</strong> Trim to MP4, export a GIF or save a frame.</figcaption>
+        </figure>
+        <figure id="shot-themes" role="tabpanel" aria-labelledby="tab-themes">
+          <img src="assets/themes.svg" width="1320" height="992" loading="lazy" alt="The Settings window split diagonally between the light theme and the dark theme">
+          <figcaption><strong>Light and dark.</strong> Or automatic, following Windows.</figcaption>
+        </figure>
+      </div>
+    </div>
+  </section>
+
+  <section id="features" aria-labelledby="features-title">
+    <div class="wrap">
+      <div class="section-head">
+        <span class="eyebrow">Features</span>
+        <h2 id="features-title">From a quick snip to a step-by-step guide</h2>
+        <p>Everything below works offline, out of the box.</p>
+      </div>
+      <div class="features">
+        <article class="card">
+          <div class="ico" aria-hidden="true"><svg><use href="#i-region"/></svg></div>
+          <h3>Capture</h3>
+          <ul>
+            <li>Region, window or control detection, with a magnifier</li>
+            <li>Full screen, all screens, active window, repeat last area</li>
+            <li>Timer for menus and tooltips</li>
+            <li>Scrolling capture with automatic stitching</li>
+          </ul>
+        </article>
+        <article class="card">
+          <div class="ico" aria-hidden="true"><svg><use href="#i-ocr"/></svg></div>
+          <h3>Text and codes</h3>
+          <ul>
+            <li>Capture text (OCR) straight to the clipboard</li>
+            <li>Read the text of any existing capture</li>
+            <li>QR code and barcode reading</li>
+            <li>Windows OCR engine, fully offline</li>
+          </ul>
+        </article>
+        <article class="card">
+          <div class="ico" aria-hidden="true"><svg><use href="#i-edit"/></svg></div>
+          <h3>Editor</h3>
+          <ul>
+            <li>Arrows, lines, shapes, pen, text, step numbers</li>
+            <li>54 vector stamps, highlighter, pixelate, spotlight, magnifier</li>
+            <li>Crop, resize, shadow, border, rounded corners, torn edge</li>
+            <li>Presets per tool, undo / redo, always-editable annotations</li>
+            <li>PNG, JPEG, BMP, print, e-mail</li>
+          </ul>
+        </article>
+        <article class="card">
+          <div class="ico" aria-hidden="true"><svg><use href="#i-video"/></svg></div>
+          <h3>Video</h3>
+          <ul>
+            <li>MP4 recording of a region, a window's area or a screen</li>
+            <li>System audio and microphone</li>
+            <li>Click highlighting and webcam overlay</li>
+            <li>Built-in player: trim, GIF and frame export</li>
+          </ul>
+        </article>
+        <article class="card">
+          <div class="ico" aria-hidden="true"><svg><use href="#i-workspace"/></svg></div>
+          <h3>Organize and share</h3>
+          <ul>
+            <li>"My screenshots" panel and workspace window</li>
+            <li>Workspaces as sub-folders, drag and drop</li>
+            <li>Drag captures into mail, chat and documents</li>
+            <li>Document generator: PDF, Word (DOCX), HTML</li>
+            <li>Print or e-mail a selection of captures</li>
+          </ul>
+        </article>
+        <article class="card">
+          <div class="ico" aria-hidden="true"><svg><use href="#i-globe"/></svg></div>
+          <h3>Made for everyone</h3>
+          <ul>
+            <li>6 languages, including Arabic (right to left)</li>
+            <li>Light, dark or automatic theme</li>
+            <li>Installer or portable, configurable hotkeys</li>
+            <li>Scriptable command line</li>
+          </ul>
+        </article>
+      </div>
+    </div>
+  </section>
+
+  <section class="alt" id="privacy" aria-labelledby="privacy-title">
+    <div class="wrap">
+      <div class="privacy">
+        <div>
+          <div class="big">100%</div>
+          <h2 id="privacy-title">offline. For real.</h2>
+          <p>Snaplume never talks to a server. Your screenshots, recordings and settings are plain files on your PC, in folders you choose.</p>
+        </div>
+        <ul class="checks">
+          <li><svg aria-hidden="true"><use href="#i-check"/></svg><span>No account and no sign-in</span></li>
+          <li><svg aria-hidden="true"><use href="#i-check"/></svg><span>No cloud upload, no sharing links</span></li>
+          <li><svg aria-hidden="true"><use href="#i-check"/></svg><span>No telemetry, no analytics, no ads</span></li>
+          <li><svg aria-hidden="true"><use href="#i-check"/></svg><span>OCR and QR decoding run locally</span></li>
+          <li><svg aria-hidden="true"><use href="#i-check"/></svg><span>E-mail goes through your own mail client</span></li>
+          <li><svg aria-hidden="true"><use href="#i-check"/></svg><span>Open source: read every line on GitHub</span></li>
+        </ul>
+      </div>
+    </div>
+  </section>
+
+  <section id="languages" aria-labelledby="languages-title">
+    <div class="wrap">
+      <div class="section-head">
+        <span class="eyebrow">Languages and themes</span>
+        <h2 id="languages-title">Speaks your language, matches your Windows</h2>
+        <p>The interface follows the Windows language automatically, or the one you pick.</p>
+      </div>
+      <ul class="langs">
+        <li lang="en">English</li>
+        <li lang="fr">Français <span lang="en">French</span></li>
+        <li lang="de">Deutsch <span lang="en">German</span></li>
+        <li lang="es">Español <span lang="en">Spanish</span></li>
+        <li lang="it">Italiano <span lang="en">Italian</span></li>
+        <li lang="ar" dir="rtl">العربية <span lang="en" dir="ltr">Arabic, right to left</span></li>
+      </ul>
+      <div class="themes-shot">
+        <img src="assets/themes.svg" width="1320" height="992" loading="lazy" alt="The Settings window split diagonally between the light theme and the dark theme">
+      </div>
+    </div>
+  </section>
+
+  <section class="alt" id="download" aria-labelledby="download-title">
+    <div class="wrap">
+      <div class="section-head">
+        <span class="eyebrow">Download</span>
+        <h2 id="download-title">Get Snaplume</h2>
+        <p>Windows 10 version 2004 or later, or Windows 11, 64-bit. No .NET installation needed.</p>
+      </div>
+      <div class="downloads">
+        <article class="card">
+          <h3>Installer</h3>
+          <p><code>Snaplume-Setup-&lt;version&gt;.exe</code></p>
+          <p>Classic setup with a Start menu shortcut and an uninstaller. Recommended for most users.</p>
+          <a class="btn btn-primary" href="https://github.com/MrDDream/Snaplume/releases/latest"><svg aria-hidden="true"><use href="#i-download"/></svg>Download the installer</a>
+        </article>
+        <article class="card">
+          <h3>Portable</h3>
+          <p><code>Snaplume-&lt;version&gt;-portable.zip</code></p>
+          <p>Unzip anywhere (even a USB stick) and run <code>Snaplume.exe</code>. Settings stay in the folder.</p>
+          <a class="btn btn-outline" href="https://github.com/MrDDream/Snaplume/releases/latest"><svg aria-hidden="true"><use href="#i-download"/></svg>Download the zip</a>
+        </article>
+      </div>
+      <p class="note"><strong>Windows SmartScreen warning?</strong> The builds are not code-signed yet, so Windows may say it "protected your PC" the first time. Click <strong>More info › Run anyway</strong>. Each release ships a <code>SHA256SUMS.txt</code> file to verify your download.</p>
+    </div>
+  </section>
+
+  <section id="shortcuts" aria-labelledby="shortcuts-title">
+    <div class="wrap">
+      <div class="section-head">
+        <span class="eyebrow">Shortcuts</span>
+        <h2 id="shortcuts-title">Keyboard first</h2>
+        <p>Default global hotkeys, all configurable in the settings.</p>
+      </div>
+      <div class="table-wrap">
+        <table>
+          <thead><tr><th scope="col">Action</th><th scope="col">Shortcut</th></tr></thead>
+          <tbody>
+            <tr><td>Region, window or element</td><td><kbd>Print Screen</kbd></td></tr>
+            <tr><td>Full screen</td><td><kbd>Shift</kbd> + <kbd>Print Screen</kbd></td></tr>
+            <tr><td>Active window</td><td><kbd>Alt</kbd> + <kbd>Print Screen</kbd></td></tr>
+            <tr><td>Repeat last region</td><td><kbd>Ctrl</kbd> + <kbd>Print Screen</kbd></td></tr>
+            <tr><td>Region with timer</td><td><kbd>Ctrl</kbd> + <kbd>Shift</kbd> + <kbd>Print Screen</kbd></td></tr>
+            <tr><td>Start / stop a video</td><td><kbd>Ctrl</kbd> + <kbd>Alt</kbd> + <kbd>Print Screen</kbd></td></tr>
+          </tbody>
+        </table>
+      </div>
+<pre><code><span class="c"># Scriptable command line</span>
+Snaplume.exe --capture screen --exit
+Snaplume.exe --capture region --delay 5 --workspace "Bug reports"
+Snaplume.exe --capture scrolling
+Snaplume.exe --record screen --duration 30 --exit</code></pre>
+    </div>
+  </section>
+
+  <section class="alt" id="faq" aria-labelledby="faq-title">
+    <div class="wrap">
+      <div class="section-head">
+        <span class="eyebrow">FAQ</span>
+        <h2 id="faq-title">Questions and answers</h2>
+      </div>
+      <div class="faq">
+        <details>
+          <summary>Is Snaplume really free?</summary>
+          <div><p>Yes. Snaplume is open source under the MIT license: free for personal and commercial use, with no ads, no trial and no premium tier.</p></div>
+        </details>
+        <details>
+          <summary>Does Snaplume send anything over the internet?</summary>
+          <div><p>No. There is no account, no cloud, no telemetry and no update check. Text recognition uses the OCR engine built into Windows and QR codes are decoded locally.</p></div>
+        </details>
+        <details>
+          <summary>Why does Windows show a SmartScreen warning?</summary>
+          <div><p>The executables are not code-signed yet, so SmartScreen does not recognize them. Click <strong>More info › Run anyway</strong>. You can compare the file with <code>SHA256SUMS.txt</code> from the release, or build Snaplume yourself from the source code.</p></div>
+        </details>
+        <details>
+          <summary>The Print Screen key opens another tool. What can I do?</summary>
+          <div><p>A hotkey can belong to only one application, and Snaplume tells you when one is taken. Quit the other tool or pick other shortcuts in Snaplume's settings. On Windows 11, also turn off <em>Settings › Accessibility › Keyboard › Use the Print screen key to open screen capture</em>.</p></div>
+        </details>
+        <details>
+          <summary>Where are my captures saved?</summary>
+          <div><p>In <code>Pictures\Snaplume</code> by default (you can change it), as regular PNG, JPEG or MP4 files. Each workspace is a sub-folder. Annotations are kept beside them in a hidden <code>.snaplume</code> folder so they stay editable.</p></div>
+        </details>
+        <details>
+          <summary>What is the portable version?</summary>
+          <div><p>A zip you can run from anywhere, including a USB stick, without installing anything. An empty file named <code>portable</code> next to <code>Snaplume.exe</code> keeps the settings in that folder.</p></div>
+        </details>
+        <details>
+          <summary>Which Windows versions are supported?</summary>
+          <div><p>Windows 10 version 2004 (May 2020 Update) or later and Windows 11, on 64-bit (x64) PCs.</p></div>
+        </details>
+        <details>
+          <summary>How can I help?</summary>
+          <div><p>Report bugs, suggest ideas, translate the interface or send pull requests on <a href="https://github.com/MrDDream/Snaplume">GitHub</a>. Each language is a single JSON file.</p></div>
+        </details>
+      </div>
+    </div>
+  </section>
+</main>
+
+<footer class="site-footer">
+  <div class="wrap">
+    <a class="brand" href="#top"><img src="branding/snaplume.svg" alt="" width="26" height="26">Snaplume</a>
+    <nav aria-label="Footer">
+      <a href="https://github.com/MrDDream/Snaplume">GitHub</a>
+      <a href="https://github.com/MrDDream/Snaplume/releases/latest">Releases</a>
+      <a href="https://github.com/MrDDream/Snaplume/issues">Issues</a>
+      <a href="https://github.com/MrDDream/Snaplume/blob/main/LICENSE">MIT license</a>
+      <a href="fr/" hreflang="fr" lang="fr">Français</a>
+    </nav>
+    <p>Free and open source software under the MIT license.</p>
+  </div>
+</footer>
+</body>
+</html>

@@ -17,6 +17,7 @@ public sealed record ToolPreset(EditorTool Tool, DrawingStyle Style)
     public string Description => Tool switch
     {
         EditorTool.Text => Loc.T(Style.Fill ? "Preset.Desc.TextOnWhite" : "Preset.Desc.Text", Style.FontSize),
+        EditorTool.Magnifier => Loc.T(Style.Lens == MagnifierShape.Circle ? "Preset.Desc.MagnifierCircle" : "Preset.Desc.MagnifierRect", Style.Zoom),
         EditorTool.Step => Loc.T("Preset.Desc.Step", Style.Thickness),
         EditorTool.Highlight => Loc.T("Preset.Desc.Highlight"),
         EditorTool.Arrow when Style.Heads == ArrowHeads.Both => Loc.T("Preset.Desc.DoubleArrow", Style.Thickness),
@@ -43,7 +44,10 @@ public sealed record ToolPreset(EditorTool Tool, DrawingStyle Style)
             }
             // Bullets are big: shown at 75 % so the pin and the tail fit.
             if (Tool == EditorTool.Step) dc.PushTransform(new ScaleTransform(0.75, 0.75, PreviewWidth / 2, PreviewHeight / 2));
-            CreateSample().Render(dc, Placeholder);
+            // The magnifier enlarges a small fake screen.
+            var background = Tool == EditorTool.Magnifier ? SampleScreen.Value : Placeholder;
+            if (Tool == EditorTool.Magnifier) dc.DrawImage(background, area);
+            CreateSample().Render(dc, background);
             if (Tool == EditorTool.Step) dc.Pop();
             dc.Pop();
         }
@@ -69,9 +73,18 @@ public sealed record ToolPreset(EditorTool Tool, DrawingStyle Style)
                 Target = Style.Shape switch { StepShape.Leader => new Point(26, 28), StepShape.Tail => new Point(20, 28), _ => null },
             },
             EditorTool.Text => new TextAnnotation { Text = Loc.T("Preset.SampleText") },
+            EditorTool.Magnifier => new MagnifierAnnotation(),
             _ => new FreehandAnnotation { Points = Wave() },
         };
         Style.ApplyTo(sample);
+        if (sample is MagnifierAnnotation magnifier)
+        {
+            // Whatever the zoom, the lens has the same size in the preview.
+            double side = 40 / magnifier.Zoom;
+            magnifier.Start = new Point(30 - side / 2, 28 - side / 2);
+            magnifier.End = new Point(30 + side / 2, 28 + side / 2);
+            magnifier.LensCenter = new Point(98, 28);
+        }
         if (sample is TextAnnotation text)
         {
             text.FontSize = Math.Min(text.FontSize, 28);
@@ -86,6 +99,26 @@ public sealed record ToolPreset(EditorTool Tool, DrawingStyle Style)
 
     private static readonly BitmapSource Placeholder =
         BitmapSource.Create(1, 1, 96, 96, PixelFormats.Bgra32, null, new byte[4], 4);
+
+    /// <summary>Lines of text and a button, light whatever the theme, under the magnifier previews.</summary>
+    private static readonly Lazy<BitmapSource> SampleScreen = new(() =>
+    {
+        var visual = new DrawingVisual();
+        using (var dc = visual.RenderOpen())
+        {
+            dc.DrawRoundedRectangle(new SolidColorBrush(Color.FromRgb(0xF8, 0xF9, 0xFB)), null, new Rect(0, 0, PreviewWidth, PreviewHeight), 4, 4);
+            var ink = new SolidColorBrush(Color.FromRgb(0x6B, 0x72, 0x80));
+            dc.DrawRectangle(ink, null, new Rect(14, 14, 30, 3));
+            dc.DrawRectangle(ink, null, new Rect(14, 21, 22, 3));
+            dc.DrawRoundedRectangle(new SolidColorBrush(Color.FromRgb(0x1E, 0x88, 0xE5)), null, new Rect(16, 29, 26, 9), 2, 2);
+            dc.DrawRectangle(Brushes.White, null, new Rect(20, 32.5, 18, 2));
+            dc.DrawRectangle(ink, null, new Rect(14, 42, 34, 3));
+        }
+        var target = new RenderTargetBitmap((int)PreviewWidth, (int)PreviewHeight, 96, 96, PixelFormats.Pbgra32);
+        target.Render(visual);
+        // Bgra32 like the images of the editor (the magnifier copies its pixels).
+        return ImageIO.Normalize(target);
+    });
 }
 
 /// <summary>Presets of every tool, stored in presets.json next to the settings.</summary>
@@ -94,7 +127,7 @@ public static class ToolPresets
     private static readonly EditorTool[] SupportedTools =
     {
         EditorTool.Arrow, EditorTool.Line, EditorTool.Rectangle, EditorTool.Ellipse, EditorTool.Pen,
-        EditorTool.Text, EditorTool.Step, EditorTool.Highlight,
+        EditorTool.Text, EditorTool.Step, EditorTool.Highlight, EditorTool.Magnifier,
     };
 
     /// <summary>One entry of presets.json, in the flat format of the first versions (still read by them).</summary>
@@ -108,6 +141,8 @@ public static class ToolPresets
         public ArrowHeads Heads { get; set; }
         public StepShape Shape { get; set; }
         public bool Letters { get; set; }
+        public double Zoom { get; set; } = DrawingStyle.Default.Zoom;
+        public MagnifierShape Lens { get; set; }
     }
 
     private static List<ToolPreset>? _all;
@@ -150,7 +185,11 @@ public static class ToolPresets
             var stored = JsonSerializer.Deserialize<List<StoredPreset?>>(File.ReadAllText(FilePath), AnnotationJson.Options)
                          ?? throw new JsonException("Liste de préréglages attendue");
             // Entries that cannot be used are dropped, the others kept.
-            return stored.Select(ToPreset).OfType<ToolPreset>().ToList();
+            var presets = stored.Select(ToPreset).OfType<ToolPreset>().ToList();
+            // Tools added after the file was written (the magnifier) get their default styles once.
+            foreach (var tool in NewTools.Where(t => presets.All(p => p.Tool != t)))
+                presets.AddRange(Defaults().Where(p => p.Tool == tool));
+            return presets;
         }
         catch (Exception ex)
         {
@@ -162,13 +201,20 @@ public static class ToolPresets
         }
     }
 
+    /// <summary>
+    /// Tools that older versions did not save presets for. A file without any preset for one of them gets its
+    /// default presets, so that they appear after an update (also if the user removed them all: Reset does the same).
+    /// </summary>
+    private static readonly EditorTool[] NewTools = { EditorTool.Magnifier };
+
     private static ToolPreset? ToPreset(StoredPreset? s)
     {
         if (s == null || !Enum.IsDefined(s.Tool) || !SupportedTools.Contains(s.Tool)
-            || !Enum.IsDefined(s.Heads) || !Enum.IsDefined(s.Shape)
-            || !(s.Thickness >= 1 && s.Thickness <= 100) || !(s.FontSize >= 6 && s.FontSize <= 400))
+            || !Enum.IsDefined(s.Heads) || !Enum.IsDefined(s.Shape) || !Enum.IsDefined(s.Lens)
+            || !(s.Thickness >= 1 && s.Thickness <= 100) || !(s.FontSize >= 6 && s.FontSize <= 400)
+            || !(s.Zoom >= MagnifierAnnotation.MinZoom && s.Zoom <= MagnifierAnnotation.MaxZoom))
             return null;
-        return new ToolPreset(s.Tool, new DrawingStyle(s.Color, s.Thickness, s.Filled, s.FontSize, s.Heads, s.Shape, s.Letters));
+        return new ToolPreset(s.Tool, new DrawingStyle(s.Color, s.Thickness, s.Filled, s.FontSize, s.Heads, s.Shape, s.Letters, s.Zoom, s.Lens));
     }
 
     private static StoredPreset ToStored(ToolPreset p) => new()
@@ -181,6 +227,8 @@ public static class ToolPresets
         Heads = p.Style.Heads,
         Shape = p.Style.Shape,
         Letters = p.Style.Letters,
+        Zoom = p.Style.Zoom,
+        Lens = p.Style.Lens,
     };
 
     private static void Save()
@@ -198,11 +246,12 @@ public static class ToolPresets
         }
     }
 
-    private static Color Hex(string hex) => (Color)ColorConverter.ConvertFromString(hex);
+    private static Color Hex(string hex) => HexColor.Parse(hex);
 
     private static ToolPreset P(EditorTool tool, Color color, double thickness, bool filled = false, double fontSize = 24,
-        ArrowHeads heads = ArrowHeads.End, StepShape shape = StepShape.Circle, bool letters = false) =>
-        new(tool, new DrawingStyle(color, thickness, filled, fontSize, heads, shape, letters));
+        ArrowHeads heads = ArrowHeads.End, StepShape shape = StepShape.Circle, bool letters = false,
+        double zoom = 2, MagnifierShape lens = MagnifierShape.Circle) =>
+        new(tool, new DrawingStyle(color, thickness, filled, fontSize, heads, shape, letters, zoom, lens));
 
     private static List<ToolPreset> Defaults()
     {
@@ -259,6 +308,11 @@ public static class ToolPresets
             P(EditorTool.Highlight, Hex("#66BB6A"), 4),
             P(EditorTool.Highlight, Hex("#F06292"), 4),
             P(EditorTool.Highlight, Hex("#4FC3F7"), 4),
+
+            // Magnifiers: the fill setting is their connector line.
+            P(EditorTool.Magnifier, red, 3, filled: true, zoom: 2),
+            P(EditorTool.Magnifier, blue, 3, filled: true, zoom: 3, lens: MagnifierShape.RoundedRect),
+            P(EditorTool.Magnifier, black, 2, zoom: 2.5),
         };
     }
 }

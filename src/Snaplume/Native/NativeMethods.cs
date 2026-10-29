@@ -184,6 +184,84 @@ internal static class NativeMethods
     [DllImport("shell32.dll", CharSet = CharSet.Unicode)]
     public static extern int SHFileOperation(ref SHFILEOPSTRUCT operation);
 
+    // ---- Scrolling capture: synthetic mouse wheel, Esc key, windows hidden from captures ----
+
+    public const uint INPUT_MOUSE = 0;
+    public const uint MOUSEEVENTF_WHEEL = 0x0800;
+    /// <summary>One notch of a standard mouse wheel.</summary>
+    public const int WHEEL_DELTA = 120;
+    public const int VK_ESCAPE = 0x1B;
+    public const uint GA_ROOT = 2;
+    /// <summary>The window is not shown in screenshots or recordings (Windows 10 2004+).</summary>
+    public const uint WDA_EXCLUDEFROMCAPTURE = 0x11;
+
+    [StructLayout(LayoutKind.Sequential)]
+    public struct MOUSEINPUT
+    {
+        public int dx;
+        public int dy;
+        public uint mouseData;
+        public uint dwFlags;
+        public uint time;
+        public IntPtr dwExtraInfo;
+    }
+
+    /// <summary>INPUT with its mouse member: the largest of the union, so the size matches the native one.</summary>
+    [StructLayout(LayoutKind.Sequential)]
+    public struct INPUT
+    {
+        public uint type;
+        public MOUSEINPUT mi;
+    }
+
+    [DllImport("user32.dll", SetLastError = true)]
+    public static extern uint SendInput(uint count, INPUT[] inputs, int size);
+
+    [DllImport("user32.dll")]
+    public static extern short GetAsyncKeyState(int key);
+
+    [DllImport("user32.dll")]
+    public static extern IntPtr WindowFromPoint(POINT point);
+
+    [DllImport("user32.dll")]
+    public static extern IntPtr GetAncestor(IntPtr hWnd, uint flags);
+
+    [DllImport("user32.dll", SetLastError = true)]
+    [return: MarshalAs(UnmanagedType.Bool)]
+    public static extern bool SetWindowDisplayAffinity(IntPtr hWnd, uint affinity);
+
+    /// <summary>Turns the mouse wheel by whole notches at the cursor position (negative: towards the user, scrolls down).</summary>
+    /// <returns>
+    /// False if Windows refused the input (e.g. input blocked by another thread). A window of a higher
+    /// integrity level (run as administrator) silently drops it (UIPI): SendInput still reports success,
+    /// so the caller can only notice that nothing scrolled.
+    /// </returns>
+    public static bool SendWheel(int notches)
+    {
+        if (notches == 0) return true;
+        int count = Math.Abs(notches);
+        var inputs = new INPUT[count];
+        for (int i = 0; i < count; i++)
+        {
+            inputs[i].type = INPUT_MOUSE;
+            inputs[i].mi.dwFlags = MOUSEEVENTF_WHEEL;
+            inputs[i].mi.mouseData = unchecked((uint)(Math.Sign(notches) * WHEEL_DELTA));
+        }
+        return SendInput((uint)count, inputs, Marshal.SizeOf<INPUT>()) == count;
+    }
+
+    /// <summary>
+    /// Hides a window from screenshots and recordings (same call as ScreenRecorderLib's SetExcludeFromCapture);
+    /// a failure is logged (the window then shows in them).
+    /// </summary>
+    public static void ExcludeFromCapture(IntPtr hWnd)
+    {
+        // Before Windows 10 2004 the flag does not exist (the window could be shown black): leave it visible.
+        if (!OperatingSystem.IsWindowsVersionAtLeast(10, 0, 19041)) return;
+        if (!SetWindowDisplayAffinity(hWnd, WDA_EXCLUDEFROMCAPTURE))
+            ErrorLog.Write("Exclusion de la capture", new Win32Exception(Marshal.GetLastPInvokeError()));
+    }
+
     /// <summary>Adds extended styles (tool window, click-through...) to a window; a failure is logged.</summary>
     public static bool AddExtendedStyle(IntPtr hWnd, int styles)
     {

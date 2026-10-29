@@ -79,7 +79,13 @@ public static class WorkspaceCommands
             MessageBox.Show(owner, Loc.T("Workspaces.CloseViewers"), title, MessageBoxButton.OK, MessageBoxImage.Information);
             return;
         }
-        if (MessageBox.Show(owner, Loc.T("Workspaces.Delete.Confirm", Workspaces.DisplayName(name)), title,
+        // The whole folder goes to the Recycle Bin: say so when it also holds files that are not captures.
+        int others = CountOtherFiles(Workspaces.FolderOf(name), out bool more);
+        var confirm = others == 0
+            ? Loc.T("Workspaces.Delete.Confirm", Workspaces.DisplayName(name))
+            : Loc.T("Workspaces.Delete.ConfirmOtherFiles", Workspaces.DisplayName(name),
+                others.ToString("N0", Loc.Culture) + (more ? "+" : ""));
+        if (MessageBox.Show(owner, confirm, title,
                 MessageBoxButton.YesNo, MessageBoxImage.Warning, MessageBoxResult.No) != MessageBoxResult.Yes)
             return;
         try
@@ -91,6 +97,48 @@ public static class WorkspaceCommands
         {
             ShowError(owner, Loc.T("Workspaces.Delete.Failed"), ex);
         }
+    }
+
+    /// <summary>Most files counted before giving up (a huge folder must not freeze the confirmation).</summary>
+    private const int MaxCounted = 10_000;
+
+    /// <summary>
+    /// Files of the folder and its sub-folders that are not captures (documents, archives...), leaving out
+    /// Snaplume's own annotation folders and the files Windows adds (desktop.ini, Thumbs.db).
+    /// </summary>
+    /// <param name="more">The count stopped at <see cref="MaxCounted"/>.</param>
+    private static int CountOtherFiles(string folder, out bool more)
+    {
+        more = false;
+        int count = 0;
+        try
+        {
+            var options = new EnumerationOptions { RecurseSubdirectories = true, IgnoreInaccessible = true, AttributesToSkip = 0 };
+            foreach (var path in Directory.EnumerateFiles(folder, "*", options))
+            {
+                if (ImageIO.IsCapture(path) || IsSnaplumeOrWindowsFile(folder, path)) continue;
+                if (++count < MaxCounted) continue;
+                more = true;
+                break;
+            }
+        }
+        catch (Exception ex)
+        {
+            // Not readable: the usual confirmation is shown.
+            ErrorLog.Write("Contenu d'un espace de travail", ex);
+        }
+        return count;
+    }
+
+    private static bool IsSnaplumeOrWindowsFile(string folder, string path)
+    {
+        var name = Path.GetFileName(path);
+        if (name.Equals("desktop.ini", StringComparison.OrdinalIgnoreCase) || name.Equals("Thumbs.db", StringComparison.OrdinalIgnoreCase))
+            return true;
+        // Annotations kept next to the captures (".snaplume", or ".librecapture" from older versions).
+        var relative = Path.GetRelativePath(folder, path);
+        return relative.Split(Path.DirectorySeparatorChar)[..^1]
+            .Any(part => part.Equals(".snaplume", StringComparison.OrdinalIgnoreCase) || part.Equals(".librecapture", StringComparison.OrdinalIgnoreCase));
     }
 
     public static void OpenFolder(Window owner, string name)

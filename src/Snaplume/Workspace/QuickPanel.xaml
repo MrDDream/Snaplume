@@ -202,6 +202,9 @@
                         <Button x:Name="ReadTextButton" Style="{StaticResource SelectionAction}" Tag="{l:T Ocr.ReadTextShort}" Click="OnReadText" ToolTip="{l:T Ocr.ReadTextTip}">
                             <Path Style="{StaticResource Icon}" Data="{StaticResource IconOcr}" />
                         </Button>
+                        <Button x:Name="ReadQrButton" Style="{StaticResource SelectionAction}" Tag="{l:T Panel.Qr}" Click="OnReadQrOfSelection" ToolTip="{l:T Panel.QrTip}">
+                            <Path Style="{StaticResource Icon}" Data="{StaticResource IconQr}" />
+                        </Button>
                         <Button x:Name="CopyButton" Style="{StaticResource SelectionAction}" Tag="{l:T Panel.Copy}" Click="OnCopy" ToolTip="{l:T Panel.CopyTip}">
                             <Path Style="{StaticResource Icon}" Data="{StaticResource IconCopy}" />
                         </Button>
@@ -227,7 +230,9 @@
                                         <MenuItem Header="{l:T Panel.Menu.CaptureScreen}" Click="OnCaptureScreen" />
                                         <MenuItem Header="{l:T Panel.Menu.CaptureAllScreens}" Click="OnCaptureAllScreens" />
                                         <MenuItem Header="{l:T Panel.Menu.RepeatLast}" Click="OnCaptureRepeat" />
+                                        <MenuItem Header="{l:T Panel.Menu.CaptureScrolling}" Click="OnCaptureScrolling" />
                                         <MenuItem Header="{l:T Ocr.CaptureText}" Click="OnCaptureText" />
+                                        <MenuItem Header="{l:T Panel.Menu.ReadQr}" Click="OnReadQr" />
                                         <Separator />
                                         <MenuItem Header="{l:T Panel.Menu.Delay3}" Tag="3" Click="OnDelayedCapture" />
                                         <MenuItem Header="{l:T Panel.Menu.Delay5}" Tag="5" Click="OnDelayedCapture" />

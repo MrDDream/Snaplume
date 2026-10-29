@@ -8,6 +8,7 @@ public partial class ResizeDialog : Window
 {
     private static readonly int[] Percents = { 25, 50, 75, 150, 200 };
 
+    private readonly EditorDocument _document;
     private readonly int _originalWidth;
     private readonly int _originalHeight;
     private bool _syncing;
@@ -15,10 +16,12 @@ public partial class ResizeDialog : Window
     public int NewWidth { get; private set; }
     public int NewHeight { get; private set; }
 
-    public ResizeDialog(Window owner, int width, int height)
+    public ResizeDialog(Window owner, EditorDocument document)
     {
         InitializeComponent();
         Owner = owner;
+        _document = document;
+        int width = document.BaseImage.PixelWidth, height = document.BaseImage.PixelHeight;
         _originalWidth = width;
         _originalHeight = height;
         CurrentSizeText.Text = Loc.T("Resize.CurrentSize", width, height);
@@ -71,9 +74,16 @@ public partial class ResizeDialog : Window
             ShowError(Loc.T("Resize.Error", 1, EditorDocument.MaxDimension));
             return;
         }
-        if ((long)w * h > EditorDocument.MaxPixels)
+        if ((long)w * h > ImageIO.MaxPixels)
         {
-            ShowError(Loc.T("Resize.TooManyPixels", EditorDocument.MaxPixels / 1_000_000));
+            ShowError(Loc.T("Resize.TooManyPixels", ImageIO.MaxPixels / 1_000_000));
+            return;
+        }
+        // The saved image also has the margins of the shadow, whose size follows the image.
+        var (outputWidth, outputHeight) = EditorDocument.OutputSizeOf(w, h, _document.ResizedEffects(w, h));
+        if ((long)outputWidth * outputHeight > ImageIO.MaxPixels)
+        {
+            ShowError(Loc.T("Resize.TooManyPixelsWithShadow", ImageIO.MaxPixels / 1_000_000));
             return;
         }
         NewWidth = w;

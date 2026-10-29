@@ -1,9 +1,11 @@
 using System.Globalization;
 using System.Runtime.CompilerServices;
+using System.Text;
 using System.Text.Json.Serialization;
 using System.Windows;
 using System.Windows.Media;
 using System.Windows.Media.Imaging;
+using static Snaplume.Editor.Freezables;
 
 namespace Snaplume.Editor;
 
@@ -23,6 +25,7 @@ namespace Snaplume.Editor;
 [JsonDerivedType(typeof(StepAnnotation), "step")]
 [JsonDerivedType(typeof(FreehandAnnotation), "freehand")]
 [JsonDerivedType(typeof(StampAnnotation), "stamp")]
+[JsonDerivedType(typeof(MagnifierAnnotation), "magnifier")]
 public abstract class Annotation
 {
     /// <summary>Coordinates beyond this are rejected when reading a sidecar file.</summary>
@@ -67,6 +70,15 @@ public abstract class Annotation
     /// <summary>Resize handles; empty when the annotation can only be moved.</summary>
     public virtual IReadOnlyList<Point> GetHandles() => Array.Empty<Point>();
 
+    /// <summary>
+    /// Called when the user starts dragging the annotation itself at <paramref name="p"/>, before the
+    /// <see cref="Translate"/> calls; <see cref="EndHandleDrag"/> ends it. An annotation made of separate
+    /// parts may then move only the part under the mouse.
+    /// </summary>
+    public virtual void BeginMove(Point p)
+    {
+    }
+
     /// <summary>Called when the user starts dragging a handle, before the <see cref="MoveHandle"/> calls.</summary>
     public virtual void BeginHandleDrag(int index)
     {
@@ -102,12 +114,6 @@ public abstract class Annotation
             });
         }
         return _pen;
-    }
-
-    protected static T Frozen<T>(T freezable) where T : Freezable
-    {
-        freezable.Freeze();
-        return freezable;
     }
 
     protected static bool IsLight(Color c) => 0.299 * c.R + 0.587 * c.G + 0.114 * c.B > 160;
@@ -368,7 +374,7 @@ public sealed class PixelateAnnotation : BoxAnnotation
     /// moving or resizing the area only changes the clip, so the blocks never shimmer, and pixelating
     /// an already pixelated area gives the same pixels.
     /// </summary>
-    private static BitmapSource PixelatedImage(BitmapSource image, int block)
+    internal static BitmapSource PixelatedImage(BitmapSource image, int block)
     {
         var sizes = Pixelated.GetValue(image, _ => new Dictionary<int, BitmapSource>());
         if (!sizes.TryGetValue(block, out var result))
@@ -380,7 +386,7 @@ public sealed class PixelateAnnotation : BoxAnnotation
     }
 
     /// <param name="source">Bgra32 image.</param>
-    public static BitmapSource Pixelate(BitmapSource source, Int32Rect area, int block)
+    private static BitmapSource Pixelate(BitmapSource source, Int32Rect area, int block)
     {
         int stride = area.Width * 4;
         var buffer = new byte[(long)stride * area.Height];
@@ -481,7 +487,7 @@ public sealed class TextAnnotation : Annotation
     {
         if (_format == null || _formatText != Text || _formatSize != FontSize || _formatColor != Color)
         {
-            _format = new FormattedText(Text.Length == 0 ? " " : Text, CultureInfo.CurrentUICulture, FlowDirection.LeftToRight,
+            _format = new FormattedText(Text.Length == 0 ? " " : Text, CultureInfo.CurrentUICulture, DirectionOf(Text),
                 new Typeface(Font, FontStyles.Normal, FontWeights.SemiBold, FontStretches.Normal),
                 FontSize, MakeBrush(), 1.0);
             _formatText = Text;
@@ -492,6 +498,32 @@ public sealed class TextAnnotation : Annotation
         }
         return _format;
     }
+
+    /// <summary>
+    /// Direction of a text, from its first letter with a strong direction (Arabic, Hebrew... read right to left),
+    /// whatever the language of the interface. Left to right without any letter.
+    /// </summary>
+    public static FlowDirection DirectionOf(string? text)
+    {
+        if (string.IsNullOrEmpty(text)) return FlowDirection.LeftToRight;
+        foreach (var rune in text.EnumerateRunes())
+        {
+            if (IsRightToLeft(rune.Value)) return FlowDirection.RightToLeft;
+            if (Rune.IsLetter(rune)) return FlowDirection.LeftToRight;
+        }
+        return FlowDirection.LeftToRight;
+    }
+
+    /// <summary>Blocks of the right-to-left scripts (Hebrew, Arabic, Syriac, Thaana, N'Ko... and their presentation forms).</summary>
+    private static bool IsRightToLeft(int c) =>
+        (c >= 0x0590 && c <= 0x08FF) || (c >= 0xFB1D && c <= 0xFDFF) || (c >= 0xFE70 && c <= 0xFEFF)
+        || (c >= 0x10800 && c <= 0x10FFF) || (c >= 0x1E800 && c <= 0x1EFFF);
+
+    /// <summary>Where the text is drawn in the box: a right-to-left text starts at its right edge.</summary>
+    private Point TextOrigin(FormattedText text) =>
+        text.FlowDirection == FlowDirection.RightToLeft
+            ? new Point(Pad + text.WidthIncludingTrailingWhitespace, Pad)
+            : new Point(Pad, Pad);
 
     public override Rect GetBounds()
     {
@@ -505,12 +537,12 @@ public sealed class TextAnnotation : Annotation
         if (HasBackground)
         {
             dc.DrawRoundedRectangle(Brushes.White, MakePen(Math.Max(1.5, Thickness / 2)), GetBounds(), 4, 4);
-            dc.DrawText(text, Position + new Vector(Pad, Pad));
+            dc.DrawText(text, Position + (Vector)TextOrigin(text));
         }
         else
         {
             // Contrasting halo keeps the text readable on any screenshot.
-            _geometry ??= Frozen(text.BuildGeometry(new Point(Pad, Pad)));
+            _geometry ??= Frozen(text.BuildGeometry(TextOrigin(text)));
             _halo ??= Frozen(new Pen(IsLight(Color) ? Brushes.Black : Brushes.White, Math.Max(2, FontSize / 7)) { LineJoin = PenLineJoin.Round });
             dc.PushTransform(new TranslateTransform(Position.X, Position.Y));
             dc.DrawGeometry(null, _halo, _geometry);

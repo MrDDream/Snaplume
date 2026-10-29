@@ -20,6 +20,11 @@ public sealed class VideoService
 {
     private const int CountdownSeconds = 3;
     private const string TempPrefix = "Snaplume_";
+    /// <summary>
+    /// A failure this soon after the start, with the webcam, is taken for a camera that could not
+    /// be opened (busy, unplugged): the recording starts again without it.
+    /// </summary>
+    private static readonly TimeSpan WebcamStartupWindow = TimeSpan.FromSeconds(4);
 
     private readonly App _app;
     private readonly ScreenOperation _operation = new();
@@ -30,6 +35,9 @@ public sealed class VideoService
     private DispatcherTimer? _timer;
     private TaskCompletionSource<string?>? _completion;
     private string? _tempPath;
+    private PixelRect _area;
+    /// <summary>The current recorder inlays the webcam.</summary>
+    private bool _webcamActive;
     private Action? _afterStop;
     private bool _cancelled;
     private bool _stopping;
@@ -38,9 +46,6 @@ public sealed class VideoService
 
     /// <summary>From the start of the area selection until the video is saved (or abandoned).</summary>
     public bool IsBusy => _operation.IsBusy;
-
-    /// <summary>True while frames are being recorded (paused included).</summary>
-    public bool IsRecording => _recorder != null;
 
     /// <summary>
     /// Raised on the UI thread at every change: start, recording begun, paused or resumed,
@@ -62,8 +67,8 @@ public sealed class VideoService
             Stop();
             return null;
         }
-        // One selection on screen at a time (a screenshot may be choosing its area).
-        if (RegionSelectorWindow.IsOpen || !_operation.TryBegin(hide)) return null;
+        // Not while a capture is interactive (choosing its area, scrolling...): see ScreenOperation.
+        if (!_operation.TryBegin(hide)) return null;
 
         // Continuations run later: Finish() must complete before the caller goes on (e.g. quits).
         var completion = new TaskCompletionSource<string?>(TaskCreationOptions.RunContinuationsAsynchronously);
@@ -87,6 +92,9 @@ public sealed class VideoService
                 Finish(null);
                 return await completion.Task;
             }
+
+            // The area is chosen: screenshots may be taken during the countdown and the recording.
+            _operation.EndInteractive();
 
             // H.264 needs even dimensions.
             var area = relative.Offset(snap.Bounds.X, snap.Bounds.Y);
@@ -210,8 +218,37 @@ public sealed class VideoService
 
     private void Begin(PixelRect area)
     {
+        _area = area;
+        try
+        {
+            StartRecorder(area, Settings.VideoWebcam);
+        }
+        catch (Exception ex) when (_webcamActive)
+        {
+            // The camera could not be opened: record without it.
+            ErrorLog.Write("Webcam", ex);
+            var failed = _recorder;
+            _recorder = null;
+            failed?.Dispose();
+            DeleteTempFile(_tempPath);
+            StartRecorder(area, webcam: false);
+            _app.Tray?.ShowWarning(Loc.T("Video.WebcamUnavailable"), Loc.T("Video.WebcamBusy"));
+        }
+
+        _elapsed.Restart();
+        _timer = new DispatcherTimer { Interval = TimeSpan.FromMilliseconds(250) };
+        _timer.Tick += (_, _) => _bar?.SetRecording(_elapsed.Elapsed);
+        _timer.Start();
+        _bar?.SetRecording(TimeSpan.Zero);
+    }
+
+    /// <summary>Creates the recorder and starts writing to a new temporary file.</summary>
+    private void StartRecorder(PixelRect area, bool webcam)
+    {
         _tempPath = Path.Combine(Path.GetTempPath(), $"{TempPrefix}{Guid.NewGuid():N}.mp4");
-        var recorder = Recorder.CreateRecorder(BuildOptions(area));
+        var options = BuildOptions(area);
+        _webcamActive = webcam && AddWebcamOverlay(options, area);
+        var recorder = Recorder.CreateRecorder(options);
         var dispatcher = _app.Dispatcher;
         // Events of a recorder already finished (or replaced) are ignored.
         recorder.OnRecordingComplete += (_, _) => dispatcher.BeginInvoke(() =>
@@ -228,12 +265,85 @@ public sealed class VideoService
         });
         _recorder = recorder;
         recorder.Record(_tempPath);
+    }
 
+    /// <summary>
+    /// Adds the webcam picture-in-picture to the options. False (with a warning, the recording
+    /// goes on without it) when the chosen camera is not connected.
+    /// </summary>
+    private bool AddWebcamOverlay(RecorderOptions options, PixelRect area)
+    {
+        RecordableCamera? camera = null;
+        try
+        {
+            var cameras = Recorder.GetSystemVideoCaptureDevices();
+            var wanted = Settings.VideoWebcamDevice;
+            camera = string.IsNullOrEmpty(wanted)
+                ? cameras.FirstOrDefault()
+                : cameras.FirstOrDefault(c => string.Equals(c.DeviceName, wanted, StringComparison.OrdinalIgnoreCase));
+        }
+        catch (Exception ex)
+        {
+            ErrorLog.Write("Liste des webcams", ex);
+        }
+        if (camera == null)
+        {
+            _app.Tray?.ShowWarning(Loc.T("Video.WebcamUnavailable"), Loc.T("Video.WebcamNotFound"));
+            return false;
+        }
+
+        // Size relative to the recorded area (the output frame), height from the camera's ratio
+        // (the percentage is kept between 10 and 40 by AppSettings.Sanitize).
+        int width = Math.Max(64, area.Width * Settings.VideoWebcamSize / 100);
+        int margin = Math.Max(8, Math.Min(area.Width, area.Height) / 40);
+        var anchor = Settings.VideoWebcamCorner switch
+        {
+            "TopLeft" => Anchor.TopLeft,
+            "TopRight" => Anchor.TopRight,
+            "BottomLeft" => Anchor.BottomLeft,
+            _ => Anchor.BottomRight,
+        };
+        options.OverlayOptions = new OverLayOptions
+        {
+            Overlays = new List<RecordingOverlayBase>
+            {
+                new VideoCaptureOverlay(camera.DeviceName)
+                {
+                    AnchorPoint = anchor,
+                    Offset = new ScreenSize(margin, margin), // from the anchored corner, inwards
+                    Size = new ScreenSize(width, 0), // 0: height follows the camera's aspect ratio
+                    Stretch = StretchMode.Uniform,
+                },
+            },
+        };
+        return true;
+    }
+
+    /// <summary>
+    /// The recording failed right after starting with the webcam (camera busy in another
+    /// application, or unplugged): starts again without it rather than losing the recording.
+    /// </summary>
+    private bool TryRestartWithoutWebcam(string error)
+    {
+        if (!_webcamActive || _stopping || _cancelled || _elapsed.Elapsed > WebcamStartupWindow) return false;
+        ErrorLog.Write("Webcam", error);
+        var failed = _recorder;
+        _recorder = null;
+        failed?.Dispose();
+        DeleteTempFile(_tempPath);
+        try
+        {
+            StartRecorder(_area, webcam: false);
+        }
+        catch (Exception ex)
+        {
+            ErrorLog.Write("Enregistrement vidéo sans webcam", ex);
+            return false;
+        }
         _elapsed.Restart();
-        _timer = new DispatcherTimer { Interval = TimeSpan.FromMilliseconds(250) };
-        _timer.Tick += (_, _) => _bar?.SetRecording(_elapsed.Elapsed);
-        _timer.Start();
         _bar?.SetRecording(TimeSpan.Zero);
+        _app.Tray?.ShowWarning(Loc.T("Video.WebcamUnavailable"), Loc.T("Video.WebcamBusy"));
+        return true;
     }
 
     private RecorderOptions BuildOptions(PixelRect area)
@@ -403,6 +513,7 @@ public sealed class VideoService
 
     private void OnFailed(string error)
     {
+        if (TryRestartWithoutWebcam(error)) return;
         ErrorLog.Write("Enregistrement vidéo", error);
         DeleteTempFile(_tempPath);
         Finish(null);
@@ -425,6 +536,7 @@ public sealed class VideoService
         _recorder = null;
         recorder?.Dispose();
         _tempPath = null;
+        _webcamActive = false;
         _elapsed.Reset();
         _cancelled = false;
         _stopping = false;

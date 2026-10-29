@@ -35,12 +35,14 @@ public sealed class TrayIcon : IDisposable
         menu.Items.Add(Loc.T("Tray.CaptureScreen"), null, (_, _) => Capture(CaptureKind.Screen));
         menu.Items.Add(Loc.T("Tray.CaptureAllScreens"), null, (_, _) => Capture(CaptureKind.AllScreens));
         menu.Items.Add(Loc.T("Tray.RepeatLast"), null, (_, _) => Capture(CaptureKind.RepeatLast));
+        menu.Items.Add(Loc.T("Tray.CaptureScrolling"), null, (_, _) => Capture(CaptureKind.Scrolling));
 
         var delayed = new WinForms.ToolStripMenuItem(Loc.T("Tray.CaptureDelayed"));
         foreach (var seconds in new[] { 3, 5, 10 })
             delayed.DropDownItems.Add(Loc.T("Common.Seconds", seconds), null, (_, _) => Capture(CaptureKind.Region, seconds));
         menu.Items.Add(delayed);
         menu.Items.Add(Loc.T("Ocr.CaptureText"), null, (_, _) => _ = app.Captures.CaptureTextAsync(settleMs: 200));
+        menu.Items.Add(Loc.T("Tray.ReadQr"), null, (_, _) => _ = app.Captures.CaptureQrAsync(settleMs: 200));
 
         menu.Items.Add(new WinForms.ToolStripSeparator());
         var video = new WinForms.ToolStripMenuItem(Loc.T("Tray.RecordVideo"), null, (_, _) => _ = app.Videos.ToggleAsync(settleMs: 200));

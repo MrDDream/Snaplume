@@ -1,4 +1,5 @@
 using System.Windows.Media.Imaging;
+using Snaplume.Core;
 
 namespace Snaplume.Workspace;
 
@@ -102,40 +103,48 @@ public static class ThumbnailCache
             return frame == null ? null : new Thumbnail(frame, "", boxWidth, boxHeight);
         }
 
-        byte[] bytes;
+        FileStream stream;
         try
         {
-            bytes = File.ReadAllBytes(path);
+            stream = new FileStream(path, FileMode.Open, FileAccess.Read, FileShare.ReadWrite | FileShare.Delete, 1 << 16);
         }
         catch (Exception ex) when (ex is FileNotFoundException or DirectoryNotFoundException or UnauthorizedAccessException)
         {
             return null; // deleted meanwhile, or not readable at all: nothing to retry
         }
 
-        try
+        using (stream)
         {
-            int width, height;
-            using (var probe = new MemoryStream(bytes))
+            try
             {
-                var frame = BitmapFrame.Create(probe, BitmapCreateOptions.DelayCreation, BitmapCacheOption.None);
-                width = frame.PixelWidth;
-                height = frame.PixelHeight;
+                // Header only: the size is known (and checked) before any pixel is decoded.
+                var frame = BitmapDecoder.Create(stream, BitmapCreateOptions.DelayCreation | BitmapCreateOptions.IgnoreColorProfile,
+                    BitmapCacheOption.None).Frames[0];
+                int width = frame.PixelWidth, height = frame.PixelHeight;
+                if (width <= 0 || height <= 0 || (long)width * height > ImageIO.MaxPixels) return null;
+
+                stream.Position = 0;
+                var image = new BitmapImage();
+                image.BeginInit();
+                // Decoded at the thumbnail size while the file is open, then the file is let go.
+                image.CacheOption = BitmapCacheOption.OnLoad;
+                image.StreamSource = stream;
+                // Fit in the box like Stretch="Uniform", never larger than the image itself.
+                if ((long)width * boxHeight >= (long)height * boxWidth) image.DecodePixelWidth = Math.Min(width, boxWidth);
+                else image.DecodePixelHeight = Math.Min(height, boxHeight);
+                image.EndInit();
+                image.Freeze();
+                return new Thumbnail(image, $"{width} × {height}", boxWidth, boxHeight);
             }
-            var image = new BitmapImage();
-            image.BeginInit();
-            image.CacheOption = BitmapCacheOption.OnLoad;
-            image.StreamSource = new MemoryStream(bytes);
-            // Fit in the box like Stretch="Uniform", never larger than the image itself.
-            if ((long)width * boxHeight >= (long)height * boxWidth) image.DecodePixelWidth = Math.Min(width, boxWidth);
-            else image.DecodePixelHeight = Math.Min(height, boxHeight);
-            image.EndInit();
-            image.Freeze();
-            return new Thumbnail(image, $"{width} × {height}", boxWidth, boxHeight);
-        }
-        catch (Exception ex) when (ex is not OutOfMemoryException)
-        {
-            // Damaged or partly written file: a later write changes the key and triggers a new attempt.
-            return null;
+            catch (IOException)
+            {
+                throw; // e.g. still being written: the gallery tries again later
+            }
+            catch (Exception ex) when (ex is not OutOfMemoryException)
+            {
+                // Damaged or partly written file: a later write changes the key and triggers a new attempt.
+                return null;
+            }
         }
     }
 }

@@ -3,7 +3,6 @@ using System.Windows.Interop;
 using System.Windows.Media;
 using System.Windows.Shapes;
 using Snaplume.Capturing;
-using ScreenRecorderLib;
 using static Snaplume.Native.NativeMethods;
 
 namespace Snaplume.Recording;
@@ -44,7 +43,7 @@ public sealed class RecordingFrame : Window
             // The frame may span monitors: keep its physical size when the DPI changes.
             IgnoreDpiChanges(this);
             AddExtendedStyle(hwnd, WS_EX_TRANSPARENT | WS_EX_TOOLWINDOW | WS_EX_NOACTIVATE);
-            Recorder.SetExcludeFromCapture(hwnd, true);
+            ExcludeFromCapture(hwnd);
             SetWindowPos(hwnd, HWND_TOPMOST, area.X - Gap, area.Y - Gap, area.Width + 2 * Gap, area.Height + 2 * Gap,
                 SWP_NOACTIVATE | SWP_SHOWWINDOW);
         };

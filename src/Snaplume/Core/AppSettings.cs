@@ -43,6 +43,17 @@ public sealed class AppSettings
     public bool VideoMicrophone { get; set; }
     public bool VideoShowClicks { get; set; }
     public int VideoFramerate { get; set; } = 30;
+    /// <summary>Webcam inlaid in a corner of the recording (picture-in-picture).</summary>
+    public bool VideoWebcam { get; set; }
+    /// <summary>Camera device name (ScreenRecorderLib), empty for the first camera found.</summary>
+    public string VideoWebcamDevice { get; set; } = "";
+    /// <summary>"TopLeft", "TopRight", "BottomLeft" or "BottomRight".</summary>
+    public string VideoWebcamCorner { get; set; } = "BottomRight";
+    /// <summary>Width of the webcam picture, in % of the width of the recorded area.</summary>
+    public int VideoWebcamSize { get; set; } = 20;
+
+    /// <summary>Corners the webcam picture can be placed in (values of <see cref="VideoWebcamCorner"/>).</summary>
+    public static readonly string[] WebcamCorners = { "TopLeft", "TopRight", "BottomLeft", "BottomRight" };
 
     public static string DefaultWorkspaceFolder =>
         Path.Combine(Environment.GetFolderPath(Environment.SpecialFolder.MyPictures), "Snaplume");
@@ -83,6 +94,8 @@ public sealed class AppSettings
         }
         settings ??= new AppSettings();
         settings.Sanitize();
+        // The installer may have registered the start with Windows: show it checked, so that saving keeps it.
+        if (!settings.StartWithWindows && RunEntryPointsToThisExe()) settings.StartWithWindows = true;
         if (migrated && settings.StartWithWindows)
         {
             try
@@ -95,6 +108,54 @@ public sealed class AppSettings
             }
         }
         return settings;
+    }
+
+    private const string RunKey = @"Software\Microsoft\Windows\CurrentVersion\Run";
+
+    /// <summary>
+    /// True when the "Snaplume" value of the Run key starts this executable (e.g. created by the
+    /// installer). A value starting another copy of Snaplume does not count.
+    /// </summary>
+    private static bool RunEntryPointsToThisExe()
+    {
+        try
+        {
+            using var key = Registry.CurrentUser.OpenSubKey(RunKey);
+            if (key?.GetValue("Snaplume") is not string command || Environment.ProcessPath is not { } exe) return false;
+            return CommandExecutable(command) is { } target && IsSameFile(target, exe);
+        }
+        catch (Exception ex)
+        {
+            ErrorLog.Write("Démarrage avec Windows", ex);
+            return false;
+        }
+    }
+
+    /// <summary>Executable of a command line: the quoted path, or the text up to the first space.</summary>
+    private static string? CommandExecutable(string command)
+    {
+        command = command.Trim();
+        if (command.StartsWith('"'))
+        {
+            int end = command.IndexOf('"', 1);
+            return end > 1 ? command[1..end] : null;
+        }
+        int space = command.IndexOf(' ');
+        return space < 0 ? command : command[..space];
+    }
+
+    private static bool IsSameFile(string a, string b)
+    {
+        try
+        {
+            a = Path.GetFullPath(Environment.ExpandEnvironmentVariables(a));
+            b = Path.GetFullPath(b);
+            return string.Equals(a, b, StringComparison.OrdinalIgnoreCase);
+        }
+        catch (Exception)
+        {
+            return false;
+        }
     }
 
     private static void BackUpUnreadableFile()
@@ -135,6 +196,10 @@ public sealed class AppSettings
         JpegQuality = Math.Clamp(JpegQuality, 10, 100);
         DelaySeconds = Math.Clamp(DelaySeconds, 0, 60);
         VideoFramerate = Math.Clamp(VideoFramerate, 5, 60);
+        VideoWebcamDevice = VideoWebcamDevice?.Trim() ?? defaults.VideoWebcamDevice;
+        VideoWebcamCorner = WebcamCorners.FirstOrDefault(c => string.Equals(c, VideoWebcamCorner, StringComparison.OrdinalIgnoreCase))
+                            ?? defaults.VideoWebcamCorner;
+        VideoWebcamSize = Math.Clamp(VideoWebcamSize, 10, 40);
     }
 
     /// <summary>Full path of a folder, or null if it is relative or invalid.</summary>
@@ -197,7 +262,12 @@ public sealed class AppSettings
         var temp = SettingsFile + ".tmp";
         try
         {
-            File.WriteAllText(temp, JsonSerializer.Serialize(data, JsonOptions));
+            // Flushed to the disk before the rename: a power cut then leaves the old file or the new one, never an empty one.
+            using (var stream = new FileStream(temp, FileMode.Create, FileAccess.Write, FileShare.None))
+            {
+                JsonSerializer.Serialize(stream, data, JsonOptions);
+                stream.Flush(flushToDisk: true);
+            }
             File.Move(temp, SettingsFile, overwrite: true);
         }
         catch
@@ -218,8 +288,7 @@ public sealed class AppSettings
 
     public void ApplyStartWithWindows()
     {
-        const string runKey = @"Software\Microsoft\Windows\CurrentVersion\Run";
-        using var key = Registry.CurrentUser.OpenSubKey(runKey, writable: true);
+        using var key = Registry.CurrentUser.OpenSubKey(RunKey, writable: true);
         if (key == null) return;
         key.DeleteValue(LegacyName, throwOnMissingValue: false);
         if (StartWithWindows) key.SetValue("Snaplume", $"\"{Environment.ProcessPath}\" --tray");

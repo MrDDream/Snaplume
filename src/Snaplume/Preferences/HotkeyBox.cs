@@ -68,11 +68,12 @@ public sealed class HotkeyBox : TextBox
     }
 
     /// <summary>
-    /// A global shortcut needs Ctrl, Alt or Win, except for keys that type nothing:
-    /// Print Screen, Pause, Scroll Lock and the function keys.
+    /// A global shortcut needs Ctrl, Alt or Win, except for keys no application relies on:
+    /// Print Screen, Pause, Scroll Lock and F13 to F24. F1 to F12 alone would be taken from every
+    /// application (F1 help, F2 rename, F5 refresh...).
     /// </summary>
     public static bool IsAllowed(Hotkey hotkey) =>
         hotkey.IsEmpty ||
         (hotkey.Modifiers & (ModifierKeys.Control | ModifierKeys.Alt | ModifierKeys.Windows)) != 0 ||
-        hotkey.Key is Key.Snapshot or Key.Pause or Key.Scroll or (>= Key.F1 and <= Key.F24);
+        hotkey.Key is Key.Snapshot or Key.Pause or Key.Scroll or (>= Key.F13 and <= Key.F24);
 }

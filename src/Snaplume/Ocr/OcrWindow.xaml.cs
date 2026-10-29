@@ -59,8 +59,7 @@ public partial class OcrWindow : Window
                 return;
             }
             ShowMessage("");
-            ClipboardHelper.SetText(text);
-            StatusText.Text = Loc.T("Ocr.Copied");
+            StatusText.Text = Loc.T(ClipboardHelper.TrySetText(text) ? "Ocr.Copied" : "Ocr.CopyFailed");
             ResultBox.Focus();
         }
         catch (Exception ex)
@@ -99,8 +98,8 @@ public partial class OcrWindow : Window
     {
         var text = ResultBox.SelectionLength > 0 ? ResultBox.SelectedText : ResultBox.Text;
         if (string.IsNullOrEmpty(text)) return;
-        ClipboardHelper.SetText(text);
-        StatusText.Text = Loc.T(ResultBox.SelectionLength > 0 ? "Ocr.SelectionCopied" : "Ocr.Copied");
+        StatusText.Text = Loc.T(!ClipboardHelper.TrySetText(text) ? "Ocr.CopyFailed"
+            : ResultBox.SelectionLength > 0 ? "Ocr.SelectionCopied" : "Ocr.Copied");
     }
 
     private void OnClose(object sender, RoutedEventArgs e) => Close();

@@ -366,7 +366,7 @@ public static class StampLibrary
 
     private static Brush Solid(string hex, byte alpha = 0xFF)
     {
-        var color = (Color)ColorConverter.ConvertFromString(hex);
+        var color = HexColor.Parse(hex);
         color.A = alpha;
         var brush = new SolidColorBrush(color);
         brush.Freeze();

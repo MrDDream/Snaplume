@@ -10,6 +10,10 @@
     <Geometry x:Key="IconVideo">M3,7 H15 V17 H3 Z M15,10.5 L21,7 V17 L15,13.5 Z</Geometry>
     <Geometry x:Key="IconStop">M7,7 H17 V17 H7 Z</Geometry>
     <Geometry x:Key="IconCamera">M3,8 H7 L9,5 H15 L17,8 H21 V19 H3 Z M12,10 A3.5,3.5 0 1 1 11.99,10 Z</Geometry>
+    <!-- Scrolling capture: a page going on below the frame, with a down arrow -->
+    <Geometry x:Key="IconScroll">M5,14 V3 H19 V14 M5,18 V21 M19,18 V21 M12,7 V17 M8.5,13.5 L12,17 L15.5,13.5</Geometry>
+    <!-- QR code: three finder squares and a few modules -->
+    <Geometry x:Key="IconQr">M4,4 H10 V10 H4 Z M14,4 H20 V10 H14 Z M4,14 H10 V20 H4 Z M14,14 H16.5 V16.5 H14 Z M20,14 V17 M17,20 H20 M14,20 V19</Geometry>
 
     <!-- Windows -->
     <Geometry x:Key="IconClose">M6,6 L18,18 M18,6 L6,18</Geometry>
@@ -66,4 +70,10 @@
     <Geometry x:Key="IconStamp">M9,12 V8.5 A3,3 0 1 1 15,8.5 V12 M4.5,12 H19.5 V16.5 H4.5 Z M5,20 H19</Geometry>
     <Geometry x:Key="IconResize">M4,10 V4 H10 M4,4 L10.5,10.5 M20,14 V20 H14 M20,20 L13.5,13.5</Geometry>
     <Geometry x:Key="IconCrop">M6,2 V18 H22 M2,6 H18 V22</Geometry>
+    <!-- Magnifier: small source area linked to a round lens -->
+    <Geometry x:Key="IconMagnifier">M3,15 H9 V21 H3 Z M8.5,15.5 L11.6,12.4 M15.5,3 A5.5,5.5 0 1 1 15.49,3 Z</Geometry>
+    <!-- Image effects: a picture with its shadow -->
+    <Geometry x:Key="IconEffects">M3,3 H17 V17 H3 Z M7,21 H21 V7 M6,13 L9,10 L12,13 L14,11 L17,14</Geometry>
+    <Geometry x:Key="IconPrinter">M7,9 V3 H17 V9 M7,18 H4 V9 H20 V18 H17 M7,14 H17 V21 H7 Z</Geometry>
+    <Geometry x:Key="IconEnvelope">M3,6 H21 V18 H3 Z M3,6 L12,13 L21,6</Geometry>
 </ResourceDictionary>

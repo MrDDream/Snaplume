@@ -380,6 +380,56 @@
                             </Border>
                         </StackPanel>
                     </Border>
+                    <TextBlock Style="{StaticResource CardHeader}" Text="{l:T Settings.Video.WebcamHeader}" />
+                    <Border Style="{StaticResource Card}">
+                        <StackPanel>
+                            <Border Style="{StaticResource Row}">
+                                <DockPanel>
+                                    <CheckBox x:Name="WebcamCheck" Style="{StaticResource Switch}" DockPanel.Dock="Right" />
+                                    <StackPanel>
+                                        <TextBlock Style="{StaticResource RowTitle}" Text="{l:T Settings.Video.Webcam}" />
+                                        <TextBlock Style="{StaticResource RowDescription}" Text="{l:T Settings.Video.WebcamDescription}" />
+                                    </StackPanel>
+                                </DockPanel>
+                            </Border>
+                            <!-- Webcam options: only meaningful when the webcam is inlaid -->
+                            <StackPanel IsEnabled="{Binding IsChecked, ElementName=WebcamCheck}">
+                                <StackPanel.Style>
+                                    <Style TargetType="StackPanel">
+                                        <Style.Triggers>
+                                            <Trigger Property="IsEnabled" Value="False">
+                                                <Setter Property="Opacity" Value="0.5" />
+                                            </Trigger>
+                                        </Style.Triggers>
+                                    </Style>
+                                </StackPanel.Style>
+                                <Border Style="{StaticResource Row}">
+                                    <DockPanel>
+                                        <ComboBox x:Name="WebcamDeviceBox" DockPanel.Dock="Right" Width="230" DisplayMemberPath="Name" />
+                                        <StackPanel>
+                                            <TextBlock Style="{StaticResource RowTitle}" Text="{l:T Settings.Video.WebcamDevice}" />
+                                            <TextBlock Style="{StaticResource RowDescription}" Text="{l:T Settings.Video.WebcamDeviceDescription}" />
+                                        </StackPanel>
+                                    </DockPanel>
+                                </Border>
+                                <Border Style="{StaticResource Row}">
+                                    <DockPanel>
+                                        <ComboBox x:Name="WebcamCornerBox" DockPanel.Dock="Right" DisplayMemberPath="Name" />
+                                        <TextBlock Style="{StaticResource RowTitle}" Text="{l:T Settings.Video.WebcamCorner}" VerticalAlignment="Center" />
+                                    </DockPanel>
+                                </Border>
+                                <Border Style="{StaticResource LastRow}">
+                                    <DockPanel>
+                                        <ComboBox x:Name="WebcamSizeBox" DockPanel.Dock="Right" DisplayMemberPath="Name" />
+                                        <StackPanel>
+                                            <TextBlock Style="{StaticResource RowTitle}" Text="{l:T Settings.Video.WebcamSize}" />
+                                            <TextBlock Style="{StaticResource RowDescription}" Text="{l:T Settings.Video.WebcamSizeDescription}" />
+                                        </StackPanel>
+                                    </DockPanel>
+                                </Border>
+                            </StackPanel>
+                        </StackPanel>
+                    </Border>
                 </StackPanel>
 
                 <!-- Hotkeys -->

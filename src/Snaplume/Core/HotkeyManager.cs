@@ -51,6 +51,8 @@ public sealed class HotkeyManager : IDisposable
     {
         foreach (var id in _actions.Keys) UnregisterHotKey(_source.Handle, id);
         _actions.Clear();
+        // Ids are only unique among the registered shortcuts: start again (they would otherwise grow at every settings change).
+        _nextId = 1;
     }
 
     private IntPtr WndProc(IntPtr hwnd, int msg, IntPtr wParam, IntPtr lParam, ref bool handled)

@@ -23,17 +23,35 @@ public static class FileOps
         return SHFileOperation(ref op) == 0 && !op.fAnyOperationsAborted;
     }
 
+    /// <summary>URI schemes that may be opened: web pages and the Windows settings pages, nothing that runs a program.</summary>
+    private static readonly string[] AllowedSchemes = { Uri.UriSchemeHttp, Uri.UriSchemeHttps, "ms-settings" };
+
     /// <summary>
-    /// Opens a file with its default application, or a URI such as "ms-settings:regionlanguage".
+    /// Opens an existing file or folder (full path) with its default application, or a web or
+    /// "ms-settings:" URI. Any other target (other schemes, relative paths) is refused.
     /// </summary>
-    /// <returns>False (and the error is logged) when Windows could not open it, e.g. no associated application.</returns>
+    /// <returns>False (and the error is logged) when the target is refused or Windows could not open it, e.g. no associated application.</returns>
     public static bool OpenWithDefaultApp(string target)
     {
         try
         {
-            // URIs are passed as is; files by their full path.
-            bool isUri = Uri.TryCreate(target, UriKind.Absolute, out var uri) && !uri.IsFile && !uri.IsUnc;
-            Process.Start(new ProcessStartInfo(isUri ? target : Path.GetFullPath(target)) { UseShellExecute = true })?.Dispose();
+            string? toOpen = null;
+            if (Path.IsPathFullyQualified(target))
+            {
+                var full = Path.GetFullPath(target);
+                if (File.Exists(full) || Directory.Exists(full)) toOpen = full;
+            }
+            else if (Uri.TryCreate(target, UriKind.Absolute, out var uri)
+                     && AllowedSchemes.Contains(uri.Scheme, StringComparer.OrdinalIgnoreCase))
+            {
+                toOpen = target;
+            }
+            if (toOpen == null)
+            {
+                ErrorLog.Write("Ouverture refusée", target);
+                return false;
+            }
+            Process.Start(new ProcessStartInfo(toOpen) { UseShellExecute = true })?.Dispose();
             return true;
         }
         catch (Exception ex)
