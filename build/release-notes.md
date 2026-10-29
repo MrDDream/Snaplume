@@ -18,8 +18,9 @@
 |---|---|---|
 | **Installer** | [`Snaplume-Setup-{{VERSION}}.exe`](https://github.com/MrDDream/Snaplume/releases/download/v{{VERSION}}/Snaplume-Setup-{{VERSION}}.exe) | Most users: per-user setup (no administrator rights needed, all-users install available), Start menu shortcut, optional desktop shortcut and start with Windows, uninstaller. |
 | **Portable** | [`Snaplume-{{VERSION}}-portable.zip`](https://github.com/MrDDream/Snaplume/releases/download/v{{VERSION}}/Snaplume-{{VERSION}}-portable.zip) | USB sticks and locked-down PCs: unzip the `Snaplume` folder anywhere and run `Snaplume.exe`; settings stay in the folder. |
+| **MSI** | [`Snaplume-{{VERSION}}-x64.msi`](https://github.com/MrDDream/Snaplume/releases/download/v{{VERSION}}/Snaplume-{{VERSION}}-x64.msi) | IT departments: all-users installation in `Program Files` for Intune, Group Policy, SCCM or `msiexec /i Snaplume-{{VERSION}}-x64.msi /qn` (add `DESKTOPSHORTCUT=1` for a desktop shortcut). Administrator rights required. |
 
-Both packages are self-contained: **no .NET installation needed**.
+All packages are self-contained: **no .NET installation needed**.
 **Requirements**: Windows 10 version 2004 (May 2020 Update) or later, or Windows 11, 64-bit (x64).
 
 > [!NOTE]
@@ -34,5 +35,6 @@ Snaplume {{VERSION}} : capture d'écran, annotation et enregistrement vidéo lib
 
 - **Programme d'installation** (`Snaplume-Setup-{{VERSION}}.exe`) : installation pour l'utilisateur courant sans droits administrateur (ou pour tous les utilisateurs), raccourcis, démarrage avec Windows en option, désinstalleur.
 - **Version portable** (`Snaplume-{{VERSION}}-portable.zip`) : décompressez le dossier `Snaplume` où vous voulez et lancez `Snaplume.exe` ; les paramètres restent dans le dossier.
+- **Paquet MSI** (`Snaplume-{{VERSION}}-x64.msi`) : pour les services informatiques, installation pour tous les utilisateurs dans `Program Files` via Intune, une stratégie de groupe, SCCM ou `msiexec /i Snaplume-{{VERSION}}-x64.msi /qn` (ajoutez `DESKTOPSHORTCUT=1` pour un raccourci sur le bureau). Droits administrateur requis.
 - Aucune installation de .NET n'est nécessaire. Windows 10 version 2004 ou ultérieure, ou Windows 11, 64 bits.
 - Les exécutables ne sont pas encore signés : si SmartScreen affiche « Windows a protégé votre ordinateur », cliquez sur **Informations complémentaires › Exécuter quand même**. Vérifiez les fichiers avec `SHA256SUMS.txt`.

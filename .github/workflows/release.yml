@@ -67,21 +67,28 @@ jobs:
             if ($LASTEXITCODE -ne 0) { throw "choco install innosetup failed ($LASTEXITCODE)." }
           }
 
+      - name: Install WiX Toolset 5
+        run: |
+          dotnet tool install --global wix --version 5.0.2
+          if ($LASTEXITCODE -ne 0) { throw "dotnet tool install wix failed ($LASTEXITCODE)." }
+
       - name: Build the packages
         id: build
         env:
           VERSION: ${{ steps.version.outputs.version }}
-        run: ./build/build-release.ps1 -Version $env:VERSION
+        # AppLocal: the MSI needs the Visual C++ runtime DLLs next to Snaplume.exe (fails if Visual Studio has none).
+        run: ./build/build-release.ps1 -Version $env:VERSION -VCRuntime AppLocal
 
       - name: Check the packages
         env:
           ZIP_FILE: ${{ steps.build.outputs.zip }}
           SETUP_FILE: ${{ steps.build.outputs.setup }}
+          MSI_FILE: ${{ steps.build.outputs.msi }}
           SUMS_FILE: ${{ steps.build.outputs.sums }}
         run: |
-          $files = @($env:ZIP_FILE, $env:SETUP_FILE, $env:SUMS_FILE)
+          $files = @($env:ZIP_FILE, $env:SETUP_FILE, $env:MSI_FILE, $env:SUMS_FILE)
           foreach ($f in $files) {
-            if (-not $f -or -not (Test-Path -LiteralPath $f)) { throw "Missing release file: '$f' (was the installer built?)." }
+            if (-not $f -or -not (Test-Path -LiteralPath $f)) { throw "Missing release file: '$f' (were the installers built?)." }
             Write-Host ('{0,-45} {1,10:N1} MB' -f (Split-Path -Leaf $f), ((Get-Item -LiteralPath $f).Length / 1MB))
           }
           Get-Content -LiteralPath $env:SUMS_FILE
@@ -93,6 +100,7 @@ jobs:
           path: |
             ${{ steps.build.outputs.zip }}
             ${{ steps.build.outputs.setup }}
+            ${{ steps.build.outputs.msi }}
             ${{ steps.build.outputs.sums }}
           if-no-files-found: error
 
@@ -115,6 +123,7 @@ jobs:
           $ghArgs = @(
             'release', 'create', $env:TAG,
             $env:SETUP_FILE,
+            $env:MSI_FILE,
             $env:ZIP_FILE,
             $env:SUMS_FILE,
             '--title', "Snaplume $env:VERSION",

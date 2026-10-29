@@ -1,6 +1,6 @@
 <#
 .SYNOPSIS
-    Builds the Snaplume release packages: portable zip, Inno Setup installer and SHA256 checksums.
+    Builds the Snaplume release packages: portable zip, Inno Setup installer, MSI package and SHA256 checksums.
 
 .DESCRIPTION
     Works with PowerShell 7 and Windows PowerShell 5.1.
@@ -19,6 +19,8 @@
     3. Writes to the output folder (artifacts/ by default):
          Snaplume-<version>-portable.zip   folder "Snaplume" with the "portable" marker, LICENSE, README.txt
          Snaplume-Setup-<version>.exe      when Inno Setup 6 (ISCC.exe) is found, skipped otherwise
+         Snaplume-<version>-x64.msi        when WiX Toolset 5 (wix) is found and the Visual C++ runtime is
+                                           app-local (the MSI does not install vc_redist), skipped otherwise
          SHA256SUMS.txt
 
 .EXAMPLE
@@ -49,6 +51,9 @@ param(
     # Path to ISCC.exe, instead of searching for it.
     [string]$IsccPath,
     [switch]$SkipInstaller,
+    # Path to wix.exe (WiX Toolset 5: dotnet tool install --global wix --version 5.0.2), instead of searching for it.
+    [string]$WixPath,
+    [switch]$SkipMsi,
     # Keep the intermediate folders (<OutputDir>\staging).
     [switch]$KeepStaging
 )
@@ -86,6 +91,8 @@ if (-not (Test-Path -LiteralPath $LicenseFile)) { throw "LICENSE not found at $L
 $ReadmeTemplate = Join-Path $PSScriptRoot 'portable-readme.txt'
 $SingleFileTargets = Join-Path $PSScriptRoot 'SingleFile.targets'
 $IssFile = Join-Path (Split-Path -Parent $PSScriptRoot) 'installer\Snaplume.iss'
+$WxsFile = Join-Path (Split-Path -Parent $PSScriptRoot) 'installer\Snaplume.wxs'
+$IconFile = Join-Path (Split-Path -Parent $ProjectPath) 'Assets\app.ico'
 
 $dotnet = Get-Command dotnet -ErrorAction SilentlyContinue
 if ($dotnet) { $Dotnet = $dotnet.Source }
@@ -124,8 +131,9 @@ Write-Host "   dotnet:  $Dotnet ($(& $Dotnet --version))"
 
 $ZipName = "Snaplume-$Version-portable.zip"
 $SetupBaseName = "Snaplume-Setup-$Version"
+$MsiName = "Snaplume-$Version-x64.msi"
 New-Item -ItemType Directory -Force -Path $OutputDir | Out-Null
-foreach ($old in @($ZipName, "$SetupBaseName.exe", 'SHA256SUMS.txt')) {
+foreach ($old in @($ZipName, "$SetupBaseName.exe", $MsiName, 'SHA256SUMS.txt')) {
     $oldPath = Join-Path $OutputDir $old
     if (Test-Path -LiteralPath $oldPath) { Remove-Item -LiteralPath $oldPath -Force }
 }
@@ -391,11 +399,88 @@ else {
     }
 }
 
+# --- MSI package ----------------------------------------------------------------------------------
+
+function Find-Wix {
+    if ($WixPath) {
+        if (-not (Test-Path -LiteralPath $WixPath)) { throw "wix.exe not found at $WixPath" }
+        return [IO.Path]::GetFullPath($WixPath)
+    }
+    $cmd = Get-Command 'wix' -CommandType Application -ErrorAction SilentlyContinue | Select-Object -First 1
+    if ($cmd) { return $cmd.Source }
+    $candidate = Join-Path $env:USERPROFILE '.dotnet\tools\wix.exe'
+    if (Test-Path -LiteralPath $candidate) { return $candidate }
+    return $null
+}
+
+# Plain-text LICENSE as RTF for the license page of the MSI interface.
+function ConvertTo-Rtf([string]$Text) {
+    $sb = New-Object System.Text.StringBuilder
+    [void]$sb.Append('{\rtf1\ansi\deff0{\fonttbl{\f0 Segoe UI;}}\fs18 ')
+    foreach ($ch in $Text.Replace("`r", '').ToCharArray()) {
+        if ($ch -eq "`n") { [void]$sb.Append("\par`r`n") }
+        elseif ($ch -eq '\' -or $ch -eq '{' -or $ch -eq '}') { [void]$sb.Append('\').Append($ch) }
+        elseif ([int]$ch -gt 127) { [void]$sb.Append('\u').Append([int]$ch).Append('?') }
+        else { [void]$sb.Append($ch) }
+    }
+    [void]$sb.Append('}')
+    return $sb.ToString()
+}
+
+$MsiPath = $null
+if ($SkipMsi) {
+    Write-Step 'MSI package skipped (-SkipMsi)'
+}
+elseif ($RuntimeMode -ne 'AppLocal') {
+    Write-Warn 'MSI package NOT built: it needs the app-local Visual C++ runtime DLLs (-VCRuntime AppLocal or -VCRedistDir).'
+}
+elseif (-not ($wix = Find-Wix)) {
+    Write-Warn 'WiX Toolset 5 (wix) not found: the MSI package was NOT built. Install it with "dotnet tool install --global wix --version 5.0.2" and run this script again.'
+}
+else {
+    Write-Step "MSI package ($MsiName)"
+    # The wix tool targets an older .NET: let it run on the newest installed runtime.
+    $previousRollForward = $env:DOTNET_ROLL_FORWARD
+    $env:DOTNET_ROLL_FORWARD = 'Major'
+    try {
+        $wixVersion = (& $wix --version | Out-String).Trim()
+        Write-Host "   wix $wixVersion ($wix)"
+        if ($wixVersion -notmatch '^5\.') { throw "WiX $wixVersion found; installer/Snaplume.wxs needs WiX Toolset 5." }
+        $uiExtension = 'WixToolset.UI.wixext/5.0.2'
+        if ((& $wix extension list -g | Out-String) -notmatch 'WixToolset\.UI\.wixext 5\.0\.2') {
+            Invoke-Native $wix @('extension', 'add', '-g', $uiExtension)
+        }
+
+        $msiStaging = Join-Path $Staging 'msi'
+        New-Item -ItemType Directory -Force -Path $msiStaging | Out-Null
+        $licenseRtf = Join-Path $msiStaging 'license.rtf'
+        [IO.File]::WriteAllText($licenseRtf, (ConvertTo-Rtf ([IO.File]::ReadAllText($LicenseFile))), (New-Object System.Text.UTF8Encoding($false)))
+        $MsiPath = Join-Path $OutputDir $MsiName
+        Invoke-Native $wix @(
+            'build', $WxsFile,
+            '-arch', 'x64',
+            '-ext', $uiExtension,
+            '-bindpath', "publish=$PublishDir",
+            # MSI versions are numeric (major.minor.build): a prerelease suffix is dropped.
+            '-d', ('Version={0}.{1}.{2}' -f ([version]$NumericVersion).Major, ([version]$NumericVersion).Minor, ([version]$NumericVersion).Build),
+            '-d', "IconFile=$IconFile",
+            '-d', "LicenseFile=$LicenseFile",
+            '-d', "LicenseRtf=$licenseRtf",
+            '-intermediatefolder', (Join-Path $msiStaging 'obj'),
+            '-pdb', (Join-Path $msiStaging 'Snaplume.wixpdb'),
+            '-o', $MsiPath
+        )
+    }
+    finally { $env:DOTNET_ROLL_FORWARD = $previousRollForward }
+    if (-not (Test-Path -LiteralPath $MsiPath)) { throw "wix succeeded but $MsiPath is missing." }
+}
+
 # --- Checksums ------------------------------------------------------------------------------------
 
 Write-Step 'SHA256SUMS.txt'
 $packages = @($ZipPath)
 if ($SetupPath) { $packages += $SetupPath }
+if ($MsiPath) { $packages += $MsiPath }
 $lines = foreach ($p in $packages) {
     '{0}  {1}' -f (Get-FileHash -LiteralPath $p -Algorithm SHA256).Hash.ToLowerInvariant(), (Split-Path -Leaf $p)
 }
@@ -414,6 +499,7 @@ if ($env:GITHUB_OUTPUT) {
         "version=$Version",
         "zip=$ZipPath",
         "setup=$SetupPath",
+        "msi=$MsiPath",
         "sums=$(Join-Path $OutputDir 'SHA256SUMS.txt')",
         "vcruntime=$RuntimeMode"
     )

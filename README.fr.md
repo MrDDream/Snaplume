@@ -112,8 +112,9 @@ Récupérez la dernière version sur la [**page des versions**](https://github.c
 |---|---|---|
 | **Installeur** | `Snaplume-Setup-<version>.exe` | La plupart des utilisateurs : installation classique avec raccourci dans le menu Démarrer et désinstalleur. |
 | **Portable** | `Snaplume-<version>-portable.zip` | Clés USB et PC verrouillés : décompressez n'importe où et lancez `Snaplume.exe` ; les paramètres restent dans le dossier. |
+| **MSI** | `Snaplume-<version>-x64.msi` | Services informatiques : installation pour tous les utilisateurs dans `Program Files`, via Intune, une stratégie de groupe ou `msiexec /i Snaplume-<version>-x64.msi /qn` (`DESKTOPSHORTCUT=1` ajoute un raccourci sur le bureau). |
 
-Les deux sont autonomes : **aucune installation de .NET n'est nécessaire**. Chaque version publie aussi un fichier `SHA256SUMS.txt` pour vérifier les téléchargements.
+Tous sont autonomes : **aucune installation de .NET n'est nécessaire**. Chaque version publie aussi un fichier `SHA256SUMS.txt` pour vérifier les téléchargements.
 
 **Configuration requise** : Windows 10 version 2004 (mise à jour de mai 2020) ou plus récent, ou Windows 11, 64 bits (x64).
 
@@ -211,7 +212,7 @@ dotnet build Snaplume.slnx
 dotnet run --project src/Snaplume
 ```
 
-Paquets de version (zip portable, installeur et `SHA256SUMS.txt` dans `artifacts/`) :
+Paquets de version (zip portable, installeur, MSI et `SHA256SUMS.txt` dans `artifacts/`) :
 
 ```powershell
 pwsh build/build-release.ps1
@@ -219,7 +220,7 @@ pwsh build/build-release.ps1
 powershell -ExecutionPolicy Bypass -File build\build-release.ps1
 ```
 
-L'installeur nécessite [Inno Setup 6](https://jrsoftware.org/isinfo.php) ; cette étape est ignorée s'il n'est pas installé. L'enregistrement vidéo s'appuie sur le runtime Microsoft Visual C++ 2015-2022 x64, que le script de version inclut. L'icône de l'application est générée par `tools/make-icon.ps1`.
+L'installeur nécessite [Inno Setup 6](https://jrsoftware.org/isinfo.php) et le MSI [WiX Toolset 5](https://wixtoolset.org/) (`dotnet tool install --global wix --version 5.0.2`) ; chaque étape est ignorée si son outil n'est pas installé. Le MSI demande aussi les DLL du runtime Visual C++ d'une installation de Visual Studio (déploiement local). L'enregistrement vidéo s'appuie sur le runtime Microsoft Visual C++ 2015-2022 x64, que le script de version inclut. L'icône de l'application est générée par `tools/make-icon.ps1`.
 
 ## Structure du projet
 
@@ -239,7 +240,7 @@ src/Snaplume/
   Themes/       couleurs claires et sombres, styles, icônes
   Core/         paramètres, raccourcis, icône de notification, espaces de travail, fichiers, presse-papiers
   Native/       appels Win32
-build/          script de version (zip portable, installeur Inno Setup, sommes de contrôle)
+build/          script de version (zip portable, installeur Inno Setup, MSI, sommes de contrôle)
 docs/           site web (GitHub Pages), maquettes et identité visuelle
 tools/          générateur d'icône
 ```
@@ -269,6 +270,7 @@ Snaplume s'appuie sur ces projets libres :
 | [ZXing.Net](https://github.com/micjahn/ZXing.Net) | lecture de QR codes et codes-barres | Apache-2.0 |
 | [Open XML SDK](https://github.com/dotnet/Open-XML-SDK) | génération de documents DOCX | MIT |
 | [Inno Setup](https://jrsoftware.org/isinfo.php) | installeur Windows | licence Inno Setup |
+| [WiX Toolset](https://wixtoolset.org/) | paquet MSI | MS-RL |
 
 Les fichiers PDF sont écrits par le module PDF propre à Snaplume, et la reconnaissance de texte utilise le moteur OCR intégré à Windows (`Windows.Media.Ocr`). Les fonctionnalités s'inspirent de Screenpresso ; Snaplume est un projet indépendant, sans aucune affiliation.
 

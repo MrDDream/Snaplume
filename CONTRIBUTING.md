@@ -22,7 +22,7 @@ dotnet build Snaplume.slnx
 dotnet run --project src/Snaplume
 ```
 
-`pwsh build/build-release.ps1` builds the portable zip and, when [Inno Setup 6](https://jrsoftware.org/isinfo.php) is installed, the installer.
+`pwsh build/build-release.ps1` builds the portable zip and, when [Inno Setup 6](https://jrsoftware.org/isinfo.php) and [WiX Toolset 5](https://wixtoolset.org/) are installed, the installer and the MSI package.
 
 ## Pull requests
 

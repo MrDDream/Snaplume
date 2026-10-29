@@ -1,0 +1,79 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!--
+  Snaplume MSI package - WiX Toolset 5 (MS-RL), for managed deployment (Intune, GPO, SCCM, msiexec).
+
+  Normally built by build/build-release.ps1, which publishes the application and runs:
+    wix build -arch x64 -ext WixToolset.UI.wixext -bindpath publish=<publish folder>
+              -d Version=1.0.0 -d IconFile=<app.ico> -d LicenseFile=<LICENSE> -d LicenseRtf=<license.rtf>
+              -o Snaplume-<version>-x64.msi installer/Snaplume.wxs
+
+  Per-machine installation in %ProgramFiles%\Snaplume (administrator rights required). The publish folder
+  must already contain the Visual C++ runtime DLLs (app-local): unlike the Inno Setup installer, the MSI
+  does not install vc_redist.x64.exe.
+
+  Properties:
+    INSTALLFOLDER=<folder>   installation folder
+    DESKTOPSHORTCUT=1        also create a desktop shortcut (all users)
+  Example: msiexec /i Snaplume-1.0.0-x64.msi /qn DESKTOPSHORTCUT=1
+
+  User data (captures, %APPDATA%\Snaplume) is never touched by the uninstaller.
+-->
+<Wix xmlns="http://wixtoolset.org/schemas/v4/wxs" xmlns:ui="http://wixtoolset.org/schemas/v4/wxs/ui">
+  <!-- Never change UpgradeCode: it identifies the product for upgrades. -->
+  <Package Name="Snaplume"
+           Manufacturer="Snaplume contributors"
+           Version="$(Version)"
+           UpgradeCode="{EF28C5BC-363E-4A3D-A742-48FCC76F3FCF}"
+           Scope="perMachine"
+           Language="1033">
+    <SummaryInformation Description="Snaplume $(Version) installer" />
+
+    <MajorUpgrade DowngradeErrorMessage="A newer version of [ProductName] is already installed." />
+    <MediaTemplate EmbedCab="yes" CompressionLevel="high" />
+
+    <Icon Id="AppIcon" SourceFile="$(IconFile)" />
+    <Property Id="ARPPRODUCTICON" Value="AppIcon" />
+    <Property Id="ARPURLINFOABOUT" Value="https://github.com/MrDDream/Snaplume" />
+    <Property Id="ARPHELPLINK" Value="https://github.com/MrDDream/Snaplume/issues" />
+    <Property Id="ARPURLUPDATEINFO" Value="https://github.com/MrDDream/Snaplume/releases" />
+
+    <StandardDirectory Id="ProgramFiles64Folder">
+      <Directory Id="INSTALLFOLDER" Name="Snaplume" />
+    </StandardDirectory>
+
+    <Feature Id="Main" Title="Snaplume">
+      <!-- Everything published except Snaplume.exe, which carries the Start menu shortcut below. -->
+      <Files Directory="INSTALLFOLDER" Include="!(bindpath.publish)\**">
+        <Exclude Files="!(bindpath.publish)\Snaplume.exe" />
+      </Files>
+
+      <Component Directory="INSTALLFOLDER">
+        <File Id="SnaplumeExe" Source="!(bindpath.publish)\Snaplume.exe" KeyPath="yes">
+          <Shortcut Id="StartMenuShortcut" Directory="ProgramMenuFolder" Name="Snaplume"
+                    WorkingDirectory="INSTALLFOLDER" Advertise="no" />
+        </File>
+      </Component>
+
+      <Component Directory="INSTALLFOLDER">
+        <File Source="$(LicenseFile)" Name="LICENSE" KeyPath="yes" />
+      </Component>
+
+      <Component Id="DesktopShortcut" Directory="DesktopFolder" Condition="DESKTOPSHORTCUT">
+        <Shortcut Name="Snaplume" Target="[#SnaplumeExe]" WorkingDirectory="INSTALLFOLDER" />
+        <RegistryValue Root="HKLM" Key="Software\Snaplume\Installer" Name="DesktopShortcut"
+                       Type="integer" Value="1" KeyPath="yes" />
+      </Component>
+    </Feature>
+
+    <!-- Interface: welcome, license, folder, progress; "Launch Snaplume" on the last page. -->
+    <ui:WixUI Id="WixUI_InstallDir" InstallDirectory="INSTALLFOLDER" />
+    <WixVariable Id="WixUILicenseRtf" Value="$(LicenseRtf)" />
+    <Property Id="WIXUI_EXITDIALOGOPTIONALCHECKBOXTEXT" Value="Launch Snaplume" />
+    <Property Id="WIXUI_EXITDIALOGOPTIONALCHECKBOX" Value="1" />
+    <CustomAction Id="LaunchSnaplume" FileRef="SnaplumeExe" ExeCommand="" Return="asyncNoWait" Impersonate="yes" />
+    <UI>
+      <Publish Dialog="ExitDialog" Control="Finish" Event="DoAction" Value="LaunchSnaplume"
+               Condition="WIXUI_EXITDIALOGOPTIONALCHECKBOX = 1 AND NOT Installed" />
+    </UI>
+  </Package>
+</Wix>
