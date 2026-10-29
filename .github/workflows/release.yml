@@ -111,9 +111,21 @@ jobs:
           TAG: ${{ steps.version.outputs.tag }}
           PRERELEASE: ${{ steps.version.outputs.prerelease }}
           SETUP_FILE: ${{ steps.build.outputs.setup }}
+          MSI_FILE: ${{ steps.build.outputs.msi }}
           ZIP_FILE: ${{ steps.build.outputs.zip }}
           SUMS_FILE: ${{ steps.build.outputs.sums }}
         run: |
+          $files = @($env:SETUP_FILE, $env:MSI_FILE, $env:ZIP_FILE, $env:SUMS_FILE)
+          if (@($files | Where-Object { -not $_ }).Count -gt 0) { throw "A release file path is empty: $($files -join ', ')" }
+
+          # The release already exists (workflow run again for the same tag): replace its files.
+          gh release view $env:TAG *> $null
+          if ($LASTEXITCODE -eq 0) {
+            gh release upload $env:TAG @files --clobber
+            if ($LASTEXITCODE -ne 0) { throw "gh release upload failed ($LASTEXITCODE)." }
+            return
+          }
+
           # Release notes: the template without its leading HTML comment, {{VERSION}} replaced.
           $notes = Get-Content build/release-notes.md -Raw -Encoding utf8
           $notes = ($notes -replace '(?s)^\s*<!--.*?-->\s*', '').Replace('{{VERSION}}', $env:VERSION)
@@ -121,11 +133,8 @@ jobs:
           Set-Content -LiteralPath $notesFile -Value $notes -Encoding utf8NoBOM
 
           $ghArgs = @(
-            'release', 'create', $env:TAG,
-            $env:SETUP_FILE,
-            $env:MSI_FILE,
-            $env:ZIP_FILE,
-            $env:SUMS_FILE,
+            'release', 'create', $env:TAG
+          ) + $files + @(
             '--title', "Snaplume $env:VERSION",
             '--notes-file', $notesFile,
             '--generate-notes'
