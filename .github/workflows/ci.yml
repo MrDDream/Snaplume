@@ -15,8 +15,12 @@ concurrency:
 
 jobs:
   build:
-    name: Build (Release, x64)
-    runs-on: windows-latest
+    name: Build and test (${{ matrix.os }})
+    strategy:
+      fail-fast: false
+      matrix:
+        os: [windows-latest, ubuntu-latest]
+    runs-on: ${{ matrix.os }}
     env:
       DOTNET_CLI_TELEMETRY_OPTOUT: '1'
       DOTNET_NOLOGO: '1'
@@ -29,9 +33,12 @@ jobs:
         with:
           dotnet-version: 10.0.x
 
-      - name: Restore
-        run: dotnet restore Snaplume.slnx
-
+      # The whole solution on Windows; on Linux, everything but the Windows-only projects (the tests build
+      # Snaplume.Core, the Linux build of Snaplume.App and Snaplume.Platform.Linux).
       - name: Build
-        run: dotnet build Snaplume.slnx -c Release --no-restore
+        if: runner.os == 'Windows'
+        run: dotnet build Snaplume.slnx -c Release
+
+      - name: Test
+        run: dotnet test tests/Snaplume.Tests -c Release
 

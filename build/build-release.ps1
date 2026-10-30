@@ -5,10 +5,12 @@
 .DESCRIPTION
     Works with PowerShell 7 and Windows PowerShell 5.1.
 
-    1. Publishes src/Snaplume/Snaplume.csproj for win-x64, self-contained (users need no .NET install),
-       ReadyToRun. Default layout "SingleFile": Snaplume.exe (single-file bundle) next to the few files that
-       cannot be bundled: ScreenRecorderLib.dll (mixed-mode C++/CLI assembly, excluded from the bundle by
-       build/SingleFile.targets) and WPF's native libraries (*_cor3.dll). "Folder" is the classic layout.
+    1. Publishes src/Snaplume.App/Snaplume.App.csproj (its Windows target framework) for win-x64, self-contained
+       (users need no .NET install), ReadyToRun. Default layout "SingleFile": Snaplume.exe (single-file bundle)
+       next to the few files that cannot be bundled: ScreenRecorderLib.dll (mixed-mode C++/CLI assembly, excluded
+       from the bundle by build/SingleFile.targets), Avalonia's native libraries (Skia, HarfBuzz, ANGLE) and WPF's
+       (*_cor3.dll, used for printing and the clipboard). "Folder" is the classic layout.
+       The Linux packages are built by build/build-linux.ps1.
     2. Adds the Microsoft Visual C++ 2015-2022 x64 runtime needed by ScreenRecorderLib (C++/CLI):
        - "AppLocal": the redistributable DLLs from Visual Studio's VC\Redist\MSVC\<ver>\x64\Microsoft.VC14x.CRT
          folder are copied next to Snaplume.exe (app-local deployment, allowed by the Visual Studio
@@ -33,8 +35,10 @@ param(
     # Repository root (defaults to the parent of this script's folder).
     [string]$Root,
     # Project to publish, relative to -Root or absolute.
-    [string]$Project = 'src/Snaplume/Snaplume.csproj',
-    # Version (e.g. 1.0.0 or v1.0.0); read from the project's <Version> when omitted.
+    [string]$Project = 'src/Snaplume.App/Snaplume.App.csproj',
+    # Target framework of the Windows build (the project also builds for Linux).
+    [string]$Framework = 'net10.0-windows10.0.19041.0',
+    # Version (e.g. 1.0.0 or v1.0.0); read from the project or Directory.Build.props when omitted.
     [string]$Version,
     # Output folder, relative to -Root or absolute.
     [string]$OutputDir = 'artifacts',
@@ -113,7 +117,12 @@ if (-not $Version) {
     [xml]$csproj = Get-Content -LiteralPath $ProjectPath -Raw
     $node = $csproj.SelectSingleNode('/Project/PropertyGroup/Version')
     if (-not $node) { $node = $csproj.SelectSingleNode('/Project/PropertyGroup/VersionPrefix') }
-    if (-not $node -or -not $node.InnerText.Trim()) { throw "No <Version> in $ProjectPath; pass -Version." }
+    if (-not $node -or -not $node.InnerText.Trim()) {
+        # Shared by every project of the solution.
+        $props = Join-Path $Root 'Directory.Build.props'
+        if (Test-Path -LiteralPath $props) { $node = ([xml](Get-Content -LiteralPath $props -Raw)).SelectSingleNode('/Project/PropertyGroup/Version') }
+    }
+    if (-not $node -or -not $node.InnerText.Trim()) { throw "No <Version> in $ProjectPath or Directory.Build.props; pass -Version." }
     $Version = $node.InnerText.Trim()
 }
 $Version = $Version.Trim()
@@ -163,6 +172,7 @@ Invoke-Native $Dotnet @('restore', $ProjectPath, '-r', 'win-x64', '-p:PublishRea
 Write-Step 'Publish'
 $publishArgs = @(
     'publish', $ProjectPath,
+    '-f', $Framework,
     '-c', $Configuration,
     '-r', 'win-x64',
     '--self-contained', 'true',
@@ -176,7 +186,7 @@ $publishArgs = @(
 if ($Layout -eq 'SingleFile') {
     $publishArgs += @(
         '-p:PublishSingleFile=true',
-        # Native libraries (WPF's wpfgfx, PresentationNative, D3DCompiler...) stay next to the exe rather
+        # Native libraries (Skia, HarfBuzz, ANGLE, WPF's wpfgfx...) stay next to the exe rather
         # than being bundled (IncludeNativeLibrariesForSelfExtract) and extracted to %TEMP% at first run:
         # no extraction delay, and nothing loaded from %TEMP% (often blocked on locked-down PCs).
         '-p:IncludeNativeLibrariesForSelfExtract=false',

@@ -115,9 +115,15 @@ Récupérez la dernière version sur la [**page des versions**](https://github.c
 | **Portable** | `Snaplume-<version>-portable.zip` | Clés USB et PC verrouillés : décompressez n'importe où et lancez `Snaplume.exe` ; les paramètres restent dans le dossier. |
 | **MSI** | `Snaplume-<version>-x64.msi` | Services informatiques : installation pour tous les utilisateurs dans `Program Files`, via Intune, une stratégie de groupe ou `msiexec /i Snaplume-<version>-x64.msi /qn` (`DESKTOPSHORTCUT=1` ajoute un raccourci sur le bureau). |
 
-Tous sont autonomes : **aucune installation de .NET n'est nécessaire**. Chaque version publie aussi un fichier `SHA256SUMS.txt` pour vérifier les téléchargements.
+| **Linux (Debian, Ubuntu…)** | `snaplume_<version>-1_amd64.deb` (ou `arm64`) | `sudo apt install ./snaplume_<version>-1_amd64.deb` : les dépendances (GStreamer, ffmpeg, Tesseract…) sont installées avec. |
+| **Linux (Fedora…)** | `snaplume-<version>-1.x86_64.rpm` (ou `aarch64`) | `sudo dnf install ./snaplume-<version>-1.x86_64.rpm`. |
 
-**Configuration requise** : Windows 10 version 2004 (mise à jour de mai 2020) ou plus récent, ou Windows 11, 64 bits (x64).
+Tous sont autonomes : **aucune installation de .NET n'est nécessaire**. Chaque version publie aussi `SHA256SUMS.txt` (Windows) et `SHA256SUMS-linux.txt` pour vérifier les téléchargements.
+
+**Configuration requise** : Windows 10 version 2004 (mise à jour de mai 2020) ou plus récent, ou Windows 11, 64 bits (x64) ; ou une distribution Linux récente (session X11 ou Wayland), x64 ou arm64.
+
+> [!NOTE]
+> **Linux sous Wayland** (par défaut sous Ubuntu et Fedora) : les captures, la capture défilante et les vidéos passent par les portails du système, qui demandent votre autorisation la première fois. Les fenêtres ne sont pas détectées sous la souris (sélection par glisser), les clics ne peuvent pas être mis en évidence dans les vidéos, et les raccourcis globaux demandent KDE ou GNOME 48+ (ailleurs, liez un raccourci du système à `snaplume --capture region`). Sous GNOME, l'icône de notification demande l'extension AppIndicator. Une session X11 a toutes les fonctions.
 
 > [!NOTE]
 > Les exécutables ne sont pas encore signés : au premier lancement, Windows SmartScreen peut afficher *« Windows a protégé votre ordinateur »*. Cliquez sur **Informations complémentaires › Exécuter quand même**. Vous pouvez vérifier le fichier avec `SHA256SUMS.txt`, ou [le compiler vous-même](#compiler-depuis-les-sources).
@@ -199,19 +205,23 @@ Snaplume fonctionne **100 % hors ligne** :
 
 - pas de compte, pas de connexion, pas d'envoi dans le cloud, pas de télémétrie, pas de statistiques, pas de publicité ;
 - la seule requête réseau est la **vérification des mises à jour**, uniquement quand vous la lancez (Paramètres › À propos) ou si vous activez sa vérification quotidienne (désactivée par défaut) ; elle demande à GitHub la dernière version et n'envoie rien d'autre ;
-- l'OCR utilise le moteur de reconnaissance de texte intégré à Windows, les QR codes sont décodés localement ;
+- l'OCR utilise le moteur de reconnaissance de texte intégré à Windows (Tesseract sous Linux), les QR codes sont décodés localement ;
 - l'e-mail passe par **votre** logiciel de messagerie, le générateur de documents écrit des fichiers locaux ;
 - les captures sont de simples fichiers dans le dossier de votre choix (par défaut `Images\Snaplume`), les paramètres un fichier JSON dans `%APPDATA%\Snaplume` (ou à côté de l'application en mode portable).
 
 ## Compiler depuis les sources
 
-Prérequis : Windows 10/11 x64 et le [SDK .NET 10](https://dotnet.microsoft.com/download).
+Prérequis : le [SDK .NET 10](https://dotnet.microsoft.com/download). L'interface utilise [Avalonia](https://avaloniaui.net/) : le même code tourne sous Windows et Linux.
 
 ```powershell
 git clone https://github.com/MrDDream/Snaplume.git
 cd Snaplume
 dotnet build Snaplume.slnx
-dotnet run --project src/Snaplume
+dotnet test tests/Snaplume.Tests
+# Windows
+dotnet run --project src/Snaplume.App -f net10.0-windows10.0.19041.0
+# Linux
+dotnet run --project src/Snaplume.App -f net10.0
 ```
 
 Paquets de version (zip portable, installeur, MSI et `SHA256SUMS.txt` dans `artifacts/`) :
@@ -224,25 +234,33 @@ powershell -ExecutionPolicy Bypass -File build\build-release.ps1
 
 L'installeur nécessite [Inno Setup 6](https://jrsoftware.org/isinfo.php) et le MSI [WiX Toolset 5](https://wixtoolset.org/) (`dotnet tool install --global wix --version 5.0.2`) ; chaque étape est ignorée si son outil n'est pas installé. Le MSI demande aussi les DLL du runtime Visual C++ d'une installation de Visual Studio (déploiement local). L'enregistrement vidéo s'appuie sur le runtime Microsoft Visual C++ 2015-2022 x64, que le script de version inclut. L'icône de l'application est générée par `tools/make-icon.ps1`.
 
+Paquets Linux (`.deb` et `.rpm`, x64 et arm64, dans `artifacts/linux/`), depuis Windows ou Linux avec [nfpm](https://nfpm.goreleaser.com/) :
+
+```powershell
+pwsh build/build-linux.ps1
+```
+
+Les dépendances sont décrites dans [packaging/linux/README.md](packaging/linux/README.md).
+
 ## Structure du projet
 
 ```text
 Snaplume.slnx
-src/Snaplume/
-  Capturing/    capture d'écran, détection des fenêtres et éléments, sélection de zone, capture défilante
-  Recording/    enregistrement vidéo, encodeur GIF, barre de contrôle, cadre de la zone
-  Player/       lecteur vidéo intégré, découpe et export GIF
+src/Snaplume.Core/              code commun à tous les systèmes (net10.0)
   Editor/       modèle d'annotations, rendu, effets, loupe, tampons, styles, annuler/rétablir
-  Export/       générateur de documents (PDF, Word, HTML), impression et e-mail
-  Ocr/          fenêtre du texte reconnu (moteur OCR de Windows)
-  Qr/           lecture de QR codes et de codes-barres
-  Workspace/    panneau « Mes captures », fenêtre d'espace de travail, galerie partagée
-  Preferences/  fenêtre des paramètres
+  Capturing/    capture défilante et recollage, modèle de sélection et géométrie
+  Export/       générateur de documents (PDF, Word, HTML)
+  Imaging/      images en mémoire, fichiers image, contours de texte (SkiaSharp, HarfBuzz)
+  Platform/     interfaces des services fournis par chaque système
   Languages/    traductions de l'interface, un fichier JSON par langue
-  Themes/       couleurs claires et sombres, styles, icônes
-  Core/         paramètres, raccourcis, icône de notification, espaces de travail, fichiers, presse-papiers
-  Native/       appels Win32
-build/          script de version (zip portable, installeur Inno Setup, MSI, sommes de contrôle)
+  Core/         paramètres, espaces de travail, traductions, fichiers, ligne de commande, mises à jour
+src/Snaplume.App/               l'interface Avalonia (versions Windows et Linux)
+  Editor/ Capturing/ Recording/ Player/ Workspace/ Preferences/ Ocr/ Qr/ Export/ Themes/ Ui/
+src/Snaplume.Platform.Windows/  Win32, WinRT (OCR, vidéo), ScreenRecorderLib, MAPI, impression
+src/Snaplume.Platform.Linux/    X11, portails Wayland (D-Bus), GStreamer, ffmpeg, Tesseract
+tests/Snaplume.Tests/           tests xUnit, rendu Avalonia sans écran
+build/          scripts de version (Windows : zip, Inno Setup, MSI ; Linux : .deb/.rpm), sommes de contrôle
+packaging/linux/                configuration nfpm, fichier .desktop, métadonnées AppStream, icônes
 docs/           site web (GitHub Pages), maquettes et identité visuelle
 tools/          générateur d'icône
 ```
@@ -260,7 +278,7 @@ Les services en ligne (envoi, liens de partage, comptes) sont **volontairement e
 
 ## Contribuer
 
-Signalements de bugs, traductions et pull requests sont les bienvenus : voir [CONTRIBUTING.md](CONTRIBUTING.md). Pour ajouter une langue, copiez `src/Snaplume/Languages/en.json`, traduisez les valeurs, déclarez la langue dans `src/Snaplume/Core/Loc.cs` et dans `build/build-release.ps1`, puis proposez une pull request (détails dans CONTRIBUTING.md).
+Signalements de bugs, traductions et pull requests sont les bienvenus : voir [CONTRIBUTING.md](CONTRIBUTING.md). Pour ajouter une langue, copiez `src/Snaplume.Core/Languages/en.json`, traduisez les valeurs, déclarez la langue dans `src/Snaplume.Core/Core/Loc.cs` et dans `build/build-release.ps1`, puis proposez une pull request (détails dans CONTRIBUTING.md).
 
 ## Remerciements
 
