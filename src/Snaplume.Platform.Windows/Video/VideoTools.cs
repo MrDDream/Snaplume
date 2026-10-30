@@ -55,10 +55,12 @@ public sealed class VideoTools : IVideoTools
     }
 
     /// <summary>Frames of the video at the given times (clamped to its length), scaled to the size, opaque.</summary>
+    /// <remarks>The decoding continues on the thread pool (ConfigureAwait(false)), never on the caller's UI thread.</remarks>
     public async IAsyncEnumerable<PixelBuffer> ReadFramesAsync(string source, IReadOnlyList<TimeSpan> times, int width, int height,
         [EnumeratorCancellation] CancellationToken cancel)
     {
-        var clip = await MediaClip.CreateFromFileAsync(await StorageFile.GetFileFromPathAsync(Path.GetFullPath(source)));
+        var file = await StorageFile.GetFileFromPathAsync(Path.GetFullPath(source)).AsTask(cancel).ConfigureAwait(false);
+        var clip = await MediaClip.CreateFromFileAsync(file).AsTask(cancel).ConfigureAwait(false);
         var composition = new MediaComposition();
         composition.Clips.Add(clip);
         // The last picture of a video is a little before its end.
@@ -69,7 +71,8 @@ public sealed class VideoTools : IVideoTools
         {
             cancel.ThrowIfCancellationRequested();
             var batch = clamped.Skip(first).Take(FrameBatch).ToList();
-            var images = await composition.GetThumbnailsAsync(batch, width, height, VideoFramePrecision.NearestFrame).AsTask(cancel);
+            var images = await composition.GetThumbnailsAsync(batch, width, height, VideoFramePrecision.NearestFrame).AsTask(cancel)
+                .ConfigureAwait(false);
             if (images.Count != batch.Count)
             {
                 foreach (var image in images) image.Dispose();
@@ -81,7 +84,7 @@ public sealed class VideoTools : IVideoTools
                 using (var image = images[i])
                 {
                     cancel.ThrowIfCancellationRequested();
-                    frame = new PixelBuffer(width, height, await ReadPixelsAsync(image, width, height)).MakeOpaque();
+                    frame = new PixelBuffer(width, height, await ReadPixelsAsync(image, width, height).ConfigureAwait(false)).MakeOpaque();
                 }
                 yield return frame;
             }
@@ -104,7 +107,7 @@ public sealed class VideoTools : IVideoTools
     /// <summary>Decodes a thumbnail of the engine as BGRA, at exactly the size asked.</summary>
     private static async Task<byte[]> ReadPixelsAsync(ImageStream image, int width, int height)
     {
-        var decoder = await BitmapDecoder.CreateAsync(image);
+        var decoder = await BitmapDecoder.CreateAsync(image).AsTask().ConfigureAwait(false);
         var transform = new BitmapTransform
         {
             ScaledWidth = (uint)width,
@@ -112,7 +115,7 @@ public sealed class VideoTools : IVideoTools
             InterpolationMode = BitmapInterpolationMode.Fant,
         };
         var data = await decoder.GetPixelDataAsync(BitmapPixelFormat.Bgra8, BitmapAlphaMode.Ignore, transform,
-            ExifOrientationMode.IgnoreExifOrientation, ColorManagementMode.DoNotColorManage);
+            ExifOrientationMode.IgnoreExifOrientation, ColorManagementMode.DoNotColorManage).AsTask().ConfigureAwait(false);
         return data.DetachPixelData();
     }
 
