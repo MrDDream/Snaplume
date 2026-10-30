@@ -61,7 +61,6 @@ internal sealed class ScreenRecording : IScreenRecording
     /// <summary>The current recorder inlays the webcam.</summary>
     private bool _webcamActive;
     private bool _stopping;
-    private bool _finished;
     private bool _disposed;
 
     public ScreenRecording(RecordingOptions options, string outputPath)
@@ -70,8 +69,48 @@ internal sealed class ScreenRecording : IScreenRecording
         _outputPath = outputPath;
     }
 
-    public event Action? Completed;
-    public event Action<string>? Failed;
+    private Action? _completed;
+    private Action<string>? _failed;
+    /// <summary>How the recording ended (null: still running, "": completed, else the error).</summary>
+    private string? _outcome;
+
+    /// <summary>A handler added after the end (the caller subscribes once StartAsync returned) is called at once.</summary>
+    public event Action? Completed
+    {
+        add
+        {
+            bool now;
+            lock (_lock)
+            {
+                _completed += value;
+                now = _outcome == "";
+            }
+            if (now) value?.Invoke();
+        }
+        remove
+        {
+            lock (_lock) _completed -= value;
+        }
+    }
+
+    /// <inheritdoc cref="Completed"/>
+    public event Action<string>? Failed
+    {
+        add
+        {
+            string? error;
+            lock (_lock)
+            {
+                _failed += value;
+                error = _outcome is { Length: > 0 } outcome ? outcome : null;
+            }
+            if (error != null) value?.Invoke(error);
+        }
+        remove
+        {
+            lock (_lock) _failed -= value;
+        }
+    }
 
     public bool WebcamDropped { get; private set; }
     public bool CanPause => true;
@@ -115,7 +154,7 @@ internal sealed class ScreenRecording : IScreenRecording
     {
         lock (_lock)
         {
-            if (_stopping || _finished) return;
+            if (_stopping || _outcome != null) return;
             _stopping = true;
             // Null while the webcam is being dropped: the new recorder is stopped as soon as it starts.
             _recorder?.Stop();
@@ -152,28 +191,43 @@ internal sealed class ScreenRecording : IScreenRecording
 
     private void OnComplete(Recorder recorder)
     {
+        Action? handlers;
         lock (_lock)
         {
-            if (_recorder != recorder || _finished) return;
-            _finished = true;
+            if (_recorder != recorder || _outcome != null) return;
+            _outcome = "";
+            handlers = _completed;
         }
-        Completed?.Invoke();
+        handlers?.Invoke();
     }
 
     private void OnFailed(Recorder recorder, string error)
     {
         lock (_lock)
         {
-            if (_recorder != recorder || _finished) return;
+            if (_recorder != recorder || _outcome != null) return;
             if (_webcamActive && !_stopping && !_disposed && _sinceStart.Elapsed <= WebcamStartupWindow)
             {
                 // Not from the library's own callback thread: disposing the recorder there could wait for itself.
                 _ = Task.Run(() => RestartWithoutWebcam(recorder, error));
                 return;
             }
-            _finished = true;
         }
-        Failed?.Invoke(error);
+        Fail(error);
+    }
+
+    /// <summary>Ends the recording with an error, once.</summary>
+    private void Fail(string error)
+    {
+        if (string.IsNullOrEmpty(error)) error = "Unknown recording error";
+        Action<string>? handlers;
+        lock (_lock)
+        {
+            if (_outcome != null) return;
+            _outcome = error;
+            handlers = _failed;
+        }
+        handlers?.Invoke(error);
     }
 
     /// <summary>
@@ -184,7 +238,7 @@ internal sealed class ScreenRecording : IScreenRecording
     {
         lock (_lock)
         {
-            if (_recorder != failed || _finished || _disposed) return;
+            if (_recorder != failed || _outcome != null || _disposed) return;
             _recorder = null;
             _webcamActive = false;
             WebcamDropped = true;
@@ -197,7 +251,7 @@ internal sealed class ScreenRecording : IScreenRecording
         string? failure = null;
         lock (_lock)
         {
-            if (_finished || _disposed) return;
+            if (_outcome != null || _disposed) return;
             try
             {
                 StartRecorder(null);
@@ -207,11 +261,10 @@ internal sealed class ScreenRecording : IScreenRecording
             catch (Exception ex)
             {
                 ErrorLog.Write("Enregistrement vidéo sans webcam", ex);
-                _finished = true;
                 failure = ex.Message;
             }
         }
-        if (failure != null) Failed?.Invoke(failure);
+        if (failure != null) Fail(failure);
     }
 
     /// <summary>Frees the current recorder and deletes what it wrote (at the start, before any callback can run).</summary>
