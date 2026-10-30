@@ -56,7 +56,7 @@ public sealed class AnnotationCanvas : FrameworkElement
     private bool _layersValid;
 
     // Pens one screen pixel wide, rebuilt when the zoom changes.
-    private Pen? _selectionPen, _selectionDashPen, _cropPen;
+    private Pen? _selectionPen, _selectionDashPen, _cropPen, _floatingOutlinePen;
 
     public event Action? SelectionChanged;
     /// <summary>An image started or stopped floating (see <see cref="FloatImage"/>).</summary>
@@ -120,7 +120,7 @@ public sealed class AnnotationCanvas : FrameworkElement
         set
         {
             _viewScale = value;
-            _selectionPen = _selectionDashPen = _cropPen = null;
+            _selectionPen = _selectionDashPen = _cropPen = _floatingOutlinePen = null;
             InvalidateVisual();
         }
     }
@@ -165,7 +165,7 @@ public sealed class AnnotationCanvas : FrameworkElement
         _floatingImage = null;
         try
         {
-            _document.InsertImage(image, _floatingRect);
+            _document.InsertImage(image, _floatingRect, Colors.White);
         }
         catch (Exception ex)
         {
@@ -288,7 +288,28 @@ public sealed class AnnotationCanvas : FrameworkElement
 
         if (_selected != null && !ReferenceEquals(_selected, _editingText) && annotations.Contains(_selected))
             DrawSelection(dc, _selected);
-        if (_floatingImage != null) DrawFrame(dc, _floatingRect, FloatingHandles());
+        if (_floatingImage != null) DrawFloatingOutside(dc, bounds);
+    }
+
+    /// <summary>
+    /// The inserted image where it goes past the edges, on the white the image will grow by once it is placed
+    /// (see <see cref="EditorDocument.InsertImage"/>), the new outline dashed; then its frame and handles.
+    /// </summary>
+    private void DrawFloatingOutside(DrawingContext dc, Rect bounds)
+    {
+        var grown = EditorDocument.InsertedBounds((int)bounds.Width, (int)bounds.Height, _floatingRect);
+        var future = new Rect(grown.X, grown.Y, grown.Width, grown.Height);
+        if (future != bounds)
+        {
+            var outside = new CombinedGeometry(GeometryCombineMode.Exclude, new RectangleGeometry(future), new RectangleGeometry(bounds));
+            dc.PushClip(outside);
+            dc.DrawRectangle(Brushes.White, null, future);
+            dc.DrawImage(_floatingImage, _floatingRect);
+            dc.Pop();
+            _floatingOutlinePen ??= Frozen(new Pen(Brushes.Gray, 1 / _viewScale) { DashStyle = DashStyles.Dot });
+            dc.DrawRectangle(null, _floatingOutlinePen, future);
+        }
+        DrawFrame(dc, _floatingRect, FloatingHandles());
     }
 
     /// <summary>
@@ -535,7 +556,10 @@ public sealed class AnnotationCanvas : FrameworkElement
                 break;
 
             case DragMode.FloatMove:
-                _floatingRect.Offset(p - _lastPosition);
+                var moved = _floatingStart;
+                moved.Offset(p - _dragStart);
+                // Alt places it freely, without sticking to the edges.
+                _floatingRect = Keyboard.Modifiers.HasFlag(ModifierKeys.Alt) ? moved : SnapToEdges(moved);
                 break;
 
             case DragMode.FloatHandle:
@@ -683,6 +707,36 @@ public sealed class AnnotationCanvas : FrameworkElement
             if (_document.Annotations[i].HitTest(p, tolerance)) return _document.Annotations[i];
         }
         return null;
+    }
+
+    /// <summary>Distance, in screen pixels, under which a moved image sticks to an edge of the capture.</summary>
+    private const double SnapOnScreen = 8;
+
+    /// <summary>
+    /// Moves an inserted image near an edge of the capture onto it: aligned with the edge inside, or right next
+    /// to it outside (two captures side by side, the capture then grows to hold both).
+    /// </summary>
+    private Rect SnapToEdges(Rect r)
+    {
+        var image = ImageArea;
+        double tolerance = SnapOnScreen / _viewScale;
+        static double Nearest(double tolerance, params double[] moves)
+        {
+            double best = 0, bestDistance = double.MaxValue;
+            foreach (var m in moves)
+            {
+                if (Math.Abs(m) <= tolerance && Math.Abs(m) < bestDistance)
+                {
+                    best = m;
+                    bestDistance = Math.Abs(m);
+                }
+            }
+            return best;
+        }
+        double dx = Nearest(tolerance, -r.Left, image.Right - r.Right, image.Right - r.Left, -r.Right);
+        double dy = Nearest(tolerance, -r.Top, image.Bottom - r.Bottom, image.Bottom - r.Top, -r.Bottom);
+        r.Offset(dx, dy);
+        return r;
     }
 
     /// <summary>

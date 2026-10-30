@@ -31,13 +31,24 @@ public static class ScrollingCapture
 {
     /// <summary>Lets the selection overlay disappear, and the hover effects under the cursor appear, before the first frame.</summary>
     private const int StartDelayMs = 250;
-    /// <summary>Repaint time after a wheel step (smooth scrolling animations included).</summary>
-    private const int StepDelayMs = 220;
+    /// <summary>Lets the application start scrolling after a wheel step, before the screen is watched.</summary>
+    private const int StepDelayMs = 120;
+    /// <summary>
+    /// The screen is grabbed at this interval until two grabs in a row are the same (see <see cref="IsSettled"/>):
+    /// browsers animate the scrolling (smooth scrolling) and paint the parts that come into view afterwards.
+    /// </summary>
+    private const int SettlePollMs = 60;
+    /// <summary>Longest wait for the screen to settle (an animation or a video on the page never does).</summary>
+    private const int SettleTimeoutMs = 1500;
+    /// <summary>Share of the rows that may still change in a settled screen (blinking caret, small animation).</summary>
+    private const double SettledRowShare = 0.02;
     /// <summary>Second look when nothing moved: a slow application may still be scrolling.</summary>
     private const int RetryDelayMs = 450;
     private const int PollMs = 25;
     private const int MaxSteps = 400;
     private const int MaxNotches = 10;
+    /// <summary>Times a step that scrolled too far (frames no longer overlapping) is undone before giving up.</summary>
+    private const int MaxRecoveries = 3;
     /// <summary>Aim for each step to scroll about this share of the area, so consecutive frames overlap a lot.</summary>
     private const double StepShare = 0.45;
     /// <summary>The mouse further than this from its place pauses the scrolling.</summary>
@@ -63,20 +74,36 @@ public static class ScrollingCapture
         int maxHeight = (int)Math.Clamp(ImageIO.MaxPixels / area.Width, area.Height, ScrollStitcher.DefaultMaxHeight);
         var stitcher = new ScrollStitcher(area.Width, area.Height, maxHeight);
         using var grabber = new ScreenGrabber(area);
-        // Two frame buffers, reused: the stitcher keeps the last frame it used, the next one goes to the other.
-        var buffers = new[] { new byte[area.Width * 4 * area.Height], new byte[area.Width * 4 * area.Height] };
-        int nextBuffer = 0;
-        byte[] Grab()
+        // Three frame buffers, reused: the stitcher keeps the last frame it used (held), the two others take
+        // the grabs compared while the screen settles.
+        int stride = area.Width * 4;
+        var buffers = new[] { new byte[stride * area.Height], new byte[stride * area.Height], new byte[stride * area.Height] };
+        byte[]? held = null;
+        byte[] GrabInto(byte[]? other)
         {
+            var buffer = buffers.First(b => b != held && b != other);
             grabber.Grab();
-            var buffer = buffers[nextBuffer];
             grabber.CopyTo(buffer);
             return buffer;
+        }
+        // The area once it stopped moving, or as it is after SettleTimeoutMs; null if a stop was requested.
+        async Task<byte[]?> GrabSettledAsync(Func<bool> stopRequested)
+        {
+            var frame = await Task.Run(() => GrabInto(null));
+            var watch = Stopwatch.StartNew();
+            while (watch.ElapsedMilliseconds < SettleTimeoutMs)
+            {
+                if (!await WaitAsync(SettlePollMs, stopRequested)) return null;
+                var before = frame;
+                frame = await Task.Run(() => GrabInto(before));
+                if (IsSettled(before, frame, stride, area.Height)) break;
+            }
+            return frame;
         }
         StitchStep Add(byte[] frame, int expected = 0)
         {
             var step = stitcher.Add(frame, expected);
-            if (step.NewRows > 0) nextBuffer ^= 1;
+            if (step.NewRows > 0) held = frame;
             return step;
         }
 
@@ -92,7 +119,7 @@ public static class ScrollingCapture
             // The reference is where the cursor really is (Windows may have kept it elsewhere).
             if (GetCursorPos(out var actual)) point = actual;
             await Task.Delay(StartDelayMs);
-            Add(Grab());
+            Add(await GrabSettledAsync(() => cancel.IsCancellationRequested) ?? GrabInto(null));
 
             try
             {
@@ -119,7 +146,7 @@ public static class ScrollingCapture
 
             try
             {
-                await ScrollAsync(area, Add, Grab, () => stitcher.Height, bar, StopRequested, () => Mouse() == MousePosition.AtPoint);
+                await ScrollAsync(area, Add, GrabSettledAsync, () => stitcher.Height, bar, StopRequested, () => Mouse() == MousePosition.AtPoint);
             }
             catch (Exception ex)
             {
@@ -141,14 +168,15 @@ public static class ScrollingCapture
         return new ScrollCaptureResult(image, nothingScrolled);
     }
 
-    /// <param name="add">Stitches a frame (with the likely shift); <paramref name="grab"/> captures one.</param>
+    /// <param name="add">Stitches a frame (with the likely shift); <paramref name="grabSettled"/> captures one once the screen settled.</param>
     /// <param name="height">Height of the image stitched so far.</param>
-    private static async Task ScrollAsync(PixelRect area, Func<byte[], int, StitchStep> add, Func<byte[]> grab, Func<int> height,
-        ScrollStopBar? bar, Func<bool> stopRequested, Func<bool> mouseAtPoint)
+    private static async Task ScrollAsync(PixelRect area, Func<byte[], int, StitchStep> add, Func<Func<bool>, Task<byte[]?>> grabSettled,
+        Func<int> height, ScrollStopBar? bar, Func<bool> stopRequested, Func<bool> mouseAtPoint)
     {
         var watch = Stopwatch.StartNew();
         // First step: one notch, to measure how many pixels a notch scrolls in this window.
-        int notches = 1, expected = 0;
+        int notches = 1, recoveries = 0;
+        double pixelsPerNotch = 0;
         for (int step = 0; step < MaxSteps && watch.Elapsed < MaxDuration; step++)
         {
             if (stopRequested()) return;
@@ -160,22 +188,51 @@ public static class ScrollingCapture
             }
             if (!await WaitAsync(StepDelayMs, stopRequested)) return;
 
-            int shiftHint = expected;
-            var result = await Task.Run(() => add(grab(), shiftHint));
+            int shiftHint = (int)Math.Round(pixelsPerNotch * notches);
+            if (await grabSettled(stopRequested) is not { } frame) return;
+            var result = await Task.Run(() => add(frame, shiftHint));
             if (result.Outcome == StitchOutcome.NoChange)
             {
-                // Slow repaint or long smooth scrolling: look once more before concluding it is the end.
+                // Slow repaint or late start of the scrolling: look once more before concluding it is the end.
                 if (!await WaitAsync(RetryDelayMs, stopRequested)) return;
-                result = await Task.Run(() => add(grab(), shiftHint));
+                if (await grabSettled(stopRequested) is not { } again) return;
+                result = await Task.Run(() => add(again, shiftHint));
+            }
+            if (result.Outcome == StitchOutcome.NoMatch && notches > 1 && recoveries < MaxRecoveries)
+            {
+                // Scrolled too far for the frames to overlap: scroll back up and go on with smaller steps.
+                recoveries++;
+                if (!await WaitAtPointAsync(mouseAtPoint, bar, stopRequested)) return;
+                SendWheel(notches);
+                notches = Math.Max(1, notches / 3);
+                if (!await WaitAsync(StepDelayMs, stopRequested)) return;
+                if (await grabSettled(stopRequested) is null) return;
+                continue;
             }
             if (result.NewRows > 0) bar?.SetProgress(height());
             if (result.Outcome != StitchOutcome.Appended) return;
 
-            // Scroll about the same share of the area at each step, whatever the wheel speed of the application.
-            double pixelsPerNotch = Math.Max(1, result.Shift / (double)notches);
-            notches = Math.Clamp((int)(area.Height * StepShare / pixelsPerNotch), 1, MaxNotches);
-            expected = (int)Math.Round(pixelsPerNotch * notches);
+            // Scroll about the same share of the area at each step, whatever the wheel speed of the application,
+            // but at most twice as many notches as the last step: a measure taken while the page still moved must
+            // not send the next step past the area.
+            pixelsPerNotch = Math.Max(1, result.Shift / (double)notches);
+            int target = Math.Clamp((int)(area.Height * StepShare / pixelsPerNotch), 1, MaxNotches);
+            notches = Math.Min(target, notches * 2);
         }
+    }
+
+    /// <summary>
+    /// True when two grabs a few milliseconds apart are the same, but for a few rows (blinking caret, small
+    /// animation): the scrolling animation is over and the page is painted.
+    /// </summary>
+    internal static bool IsSettled(byte[] a, byte[] b, int stride, int height)
+    {
+        int allowed = (int)(height * SettledRowShare), changed = 0;
+        for (int y = 0; y < height; y++)
+        {
+            if (!a.AsSpan(y * stride, stride).SequenceEqual(b.AsSpan(y * stride, stride)) && ++changed > allowed) return false;
+        }
+        return true;
     }
 
     /// <summary>Waits while the mouse is away from its place (scrolling paused), checking the stop conditions.</summary>

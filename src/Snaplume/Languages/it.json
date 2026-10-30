@@ -736,7 +736,7 @@
   "Editor.Insert.File": "Immagine da un file…",
   "Editor.Insert.Capture": "Nuova cattura di un'area…",
   "Editor.Insert.Floating": "Immagine inserita",
-  "Editor.Insert.FloatingHint": "Trascina l'immagine per posizionarla, trascina un angolo per ridimensionarla (Maiusc: proporzioni libere). Invio o clic accanto per confermare, Esc per annullare.",
+  "Editor.Insert.FloatingHint": "Trascina l'immagine per posizionarla, anche accanto alla cattura: la cattura si ingrandisce per contenerla. Trascina un angolo per ridimensionarla (Maiusc: proporzioni libere, Alt: senza aggancio ai bordi). Invio o clic accanto per confermare, Esc per annullare.",
   "Editor.Insert.Larger": "L'immagine da inserire ({0} × {1} px) è più grande della cattura ({2} × {3} px).\n\nSì: ingrandisci la cattura per contenerla (sfondo bianco).\nNo: riduci l'immagine alle dimensioni della cattura.",
   "Editor.Insert.Title": "Inserisci un'immagine",
   "Editor.Insert.NoImage": "Gli appunti non contengono un'immagine.",

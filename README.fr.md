@@ -48,7 +48,7 @@
 - **Numéros d'étapes** : chaque clic ajoute le numéro ou la lettre suivante, en cinq styles (rond, rond avec repère, bulle, épingle, rond sombre).
 - **54 tampons vectoriels** : symboles (validé, refusé, attention, bug…), tampons de texte (APPROUVÉ, CONFIDENTIEL, BROUILLON…) et curseurs de souris.
 - **Surligneur, pixelisation, projecteur, loupe** pour guider le regard et masquer ce qui doit rester privé.
-- **Insertion d'images, comme dans Paint** : collez (<kbd>Ctrl</kbd>+<kbd>V</kbd>), ouvrez un fichier, glissez-déposez ou faites une nouvelle capture d'une zone, puis déplacez et redimensionnez l'image avant de la fixer.
+- **Insertion d'images, comme dans Paint** : collez (<kbd>Ctrl</kbd>+<kbd>V</kbd>), ouvrez un fichier, glissez-déposez ou faites une nouvelle capture d'une zone, puis déplacez et redimensionnez l'image avant de la fixer. Posée à côté de la capture, elle l'agrandit pour contenir les deux.
 - **Recadrage, redimensionnement** (pixels ou pourcentage) et **effets** : ombre, bordure, coins arrondis, bord déchiré.
 - **Styles prédéfinis par outil** : un clic sur un outil propose ses styles ; ajoutez les vôtres.
 - Annuler / rétablir (jusqu'à 100 étapes), et des annotations **toujours modifiables** après enregistrement.

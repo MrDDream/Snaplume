@@ -736,7 +736,7 @@
   "Editor.Insert.File": "Bild aus einer Datei…",
   "Editor.Insert.Capture": "Neue Aufnahme eines Bereichs…",
   "Editor.Insert.Floating": "Eingefügtes Bild",
-  "Editor.Insert.FloatingHint": "Bild ziehen, um es zu platzieren, an einer Ecke ziehen, um die Größe zu ändern (Umschalt: freie Proportionen). Eingabe oder Klick daneben zum Übernehmen, Esc zum Abbrechen.",
+  "Editor.Insert.FloatingHint": "Ziehen Sie das Bild an seinen Platz, auch neben die Aufnahme: Die Aufnahme wird dann vergrößert. An einer Ecke ziehen, um die Größe zu ändern (Umschalt: freie Proportionen, Alt: nicht an den Rändern einrasten). Eingabe oder Klick daneben zum Übernehmen, Esc zum Abbrechen.",
   "Editor.Insert.Larger": "Das einzufügende Bild ({0} × {1} px) ist größer als die Aufnahme ({2} × {3} px).\n\nJa: die Aufnahme vergrößern (weißer Hintergrund).\nNein: das Bild auf die Größe der Aufnahme verkleinern.",
   "Editor.Insert.Title": "Bild einfügen",
   "Editor.Insert.NoImage": "Die Zwischenablage enthält kein Bild.",

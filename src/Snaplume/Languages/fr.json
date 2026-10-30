@@ -736,7 +736,7 @@
   "Editor.Insert.File": "Image depuis un fichier…",
   "Editor.Insert.Capture": "Nouvelle capture d'une zone…",
   "Editor.Insert.Floating": "Image insérée",
-  "Editor.Insert.FloatingHint": "Glissez l'image pour la placer, tirez un coin pour la redimensionner (Maj : sans garder les proportions). Entrée ou clic à côté pour valider, Échap pour annuler.",
+  "Editor.Insert.FloatingHint": "Glissez l'image pour la placer, même à côté de la capture : elle s'agrandit pour l'accueillir. Tirez un coin pour redimensionner (Maj : proportions libres, Alt : sans aimanter aux bords). Entrée ou clic à côté pour valider, Échap pour annuler.",
   "Editor.Insert.Larger": "L'image à insérer ({0} × {1} px) est plus grande que la capture ({2} × {3} px).\n\nOui : agrandir la capture pour l'accueillir (fond blanc).\nNon : réduire l'image à la taille de la capture.",
   "Editor.Insert.Title": "Insérer une image",
   "Editor.Insert.NoImage": "Le presse-papiers ne contient pas d'image.",

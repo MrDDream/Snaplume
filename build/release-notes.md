@@ -3,6 +3,11 @@
 
 **Free, open-source screenshots, annotations and screen recording for Windows. 100% offline.**
 
+## Fixed in 1.1.1
+
+- **Scrolling capture in web browsers** (Chrome, Edge, Firefox): each frame now waits for the smooth-scrolling animation to end and the page to be painted. This fixes images cut too early, badly stitched or with repeated parts. Steps also grow gradually, and a step that scrolled too far is undone instead of ending the capture.
+- **Inserting an image beside a capture**: drop the inserted image past the edges (it snaps to them) and the capture grows to hold both, instead of cutting it off.
+
 ## What's new in 1.1
 
 - **Insert images into a capture, like in Paint**: paste (Ctrl+V), open a file, drag and drop, or take a new capture of an area from the editor (**Insert** button), then move and resize the image before placing it. A larger image can enlarge the capture or be shrunk to fit.
@@ -38,6 +43,8 @@ All packages are self-contained: **no .NET installation needed**.
 ## En français
 
 Snaplume {{VERSION}} : capture d'écran, annotation et enregistrement vidéo libres (MIT) pour Windows, 100 % hors ligne, sans compte ni télémétrie.
+
+**Corrigé dans la 1.1.1** : la capture défilante dans les navigateurs (Chrome, Edge, Firefox) attend la fin du défilement fluide avant chaque image (plus d'image coupée trop tôt, mal recollée ou avec des morceaux répétés), et une image insérée posée à côté de la capture l'agrandit au lieu d'être coupée.
 
 **Nouveautés de la 1.1** : insertion d'images dans une capture comme dans Paint (coller avec Ctrl+V, fichier, glisser-déposer ou nouvelle capture d'une zone, puis déplacer et redimensionner), vérification des mises à jour dans Paramètres › À propos (vérification quotidienne en option, désactivée par défaut), et confirmation avant de supprimer des captures.
 

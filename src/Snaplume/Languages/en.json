@@ -736,7 +736,7 @@
   "Editor.Insert.File": "Image from a file…",
   "Editor.Insert.Capture": "New capture of an area…",
   "Editor.Insert.Floating": "Inserted image",
-  "Editor.Insert.FloatingHint": "Drag the image to place it, drag a corner to resize it (Shift: free proportions). Enter or click beside it to apply, Esc to cancel.",
+  "Editor.Insert.FloatingHint": "Drag the image to place it, even beside the capture: the capture grows to hold it. Drag a corner to resize (Shift: free proportions, Alt: no snapping to the edges). Enter or click beside it to apply, Esc to cancel.",
   "Editor.Insert.Larger": "The image to insert ({0} × {1} px) is larger than the capture ({2} × {3} px).\n\nYes: enlarge the capture to fit it (white background).\nNo: shrink the image to the size of the capture.",
   "Editor.Insert.Title": "Insert an image",
   "Editor.Insert.NoImage": "The clipboard doesn't contain an image.",

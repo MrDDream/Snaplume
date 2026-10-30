@@ -336,43 +336,47 @@ public sealed class EditorDocument
     }
 
     /// <summary>
-    /// Burns an inserted image (pasted, opened or captured) into the base image at <paramref name="area"/>,
-    /// as one undo step. The annotations stay above it; what falls outside the image is cut off.
+    /// Image after inserting an image at <paramref name="area"/>: the image itself, or bigger when the inserted
+    /// image goes past its edges (see <see cref="InsertImage"/>).
     /// </summary>
-    public void InsertImage(BitmapSource image, Rect area)
+    public static Int32Rect InsertedBounds(int width, int height, Rect area)
     {
-        int w = BaseImage.PixelWidth, h = BaseImage.PixelHeight;
-        // Computed first: running out of memory must leave the document and its history untouched.
-        var merged = Render(w, h, dc =>
-        {
-            dc.DrawImage(BaseImage, new Rect(0, 0, w, h));
-            dc.DrawImage(image, area);
-        });
-        PushUndo();
-        BaseImage = merged;
-        RaiseChanged();
+        var union = Rect.Union(new Rect(0, 0, width, height), area);
+        int left = (int)Math.Floor(union.Left), top = (int)Math.Floor(union.Top);
+        return new Int32Rect(left, top, (int)Math.Ceiling(union.Right) - left, (int)Math.Ceiling(union.Bottom) - top);
     }
 
     /// <summary>
-    /// Enlarges the image to <paramref name="width"/> x <paramref name="height"/> (never smaller), the new area
-    /// filled with <paramref name="background"/>. The image and its annotations keep their place, at the top left.
+    /// Burns an inserted image (pasted, opened or captured) into the base image at <paramref name="area"/>, as one
+    /// undo step; the annotations stay above it. When the inserted image goes past the edges, the image grows to
+    /// hold it (e.g. two captures side by side), the new parts filled with <paramref name="background"/>; the
+    /// annotations follow the image when it grows to the left or to the top.
     /// </summary>
     /// <exception cref="InvalidDataException">The result, margins of the effects included, would be too big.</exception>
-    public void ExtendCanvas(int width, int height, Color background)
+    public void InsertImage(BitmapSource image, Rect area, Color background)
     {
         int w = BaseImage.PixelWidth, h = BaseImage.PixelHeight;
-        width = Math.Clamp(width, w, Math.Max(w, MaxDimension));
-        height = Math.Clamp(height, h, Math.Max(h, MaxDimension));
-        if (width == w && height == h) return;
-        var (outputWidth, outputHeight) = OutputSizeOf(width, height, Effects);
+        var bounds = InsertedBounds(w, h, area);
+        if (bounds.Width > MaxDimension || bounds.Height > MaxDimension)
+            throw new InvalidDataException(Loc.T("App.ImageTooLarge", bounds.Width, bounds.Height));
+        var (outputWidth, outputHeight) = OutputSizeOf(bounds.Width, bounds.Height, Effects);
         ImageIO.CheckSize(outputWidth, outputHeight);
-        var extended = Render(width, height, dc =>
+        var offset = new Vector(-bounds.X, -bounds.Y);
+
+        // Computed first: running out of memory must leave the document and its history untouched.
+        var merged = Render(bounds.Width, bounds.Height, dc =>
         {
-            dc.DrawRectangle(new SolidColorBrush(background), null, new Rect(0, 0, width, height));
-            dc.DrawImage(BaseImage, new Rect(0, 0, w, h));
+            if (bounds.Width != w || bounds.Height != h)
+                dc.DrawRectangle(new SolidColorBrush(background), null, new Rect(0, 0, bounds.Width, bounds.Height));
+            dc.DrawImage(BaseImage, new Rect(offset.X, offset.Y, w, h));
+            dc.DrawImage(image, Rect.Offset(area, offset));
         });
         PushUndo();
-        BaseImage = extended;
+        BaseImage = merged;
+        if (offset != default)
+        {
+            foreach (var annotation in Annotations) annotation.Translate(offset);
+        }
         RaiseChanged();
     }
 

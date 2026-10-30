@@ -736,7 +736,7 @@
   "Editor.Insert.File": "Imagen desde un archivo…",
   "Editor.Insert.Capture": "Nueva captura de una zona…",
   "Editor.Insert.Floating": "Imagen insertada",
-  "Editor.Insert.FloatingHint": "Arrastre la imagen para colocarla y una esquina para cambiar su tamaño (Mayús: proporciones libres). Intro o clic fuera para aplicar, Esc para cancelar.",
+  "Editor.Insert.FloatingHint": "Arrastre la imagen para colocarla, incluso al lado de la captura: la captura se amplía para contenerla. Arrastre una esquina para cambiar el tamaño (Mayús: proporciones libres, Alt: sin ajustar a los bordes). Intro o clic fuera para aplicar, Esc para cancelar.",
   "Editor.Insert.Larger": "La imagen que se va a insertar ({0} × {1} px) es más grande que la captura ({2} × {3} px).\n\nSí: ampliar la captura para que quepa (fondo blanco).\nNo: reducir la imagen al tamaño de la captura.",
   "Editor.Insert.Title": "Insertar una imagen",
   "Editor.Insert.NoImage": "El portapapeles no contiene ninguna imagen.",

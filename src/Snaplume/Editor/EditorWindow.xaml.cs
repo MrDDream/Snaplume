@@ -151,7 +151,7 @@ public partial class EditorWindow : Window
 
         AnnotCanvas.SelectionChanged += OnSelectionChanged;
         AnnotCanvas.TextEditRequested += BeginTextEdit;
-        AnnotCanvas.FloatingImageChanged += UpdateContext;
+        AnnotCanvas.FloatingImageChanged += OnFloatingImageChanged;
         AnnotCanvas.FloatingImageFailed += ex => ShowInsertError(ex);
         _document.Changed += UpdateUi;
 
@@ -1010,8 +1010,9 @@ public partial class EditorWindow : Window
 
     /// <summary>
     /// Shows <paramref name="image"/> floating over the capture, in the middle of what is visible, to be moved
-    /// and resized before it is burnt in (see <see cref="AnnotationCanvas.FloatImage"/>). An image bigger than
-    /// the capture either enlarges it or is shrunk to fit, as the user chooses.
+    /// and resized before it is burnt in (see <see cref="AnnotationCanvas.FloatImage"/>); the capture grows when the
+    /// image is placed past its edges. An image bigger than the capture is kept whole at its top left corner (the
+    /// capture grows) or shrunk to fit, as the user chooses.
     /// </summary>
     private void InsertImage(BitmapSource image)
     {
@@ -1024,21 +1025,7 @@ public partial class EditorWindow : Window
             var answer = MessageBox.Show(this, Loc.T("Editor.Insert.Larger", image.PixelWidth, image.PixelHeight, (int)area.Width, (int)area.Height),
                 Loc.T("Editor.Insert.Title"), MessageBoxButton.YesNoCancel, MessageBoxImage.Question);
             if (answer == MessageBoxResult.Cancel) return;
-            if (answer == MessageBoxResult.Yes)
-            {
-                try
-                {
-                    _document.ExtendCanvas(Math.Max(image.PixelWidth, (int)area.Width), Math.Max(image.PixelHeight, (int)area.Height), Colors.White);
-                }
-                catch (Exception ex)
-                {
-                    ShowInsertError(ex);
-                    return;
-                }
-                area = AnnotCanvas.ImageArea;
-                ZoomToFit(onlyShrink: true);
-            }
-            else
+            if (answer == MessageBoxResult.No)
             {
                 double scale = Math.Min(area.Width / width, area.Height / height);
                 width = Math.Max(1, width * scale);
@@ -1046,12 +1033,23 @@ public partial class EditorWindow : Window
             }
         }
 
+        _sizeBeforeInsert = (_document.BaseImage.PixelWidth, _document.BaseImage.PixelHeight);
         UpdateLayout();
         var center = Scroller.TranslatePoint(new Point(Scroller.ViewportWidth / 2, Scroller.ViewportHeight / 2), AnnotCanvas);
         double x = Math.Clamp(center.X - width / 2, 0, Math.Max(0, area.Width - width));
         double y = Math.Clamp(center.Y - height / 2, 0, Math.Max(0, area.Height - height));
         AnnotCanvas.FloatImage(image, new Rect(Math.Round(x), Math.Round(y), width, height));
         AnnotCanvas.Focus();
+    }
+
+    /// <summary>Size of the capture when the image was inserted: the view is fitted again if placing it made the capture grow.</summary>
+    private (int Width, int Height) _sizeBeforeInsert;
+
+    private void OnFloatingImageChanged()
+    {
+        UpdateContext();
+        if (!AnnotCanvas.HasFloatingImage && _sizeBeforeInsert != (_document.BaseImage.PixelWidth, _document.BaseImage.PixelHeight))
+            ZoomToFit(onlyShrink: true);
     }
 
     private void ShowInsertError(Exception ex)

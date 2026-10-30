@@ -48,7 +48,7 @@ English | [Français](README.fr.md)
 - **Step numbers**: each click adds the next number or letter, in five styles (circle, circle with leader, bubble, pin, dark).
 - **54 vector stamps**: symbols (approved, rejected, warning, bug…), text stamps (APPROVED, CONFIDENTIAL, DRAFT…) and mouse cursors.
 - **Highlighter, pixelate, spotlight, magnifier** to guide the eye and hide what must stay private.
-- **Insert images, like in Paint**: paste (<kbd>Ctrl</kbd>+<kbd>V</kbd>), open a file, drag and drop, or take a new capture of an area, then move and resize it before it is placed.
+- **Insert images, like in Paint**: paste (<kbd>Ctrl</kbd>+<kbd>V</kbd>), open a file, drag and drop, or take a new capture of an area, then move and resize it before it is placed. Drop it beside the capture and the capture grows to hold both.
 - **Crop, resize** (pixels or percent), and **effects**: shadow, border, rounded corners, torn edge.
 - **Presets per tool**: one click on a tool offers its saved styles; add your own.
 - Undo / redo (up to 100 steps), and annotations that **stay editable** after saving.
