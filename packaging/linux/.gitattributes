@@ -1,0 +1,4 @@
+# Files copied into the Linux packages: Unix line endings whatever the checkout platform
+# (a CRLF in "#!/bin/sh" breaks the install scripts). build/build-linux.ps1 converts them again when staging.
+* text=auto eol=lf
+*.png binary

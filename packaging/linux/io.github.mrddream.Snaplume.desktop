@@ -1,0 +1,63 @@
+[Desktop Entry]
+Type=Application
+Name=Snaplume
+GenericName=Screenshot Tool
+GenericName[fr]=Outil de capture d'écran
+GenericName[de]=Bildschirmfoto-Werkzeug
+GenericName[es]=Herramienta de captura de pantalla
+GenericName[it]=Strumento per screenshot
+GenericName[ar]=أداة لقطات الشاشة
+Comment=Capture, annotate and record your screen, without online services
+Comment[fr]=Capturer, annoter et enregistrer l'écran, sans service en ligne
+Comment[de]=Bildschirm aufnehmen, kommentieren und filmen, ohne Online-Dienste
+Comment[es]=Capture, anote y grabe la pantalla, sin servicios en línea
+Comment[it]=Cattura, annota e registra lo schermo, senza servizi online
+Comment[ar]=التقط الشاشة وعلّق عليها وسجّلها، دون خدمات عبر الإنترنت
+Keywords=screenshot;capture;screen;annotate;record;video;ocr;qr;
+Keywords[fr]=capture;écran;annoter;enregistrer;vidéo;ocr;qr;
+Exec=snaplume %F
+TryExec=snaplume
+Icon=io.github.mrddream.Snaplume
+Terminal=false
+StartupNotify=true
+StartupWMClass=Snaplume
+SingleMainWindow=true
+Categories=Graphics;Utility;
+MimeType=image/png;image/jpeg;image/bmp;image/gif;video/mp4;
+Actions=CaptureRegion;CaptureScreen;CaptureScrolling;Settings;
+
+[Desktop Action CaptureRegion]
+Name=Capture a region
+Name[fr]=Capturer une zone
+Name[de]=Bereich aufnehmen
+Name[es]=Capturar una zona
+Name[it]=Cattura un'area
+Name[ar]=التقاط منطقة
+Exec=snaplume --capture region
+
+[Desktop Action CaptureScreen]
+Name=Capture the screen
+Name[fr]=Capturer l'écran
+Name[de]=Bildschirm aufnehmen
+Name[es]=Capturar la pantalla
+Name[it]=Cattura lo schermo
+Name[ar]=التقاط الشاشة
+Exec=snaplume --capture screen
+
+[Desktop Action CaptureScrolling]
+Name=Scrolling capture
+Name[fr]=Capture défilante
+Name[de]=Scrollende Aufnahme
+Name[es]=Captura con desplazamiento
+Name[it]=Cattura a scorrimento
+Name[ar]=التقاط مع التمرير
+Exec=snaplume --capture scrolling
+
+[Desktop Action Settings]
+Name=Settings
+Name[fr]=Paramètres
+Name[de]=Einstellungen
+Name[es]=Configuración
+Name[it]=Impostazioni
+Name[ar]=الإعدادات
+Exec=snaplume --settings

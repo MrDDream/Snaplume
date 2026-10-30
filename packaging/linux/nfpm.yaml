@@ -1,0 +1,179 @@
+# nfpm configuration of the Snaplume .deb and .rpm packages (https://nfpm.goreleaser.com, MIT).
+#
+# Run by build/build-linux.ps1 from a staging folder (artifacts/linux/staging/<arch>), which is why every "src"
+# is relative: nfpm resolves them against its working directory. The script sets SNAPLUME_VERSION (from
+# Directory.Build.props) and SNAPLUME_ARCH (amd64 or arm64; nfpm turns them into x86_64 / aarch64 for rpm).
+#
+# File modes are always given: the staging folder may come from Windows, whose files have no Unix modes.
+
+name: snaplume
+arch: ${SNAPLUME_ARCH}
+platform: linux
+version: ${SNAPLUME_VERSION}
+release: 1
+section: graphics
+priority: optional
+maintainer: MrDDream <https://github.com/MrDDream>
+vendor: Snaplume
+homepage: https://mrddream.github.io/Snaplume/
+license: MIT
+description: |-
+  Screenshot and annotation tool, without online services.
+  Snaplume captures a region, a window, a screen or a scrolling page, annotates it
+  (arrows, shapes, text, blur, steps), records the screen as MP4 with sound and
+  webcam, reads text (OCR) and QR codes, and keeps everything in local workspaces.
+  Works under X11 and Wayland (through xdg-desktop-portal).
+
+contents:
+  # The application: a self-contained .NET single-file executable and the native libraries it loads
+  # (SkiaSharp, HarfBuzzSharp), which a single file cannot carry.
+  - src: ./opt/snaplume/Snaplume
+    dst: /opt/snaplume/Snaplume
+    file_info:
+      mode: 0755
+  - src: ./opt/snaplume/*.so
+    dst: /opt/snaplume/
+    file_info:
+      mode: 0644
+  - src: ./opt/snaplume/LICENSE
+    dst: /opt/snaplume/LICENSE
+    file_info:
+      mode: 0644
+  - src: /opt/snaplume/Snaplume
+    dst: /usr/bin/snaplume
+    type: symlink
+
+  # Desktop integration.
+  - src: ./share/applications/io.github.mrddream.Snaplume.desktop
+    dst: /usr/share/applications/io.github.mrddream.Snaplume.desktop
+    file_info:
+      mode: 0644
+  - src: ./share/metainfo/io.github.mrddream.Snaplume.metainfo.xml
+    dst: /usr/share/metainfo/io.github.mrddream.Snaplume.metainfo.xml
+    file_info:
+      mode: 0644
+  - src: ./share/icons/hicolor/16x16/apps/io.github.mrddream.Snaplume.png
+    dst: /usr/share/icons/hicolor/16x16/apps/io.github.mrddream.Snaplume.png
+    file_info:
+      mode: 0644
+  - src: ./share/icons/hicolor/22x22/apps/io.github.mrddream.Snaplume.png
+    dst: /usr/share/icons/hicolor/22x22/apps/io.github.mrddream.Snaplume.png
+    file_info:
+      mode: 0644
+  - src: ./share/icons/hicolor/24x24/apps/io.github.mrddream.Snaplume.png
+    dst: /usr/share/icons/hicolor/24x24/apps/io.github.mrddream.Snaplume.png
+    file_info:
+      mode: 0644
+  - src: ./share/icons/hicolor/32x32/apps/io.github.mrddream.Snaplume.png
+    dst: /usr/share/icons/hicolor/32x32/apps/io.github.mrddream.Snaplume.png
+    file_info:
+      mode: 0644
+  - src: ./share/icons/hicolor/48x48/apps/io.github.mrddream.Snaplume.png
+    dst: /usr/share/icons/hicolor/48x48/apps/io.github.mrddream.Snaplume.png
+    file_info:
+      mode: 0644
+  - src: ./share/icons/hicolor/64x64/apps/io.github.mrddream.Snaplume.png
+    dst: /usr/share/icons/hicolor/64x64/apps/io.github.mrddream.Snaplume.png
+    file_info:
+      mode: 0644
+  - src: ./share/icons/hicolor/128x128/apps/io.github.mrddream.Snaplume.png
+    dst: /usr/share/icons/hicolor/128x128/apps/io.github.mrddream.Snaplume.png
+    file_info:
+      mode: 0644
+  - src: ./share/icons/hicolor/256x256/apps/io.github.mrddream.Snaplume.png
+    dst: /usr/share/icons/hicolor/256x256/apps/io.github.mrddream.Snaplume.png
+    file_info:
+      mode: 0644
+  - src: ./share/icons/hicolor/512x512/apps/io.github.mrddream.Snaplume.png
+    dst: /usr/share/icons/hicolor/512x512/apps/io.github.mrddream.Snaplume.png
+    file_info:
+      mode: 0644
+  - src: ./share/icons/hicolor/scalable/apps/io.github.mrddream.Snaplume.svg
+    dst: /usr/share/icons/hicolor/scalable/apps/io.github.mrddream.Snaplume.svg
+    file_info:
+      mode: 0644
+
+scripts:
+  postinstall: ./scripts/postinstall.sh
+  postremove: ./scripts/postremove.sh
+
+# Debian / Ubuntu names. Everything Snaplume loads or runs is declared: the X11 libraries (P/Invoke), .NET's
+# ICU and OpenSSL, GStreamer (recording and playback in process), ffmpeg, Tesseract, gio (trash),
+# xdg-utils (open, e-mail), the portals (Wayland) and a font.
+overrides:
+  deb:
+    depends:
+      - libc6
+      - libx11-6
+      - libxtst6
+      - libxrandr2
+      - libxi6
+      - libxext6
+      - libxfixes3
+      - libfontconfig1
+      - libicu76 | libicu74 | libicu72 | libicu70
+      - libssl3t64 | libssl3
+      - libglib2.0-0t64 | libglib2.0-0
+      - libglib2.0-bin
+      - xdg-utils
+      - libgstreamer1.0-0
+      - libgstreamer-plugins-base1.0-0
+      - gstreamer1.0-plugins-base
+      - gstreamer1.0-plugins-good
+      - gstreamer1.0-pulseaudio
+      - gstreamer1.0-plugins-ugly | gstreamer1.0-plugins-bad
+      - gstreamer1.0-pipewire
+      - ffmpeg
+      - tesseract-ocr
+      - xdg-desktop-portal
+      - fonts-noto-core | fonts-dejavu-core
+    recommends:
+      - gstreamer1.0-libav
+      - wl-clipboard
+      - xclip
+      - cups-client
+      - xdg-desktop-portal-gnome | xdg-desktop-portal-kde | xdg-desktop-portal-gtk
+    suggests:
+      - gnome-shell-extension-appindicator
+      - tesseract-ocr-fra
+  # Fedora names (ffmpeg-free, or RPM Fusion's ffmpeg; openh264 from Fedora's Cisco repository, enabled by
+  # default). "(a or b)" are rpm rich dependencies (rpm 4.13+).
+  rpm:
+    depends:
+      - libX11
+      - libXtst
+      - libXrandr
+      - libXi
+      - libXext
+      - libXfixes
+      - fontconfig
+      - libicu
+      - openssl-libs
+      - glib2
+      - xdg-utils
+      - gstreamer1
+      - gstreamer1-plugins-base
+      - gstreamer1-plugins-good
+      - (gstreamer1-plugin-openh264 or gstreamer1-plugins-ugly)
+      - pipewire-gstreamer
+      - (ffmpeg-free or ffmpeg)
+      - tesseract
+      - xdg-desktop-portal
+      - google-noto-sans-fonts
+    recommends:
+      - gstreamer1-plugin-libav
+      - wl-clipboard
+      - xclip
+      - cups-client
+    suggests:
+      - gnome-shell-extension-appindicator
+      - tesseract-langpack-fra
+
+deb:
+  fields:
+    Bugs: https://github.com/MrDDream/Snaplume/issues
+
+rpm:
+  group: Applications/Multimedia
+  summary: Screenshot and annotation tool, without online services
+  compression: zstd
