@@ -81,11 +81,13 @@ internal sealed class WaylandScreenCapture : IScreenCapture
     /// </summary>
     internal static bool ShouldDelete(string path, DateTime requestedUtc, string tempFolder, string? runtimeFolder)
     {
-        var full = Path.GetFullPath(path);
-        bool Under(string? folder) => !string.IsNullOrEmpty(folder)
-            && full.StartsWith(Path.TrimEndingDirectorySeparator(Path.GetFullPath(folder)) + "/", StringComparison.Ordinal);
+        // Unix paths compared as text: the portal returns absolute, normalised paths.
+        if (!path.StartsWith('/') || path.Contains("/../", StringComparison.Ordinal)) return false;
+        var full = path;
+        bool Under(string? folder) => !string.IsNullOrEmpty(folder) && folder.StartsWith('/')
+            && full.StartsWith(folder.TrimEnd('/') + "/", StringComparison.Ordinal);
         if (Under("/tmp") || Under("/var/tmp") || Under(tempFolder) || Under(runtimeFolder)) return true;
-        if (!Path.GetFileName(full).StartsWith("Screenshot", StringComparison.OrdinalIgnoreCase)) return false;
+        if (!full[(full.LastIndexOf('/') + 1)..].StartsWith("Screenshot", StringComparison.OrdinalIgnoreCase)) return false;
         try
         {
             return File.Exists(full) && File.GetLastWriteTimeUtc(full) >= requestedUtc.AddSeconds(-2);

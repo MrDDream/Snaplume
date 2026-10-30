@@ -23,4 +23,10 @@
     <ProjectReference Include="..\Snaplume.Core\Snaplume.Core.csproj" />
   </ItemGroup>
 
+  <ItemGroup>
+    <InternalsVisibleTo Include="Snaplume.Tests" />
+    <!-- Notification-area icon, rendered from docs/branding/snaplume.svg by packaging/linux/icongen. -->
+    <EmbeddedResource Include="Assets\tray.png" LogicalName="Snaplume.Platform.Linux.tray.png" />
+  </ItemGroup>
+
 </Project>

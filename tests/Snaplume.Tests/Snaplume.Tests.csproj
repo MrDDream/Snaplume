@@ -20,6 +20,8 @@
 
   <ItemGroup>
     <ProjectReference Include="..\..\src\Snaplume.Core\Snaplume.Core.csproj" />
+    <!-- Pure logic of the Linux services (parsers, command lines, D-Bus options), tested on any system. -->
+    <ProjectReference Include="..\..\src\Snaplume.Platform.Linux\Snaplume.Platform.Linux.csproj" />
   </ItemGroup>
 
   <ItemGroup>

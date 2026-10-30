@@ -80,7 +80,7 @@ internal sealed class LinuxDesktopShell : IDesktopShell
 
     public void Email(IReadOnlyList<string> paths, string subject)
     {
-        var email = ExternalTools.Find("xdg-email") ?? throw new InvalidOperationException(Loc.T("Share.Email.NoClient"));
+        var email = ExternalTools.Find("xdg-email") ?? throw new InvalidOperationException(Loc.T("Linux.EmailNoClient"));
         var arguments = new List<string> { "--subject", subject };
         foreach (var path in paths)
         {
@@ -89,8 +89,8 @@ internal sealed class LinuxDesktopShell : IDesktopShell
         }
         var code = ExternalTools.LaunchAsync(email, arguments, TimeSpan.FromSeconds(30)).GetAwaiter().GetResult();
         // xdg-email: 3 = a required tool is missing, 4 = the action failed (no mail client configured).
-        if (code is 3 or 4) throw new InvalidOperationException(Loc.T("Share.Email.NoClient"));
-        if (code is { } c and not 0) throw new InvalidOperationException(Loc.T("Share.Email.Failed") + $" (xdg-email {c})");
+        if (code is 3 or 4) throw new InvalidOperationException(Loc.T("Linux.EmailNoClient"));
+        if (code is { } c and not 0) throw new InvalidOperationException(Loc.T("Linux.EmailFailed") + $" (xdg-email {c})");
     }
 
     public async Task<bool> PrintImagesAsync(IReadOnlyList<string> paths, string title, IntPtr owner)

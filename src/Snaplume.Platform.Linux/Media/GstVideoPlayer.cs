@@ -80,14 +80,17 @@ internal sealed unsafe class GstVideoPlayer : IVideoPlayer
             // Pausing prerolls: the file is opened, decoded up to the first picture, and its duration known.
             var result = Gst.gst_element_get_state(_playbin, out _, out _, 15 * Second);
             if (result == Gst.StateChangeFailure)
-                throw new InvalidOperationException(PopError() ?? Loc.T("Player.Error"));
+                throw new InvalidOperationException("GStreamer: " + (PopError() ?? "the file could not be opened"));
             ReadDuration();
             _worker = new Thread(Work) { IsBackground = true, Name = "Snaplume player" };
             _worker.Start();
         }
         catch (Exception ex) when (ex is InvalidOperationException or DllNotFoundException or EntryPointNotFoundException)
         {
-            Error = ex.Message;
+            // The technical details ("GStreamer: ...") go to the log; the window shows a sentence.
+            Error = ex is InvalidOperationException && !ex.Message.StartsWith("GStreamer:", StringComparison.Ordinal)
+                ? ex.Message
+                : Loc.T("Linux.PlayerError");
             ErrorLog.Write($"Ouverture de la vidéo {path}", ex);
         }
         Raise();
@@ -214,8 +217,8 @@ internal sealed unsafe class GstVideoPlayer : IVideoPlayer
                 }
                 else if (type == Gst.MessageError)
                 {
-                    Error = GStreamerRuntime.DescribeMessage(message);
-                    ErrorLog.Write("Lecture de la vidéo", Error);
+                    ErrorLog.Write("Lecture de la vidéo", GStreamerRuntime.DescribeMessage(message));
+                    Error = Loc.T("Linux.PlayerError");
                     _playing = false;
                 }
                 else if (type == Gst.MessageDurationChanged)
