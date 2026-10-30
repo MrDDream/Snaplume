@@ -1,8 +1,8 @@
 using System.Text.Json.Serialization;
-using System.Windows;
-using System.Windows.Media;
-using System.Windows.Media.Imaging;
-using static Snaplume.Editor.Freezables;
+using Avalonia;
+using Avalonia.Media;
+using Avalonia.Media.Immutable;
+using Avalonia.Media.Imaging;
 
 namespace Snaplume.Editor;
 
@@ -28,11 +28,15 @@ public sealed class MagnifierAnnotation : TwoPointAnnotation
     /// <summary>Handle that resizes the lens (after the 4 corners of the source area).</summary>
     public const int LensHandle = 4;
 
+    private static readonly RenderOptions Smooth = new() { BitmapInterpolationMode = BitmapInterpolationMode.HighQuality };
+
     private enum Part { All, Source, Lens }
 
     private Point? _anchor;
     private Part _moving;
-    private Pen? _thinPen;
+    private IPen? _thinPen;
+    private Color _thinColor;
+    private double _thinThickness;
 
     public Point LensCenter { get; set; }
     public double Zoom { get; set; } = 2;
@@ -58,11 +62,14 @@ public sealed class MagnifierAnnotation : TwoPointAnnotation
 
     private double ThinThickness => Math.Max(1, Thickness / 2);
 
-    private Pen ThinPen()
+    private IPen ThinPen()
     {
-        var brush = MakeBrush();
-        if (_thinPen == null || _thinPen.Thickness != ThinThickness || _thinPen.Brush != brush)
-            _thinPen = Frozen(new Pen(brush, ThinThickness) { StartLineCap = PenLineCap.Round, EndLineCap = PenLineCap.Round });
+        if (_thinPen == null || _thinThickness != ThinThickness || _thinColor != Color)
+        {
+            _thinPen = new ImmutablePen((IImmutableBrush)MakeBrush(), ThinThickness, null, PenLineCap.Round);
+            _thinThickness = ThinThickness;
+            _thinColor = Color;
+        }
         return _thinPen;
     }
 
@@ -85,7 +92,7 @@ public sealed class MagnifierAnnotation : TwoPointAnnotation
         var source = GetRect();
         double w = source.Width * Zoom, h = source.Height * Zoom;
         double gap = Math.Max(12, Thickness * 3);
-        var center = new Point(source.X + source.Width / 2, source.Y + source.Height / 2);
+        var center = source.Center;
         var candidates = new[]
         {
             new Point(source.Right + gap + w / 2, center.Y),
@@ -93,7 +100,7 @@ public sealed class MagnifierAnnotation : TwoPointAnnotation
             new Point(center.X, source.Bottom + gap + h / 2),
             new Point(center.X, source.Top - gap - h / 2),
         };
-        if (area.IsEmpty)
+        if (area.Width <= 0 || area.Height <= 0)
         {
             LensCenter = candidates[0];
             return;
@@ -104,8 +111,8 @@ public sealed class MagnifierAnnotation : TwoPointAnnotation
         foreach (var c in candidates)
         {
             var lens = new Rect(c.X - w / 2, c.Y - h / 2, w, h);
-            var visible = Rect.Intersect(lens, area);
-            double amount = visible.IsEmpty ? 0 : visible.Width * visible.Height;
+            var visible = Rects.Intersect(lens, area);
+            double amount = visible is Rect v ? v.Width * v.Height : 0;
             if (area.Contains(lens))
             {
                 best = c;
@@ -130,18 +137,18 @@ public sealed class MagnifierAnnotation : TwoPointAnnotation
         var r = GetRect();
         if (Math.Abs(r.Width - r.Height) < 1e-6) return;
         double side = Math.Max(r.Width, r.Height);
-        var center = new Point(r.X + r.Width / 2, r.Y + r.Height / 2);
+        var center = r.Center;
         Start = new Point(center.X - side / 2, center.Y - side / 2);
         End = new Point(center.X + side / 2, center.Y + side / 2);
     }
 
     /// <summary>Alone (preset previews): the lens shows the base image only.</summary>
-    public override void Render(DrawingContext dc, BitmapSource baseImage) =>
+    public override void Render(DrawingContext dc, EditorImage baseImage) =>
         Render(dc, baseImage, new Annotation[] { this }, 0);
 
     /// <summary>Draws the magnifier, number <paramref name="index"/> of <paramref name="annotations"/> (the document).</summary>
     /// <param name="skip">Annotation left out of the lens too (text being edited).</param>
-    public void Render(DrawingContext dc, BitmapSource baseImage, IReadOnlyList<Annotation> annotations, int index, Annotation? skip = null)
+    public void Render(DrawingContext dc, EditorImage baseImage, IReadOnlyList<Annotation> annotations, int index, Annotation? skip = null)
     {
         var source = GetRect();
         var lens = GetLensRect();
@@ -153,51 +160,38 @@ public sealed class MagnifierAnnotation : TwoPointAnnotation
         if (source.Width >= 1 && source.Height >= 1)
         {
             var lensOutline = Outline(lens, Zoom);
-            dc.PushClip(lensOutline);
-            // Under the parts of the area outside the image.
-            dc.DrawRectangle(Brushes.White, null, lens);
-            if (Content(baseImage, annotations, index, skip, source) is { } content)
+            using (dc.PushGeometryClip(lensOutline))
             {
-                // The area enlarged into the lens.
-                dc.PushTransform(new MatrixTransform(Zoom, 0, 0, Zoom, lens.X - source.X * Zoom, lens.Y - source.Y * Zoom));
-                dc.DrawDrawing(content);
-                dc.Pop();
+                // Under the parts of the area outside the image.
+                dc.DrawRectangle(Brushes.White, null, lens);
+                // A pixel more around the area: the edges of the lens are smoothed from their neighbors.
+                if (Rects.Intersect(Rects.Grow(source, 1), baseImage.Bounds) is Rect area && area.Width > 0 && area.Height > 0)
+                {
+                    // The area enlarged into the lens.
+                    using (dc.PushTransform(new Matrix(Zoom, 0, 0, Zoom, lens.X - source.X * Zoom, lens.Y - source.Y * Zoom)))
+                    using (dc.PushClip(area))
+                    using (dc.PushRenderOptions(Smooth))
+                        DrawContent(dc, baseImage, annotations, index, skip);
+                }
             }
-            dc.Pop();
             dc.DrawGeometry(null, MakePen(), lensOutline);
         }
         dc.DrawGeometry(null, thin, sourceOutline);
     }
 
     /// <summary>
-    /// What the lens shows, in image coordinates, clipped to the area (and to the image): the base image, the
-    /// annotations below this one except the magnifiers, then every pixelated area. Null outside the image.
+    /// What the lens shows, in image coordinates: the base image, the annotations below this one except the
+    /// magnifiers, then every pixelated area.
     /// </summary>
-    private static DrawingGroup? Content(BitmapSource baseImage, IReadOnlyList<Annotation> annotations, int index, Annotation? skip, Rect source)
+    private static void DrawContent(DrawingContext dc, EditorImage baseImage, IReadOnlyList<Annotation> annotations, int index, Annotation? skip)
     {
-        var image = new Rect(0, 0, baseImage.PixelWidth, baseImage.PixelHeight);
-        // A pixel more around the area: the edges of the lens are smoothed from their neighbors.
-        var area = source;
-        area.Inflate(1, 1);
-        area.Intersect(image);
-        if (area.IsEmpty || area.Width <= 0 || area.Height <= 0) return null;
-
-        var group = new DrawingGroup();
-        RenderOptions.SetBitmapScalingMode(group, BitmapScalingMode.HighQuality);
-        using (var g = group.Open())
+        dc.DrawImage(baseImage.Bitmap, baseImage.Bounds);
+        AnnotationRenderer.Render(dc, baseImage, annotations, 0, Math.Clamp(index, 0, annotations.Count), skip, withMagnifiers: false);
+        // Every pixelated area is drawn last, those above the magnifier too: a pixelated secret never shows up enlarged.
+        for (int i = 0; i < annotations.Count; i++)
         {
-            g.PushClip(new RectangleGeometry(area));
-            g.DrawImage(baseImage, image);
-            AnnotationRenderer.Render(g, baseImage, annotations, 0, Math.Clamp(index, 0, annotations.Count), skip, withMagnifiers: false);
-            // Every pixelated area is drawn last, those above the magnifier too: a pixelated secret never shows up enlarged.
-            for (int i = 0; i < annotations.Count; i++)
-            {
-                if (annotations[i] is PixelateAnnotation pixelate && !ReferenceEquals(pixelate, skip)) pixelate.Render(g, baseImage);
-            }
-            g.Pop();
+            if (annotations[i] is PixelateAnnotation pixelate && !ReferenceEquals(pixelate, skip)) pixelate.Render(dc, baseImage);
         }
-        if (group.CanFreeze) group.Freeze();
-        return group;
     }
 
     /// <summary>Ends of the connector, on the outlines of the area and of the lens; null when they overlap.</summary>
@@ -205,8 +199,8 @@ public sealed class MagnifierAnnotation : TwoPointAnnotation
     {
         var source = GetRect();
         var lens = GetLensRect();
-        var sourceCenter = new Point(source.X + source.Width / 2, source.Y + source.Height / 2);
-        var v = LensCenter - sourceCenter;
+        var sourceCenter = source.Center;
+        Vector v = LensCenter - sourceCenter;
         double distance = v.Length;
         if (distance < 1e-6) return null;
         v /= distance;
@@ -225,12 +219,8 @@ public sealed class MagnifierAnnotation : TwoPointAnnotation
         return Math.Min(tx, ty);
     }
 
-    public override Rect GetBounds()
-    {
-        var bounds = Inflate(GetRect(), ThinThickness / 2);
-        bounds.Union(Inflate(GetLensRect(), Thickness / 2));
-        return bounds;
-    }
+    public override Rect GetBounds() =>
+        Rects.Union(Inflate(GetRect(), ThinThickness / 2), Inflate(GetLensRect(), Thickness / 2));
 
     public override bool HitTest(Point p, double tolerance) =>
         InLens(p, tolerance) || Inflate(GetRect(), ThinThickness / 2 + tolerance).Contains(p)
@@ -291,13 +281,13 @@ public sealed class MagnifierAnnotation : TwoPointAnnotation
             double w = Math.Max(r.Width, 1), h = Math.Max(r.Height, 1);
             // Circle: the handle is on the outline at 45°, Zoom × √(w² + h²) / (2√2) from the center.
             double zoom = LensShape == MagnifierShape.Circle
-                ? 2 * Math.Sqrt(2) * (position - LensCenter).Length / Math.Sqrt(w * w + h * h)
+                ? 2 * Math.Sqrt(2) * ((Vector)(position - LensCenter)).Length / Math.Sqrt(w * w + h * h)
                 : Math.Max(2 * Math.Abs(position.X - LensCenter.X) / w, 2 * Math.Abs(position.Y - LensCenter.Y) / h);
             Zoom = Math.Clamp(zoom, MinHandleZoom, MaxHandleZoom);
             return;
         }
         var anchor = _anchor ?? GetHandles()[(index + 2) % 4];
-        var v = position - anchor;
+        Vector v = position - anchor;
         if (LensShape == MagnifierShape.Circle)
         {
             // A circle keeps a square area.

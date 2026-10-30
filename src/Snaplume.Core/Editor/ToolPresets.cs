@@ -1,17 +1,19 @@
 using System.Text.Json;
 using System.Text.Json.Serialization;
-using System.Windows;
-using System.Windows.Media;
-using System.Windows.Media.Imaging;
+using Avalonia;
+using Avalonia.Media;
+using Avalonia.Media.Immutable;
+using SkiaSharp;
 using Snaplume.Core;
+using Snaplume.Imaging;
 
 namespace Snaplume.Editor;
 
 /// <summary>Saved drawing style of a tool, offered when its button is clicked in the tool rail.</summary>
 public sealed record ToolPreset(EditorTool Tool, DrawingStyle Style)
 {
-    private const double PreviewWidth = 140;
-    private const double PreviewHeight = 56;
+    public const double PreviewWidth = 140;
+    public const double PreviewHeight = 56;
 
     [JsonIgnore]
     public string Description => Tool switch
@@ -26,35 +28,31 @@ public sealed record ToolPreset(EditorTool Tool, DrawingStyle Style)
         _ => Loc.T("Preset.Desc.Thickness", Style.Thickness),
     };
 
-    /// <summary>The preset drawn on a small sample, at the size it will have on the image.</summary>
-    public ImageSource CreatePreview()
+    /// <summary>
+    /// Draws the preset on a small sample (<see cref="PreviewWidth"/> × <see cref="PreviewHeight"/>), at the size it
+    /// will have on the image. Drawn by a control rather than kept as a picture: it stays sharp at any scale.
+    /// </summary>
+    public void RenderPreview(DrawingContext dc)
     {
         var area = new Rect(0, 0, PreviewWidth, PreviewHeight);
-        var group = new DrawingGroup();
-        using (var dc = group.Open())
+        using (dc.PushClip(area))
         {
-            dc.DrawRectangle(Brushes.Transparent, null, area);
-            dc.PushClip(new RectangleGeometry(area));
             if (Tool == EditorTool.Highlight)
             {
                 // Fake lines of text under the highlighter.
-                var ink = new SolidColorBrush(Color.FromRgb(0x9C, 0xA3, 0xAF));
-                dc.DrawRoundedRectangle(ink, null, new Rect(18, 20, 104, 6), 3, 3);
-                dc.DrawRoundedRectangle(ink, null, new Rect(18, 32, 72, 6), 3, 3);
+                dc.DrawRectangle(SampleInk, null, new Rect(18, 20, 104, 6), 3, 3);
+                dc.DrawRectangle(SampleInk, null, new Rect(18, 32, 72, 6), 3, 3);
             }
-            // Bullets are big: shown at 75 % so the pin and the tail fit.
-            if (Tool == EditorTool.Step) dc.PushTransform(new ScaleTransform(0.75, 0.75, PreviewWidth / 2, PreviewHeight / 2));
             // The magnifier enlarges a small fake screen.
-            var background = Tool == EditorTool.Magnifier ? SampleScreen.Value : Placeholder;
-            if (Tool == EditorTool.Magnifier) dc.DrawImage(background, area);
-            CreateSample().Render(dc, background);
-            if (Tool == EditorTool.Step) dc.Pop();
-            dc.Pop();
+            var background = Tool == EditorTool.Magnifier ? SampleScreen.Value : Placeholder.Value;
+            if (Tool == EditorTool.Magnifier) dc.DrawImage(background.Bitmap, area);
+            // Bullets are big: shown at 75 % so the pin and the tail fit.
+            var scale = Tool == EditorTool.Step
+                ? Matrix.CreateTranslation(-PreviewWidth / 2, -PreviewHeight / 2) * Matrix.CreateScale(0.75, 0.75)
+                  * Matrix.CreateTranslation(PreviewWidth / 2, PreviewHeight / 2)
+                : Matrix.Identity;
+            using (dc.PushTransform(scale)) CreateSample().Render(dc, background);
         }
-        group.Freeze();
-        var image = new DrawingImage(group);
-        image.Freeze();
-        return image;
     }
 
     private Annotation CreateSample()
@@ -97,27 +95,29 @@ public sealed record ToolPreset(EditorTool Tool, DrawingStyle Style)
     private static List<Point> Wave() =>
         Enumerable.Range(0, 41).Select(i => new Point(16 + i * 2.7, 28 + 11 * Math.Sin(i / 40.0 * 2 * Math.PI))).ToList();
 
-    private static readonly BitmapSource Placeholder =
-        BitmapSource.Create(1, 1, 96, 96, PixelFormats.Bgra32, null, new byte[4], 4);
+    private static readonly IImmutableBrush SampleInk = new ImmutableSolidColorBrush(Color.FromRgb(0x9C, 0xA3, 0xAF));
+
+    private static readonly Lazy<EditorImage> Placeholder = new(() => new EditorImage(new PixelBuffer(1, 1)));
 
     /// <summary>Lines of text and a button, light whatever the theme, under the magnifier previews.</summary>
-    private static readonly Lazy<BitmapSource> SampleScreen = new(() =>
+    private static readonly Lazy<EditorImage> SampleScreen = new(() =>
     {
-        var visual = new DrawingVisual();
-        using (var dc = visual.RenderOpen())
+        var image = SkiaPixels.Render((int)PreviewWidth, (int)PreviewHeight, canvas =>
         {
-            dc.DrawRoundedRectangle(new SolidColorBrush(Color.FromRgb(0xF8, 0xF9, 0xFB)), null, new Rect(0, 0, PreviewWidth, PreviewHeight), 4, 4);
-            var ink = new SolidColorBrush(Color.FromRgb(0x6B, 0x72, 0x80));
-            dc.DrawRectangle(ink, null, new Rect(14, 14, 30, 3));
-            dc.DrawRectangle(ink, null, new Rect(14, 21, 22, 3));
-            dc.DrawRoundedRectangle(new SolidColorBrush(Color.FromRgb(0x1E, 0x88, 0xE5)), null, new Rect(16, 29, 26, 9), 2, 2);
-            dc.DrawRectangle(Brushes.White, null, new Rect(20, 32.5, 18, 2));
-            dc.DrawRectangle(ink, null, new Rect(14, 42, 34, 3));
-        }
-        var target = new RenderTargetBitmap((int)PreviewWidth, (int)PreviewHeight, 96, 96, PixelFormats.Pbgra32);
-        target.Render(visual);
-        // Bgra32 like the images of the editor (the magnifier copies its pixels).
-        return ImageIO.Normalize(target);
+            using var paint = new SKPaint { IsAntialias = true };
+            void Box(uint color, float x, float y, float w, float h, float radius = 0)
+            {
+                paint.Color = new SKColor(color);
+                canvas.DrawRoundRect(new SKRect(x, y, x + w, y + h), radius, radius, paint);
+            }
+            Box(0xFFF8F9FB, 0, 0, (float)PreviewWidth, (float)PreviewHeight, 4);
+            Box(0xFF6B7280, 14, 14, 30, 3);
+            Box(0xFF6B7280, 14, 21, 22, 3);
+            Box(0xFF1E88E5, 16, 29, 26, 9, 2);
+            Box(0xFFFFFFFF, 20, 32.5f, 18, 2);
+            Box(0xFF6B7280, 14, 42, 34, 3);
+        });
+        return new EditorImage(image);
     });
 }
 
@@ -147,7 +147,8 @@ public static class ToolPresets
 
     private static List<ToolPreset>? _all;
 
-    private static string FilePath => Path.Combine(AppSettings.SettingsFolder, "presets.json");
+    /// <summary>presets.json in the settings folder; tests point it elsewhere.</summary>
+    internal static string FilePath { get; set; } = Path.Combine(AppSettings.SettingsFolder, "presets.json");
 
     private static List<ToolPreset> All => _all ??= Load();
 
@@ -176,6 +177,9 @@ public static class ToolPresets
         All.AddRange(Defaults().Where(p => p.Tool == tool));
         Save();
     }
+
+    /// <summary>Forgets the presets read, so that the next use reads the file again (tests).</summary>
+    internal static void Reload() => _all = null;
 
     private static List<ToolPreset> Load()
     {
@@ -235,7 +239,7 @@ public static class ToolPresets
     {
         try
         {
-            Directory.CreateDirectory(AppSettings.SettingsFolder);
+            Directory.CreateDirectory(Path.GetDirectoryName(FilePath)!);
             var temp = FilePath + ".tmp";
             File.WriteAllText(temp, JsonSerializer.Serialize(All.Select(ToStored).ToList(), AnnotationJson.Options));
             File.Move(temp, FilePath, overwrite: true);

@@ -1,0 +1,443 @@
+<Window xmlns="https://github.com/avaloniaui"
+        xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+        xmlns:l="using:Snaplume.Ui"
+        xmlns:local="using:Snaplume.Editor"
+        x:Class="Snaplume.Editor.EditorWindow"
+        Title="{l:T Editor.Title}" Width="1240" Height="820" MinWidth="760" MinHeight="460"
+        Icon="/Assets/app.ico" WindowStartupLocation="CenterScreen" UseLayoutRounding="True"
+        Background="{DynamicResource WindowBrush}" Foreground="{DynamicResource TextBrush}">
+    <Window.Styles>
+        <!-- Editor-only styles; the shared ones (flat, accent, icon, swatch, rail...) come from the application theme. -->
+        <Style Selector="TextBlock.property-label">
+            <Setter Property="VerticalAlignment" Value="Center" />
+            <Setter Property="Margin" Value="0,0,6,0" />
+            <Setter Property="Foreground" Value="{DynamicResource MutedTextBrush}" />
+        </Style>
+        <Style Selector="TextBlock.muted">
+            <Setter Property="Foreground" Value="{DynamicResource MutedTextBrush}" />
+        </Style>
+        <Style Selector="TextBlock.value">
+            <Setter Property="VerticalAlignment" Value="Center" />
+            <Setter Property="TextAlignment" Value="Right" />
+            <Setter Property="Foreground" Value="{DynamicResource MutedTextBrush}" />
+        </Style>
+        <Style Selector="Border.popup">
+            <Setter Property="Background" Value="{DynamicResource PopupBrush}" />
+            <Setter Property="BorderBrush" Value="{DynamicResource PopupBorderBrush}" />
+            <Setter Property="BorderThickness" Value="1" />
+            <Setter Property="CornerRadius" Value="8" />
+            <Setter Property="Margin" Value="8" />
+            <Setter Property="BoxShadow" Value="0 3 16 0 #40000000" />
+        </Style>
+        <Style Selector="Rectangle.toolbar-separator">
+            <Setter Property="Width" Value="1" />
+            <Setter Property="Margin" Value="6,4" />
+            <Setter Property="Fill" Value="{DynamicResource LineBrush}" />
+        </Style>
+        <Style Selector="Slider.effect">
+            <Setter Property="VerticalAlignment" Value="Center" />
+            <Setter Property="Margin" Value="0,-6" />
+            <Setter Property="Focusable" Value="False" />
+        </Style>
+        <!-- The text being typed keeps the look of the annotation, whatever the theme of the window. -->
+        <Style Selector="TextBox.annotation-text">
+            <Setter Property="MinHeight" Value="0" />
+            <Setter Property="MinWidth" Value="80" />
+            <Setter Property="Padding" Value="0" />
+            <Setter Property="BorderThickness" Value="1" />
+            <Setter Property="Background" Value="#E6FFFFFF" />
+            <Setter Property="BorderBrush" Value="{DynamicResource AccentBrush}" />
+        </Style>
+        <Style Selector="TextBox.annotation-text /template/ Border#PART_BorderElement">
+            <Setter Property="Background" Value="#E6FFFFFF" />
+            <Setter Property="BorderBrush" Value="{DynamicResource AccentBrush}" />
+            <Setter Property="BorderThickness" Value="1" />
+            <Setter Property="CornerRadius" Value="0" />
+            <Setter Property="MinHeight" Value="0" />
+        </Style>
+        <Style Selector="TextBox.annotation-text:focus /template/ Border#PART_BorderElement">
+            <Setter Property="Background" Value="#E6FFFFFF" />
+            <Setter Property="BorderBrush" Value="{DynamicResource AccentBrush}" />
+            <Setter Property="BorderThickness" Value="1" />
+        </Style>
+        <Style Selector="TextBox.annotation-text:pointerover /template/ Border#PART_BorderElement">
+            <Setter Property="Background" Value="#E6FFFFFF" />
+        </Style>
+    </Window.Styles>
+
+    <Grid>
+        <DockPanel>
+            <!-- Actions -->
+            <Border DockPanel.Dock="Top" Classes="toolbar" Padding="8,6">
+                <DockPanel>
+                    <StackPanel DockPanel.Dock="Right" Orientation="Horizontal">
+                        <Button x:Name="InsertButton" Classes="flat" ToolTip.Tip="{l:T Editor.Insert.Tip}">
+                            <StackPanel Orientation="Horizontal">
+                                <Path Classes="icon" Data="{DynamicResource IconInsertImage}" />
+                                <TextBlock Classes="button-label" Text="{l:T Editor.Insert.Button}" />
+                            </StackPanel>
+                            <Button.Flyout>
+                                <MenuFlyout Placement="BottomEdgeAlignedLeft">
+                                    <MenuItem x:Name="InsertPasteItem" Header="{l:T Editor.Insert.Paste}" InputGesture="Ctrl+V" />
+                                    <MenuItem x:Name="InsertFileItem" Header="{l:T Editor.Insert.File}" />
+                                    <MenuItem x:Name="InsertCaptureItem" Header="{l:T Editor.Insert.Capture}" />
+                                </MenuFlyout>
+                            </Button.Flyout>
+                        </Button>
+                        <ToggleButton x:Name="EffectsButton" Classes="flat" ToolTip.Tip="{l:T Effects.ButtonTip}">
+                            <StackPanel Orientation="Horizontal">
+                                <Path Classes="icon" Data="{DynamicResource IconEffects}" />
+                                <TextBlock Classes="button-label" Text="{l:T Effects.Button}" />
+                            </StackPanel>
+                        </ToggleButton>
+                        <Button x:Name="ReadTextButton" Classes="flat" ToolTip.Tip="{l:T Ocr.EditorTip}">
+                            <StackPanel Orientation="Horizontal">
+                                <Path Classes="icon" Data="{DynamicResource IconOcr}" />
+                                <TextBlock Classes="button-label" Text="{l:T Ocr.TextButton}" />
+                            </StackPanel>
+                        </Button>
+                        <Button x:Name="ResizeButton" Classes="flat" ToolTip.Tip="{l:T Editor.ResizeTip}">
+                            <StackPanel Orientation="Horizontal">
+                                <Path Classes="icon" Data="{DynamicResource IconResize}" />
+                                <TextBlock Classes="button-label" Text="{l:T Editor.Resize}" />
+                            </StackPanel>
+                        </Button>
+                        <Button x:Name="CropButton" Classes="flat" ToolTip.Tip="{l:T Editor.CropTip}">
+                            <StackPanel Orientation="Horizontal">
+                                <Path Classes="icon" Data="{DynamicResource IconCrop}" />
+                                <TextBlock Classes="button-label" Text="{l:T Editor.Tool.Crop}" />
+                            </StackPanel>
+                        </Button>
+                    </StackPanel>
+                    <StackPanel Orientation="Horizontal">
+                        <Button x:Name="SaveButton" Classes="accent" ToolTip.Tip="{l:T Editor.SaveTip}">
+                            <StackPanel Orientation="Horizontal">
+                                <Path Classes="icon" Data="{DynamicResource IconSave}" Stroke="{DynamicResource OnAccentBrush}" />
+                                <TextBlock Classes="button-label" Text="{l:T Editor.Save}" FontWeight="SemiBold" />
+                            </StackPanel>
+                        </Button>
+                        <Button x:Name="CopyButton" Classes="flat" ToolTip.Tip="{l:T Editor.CopyTip}">
+                            <StackPanel Orientation="Horizontal">
+                                <Path Classes="icon" Data="{DynamicResource IconCopy}" />
+                                <TextBlock Classes="button-label" Text="{l:T Editor.Copy}" />
+                            </StackPanel>
+                        </Button>
+                        <Button x:Name="ExportButton" Classes="flat" ToolTip.Tip="{l:T Editor.ExportTip}">
+                            <StackPanel Orientation="Horizontal">
+                                <Path Classes="icon" Data="{DynamicResource IconExport}" />
+                                <TextBlock Classes="button-label" Text="{l:T Editor.Export}" />
+                            </StackPanel>
+                        </Button>
+                        <Button x:Name="PrintButton" Classes="flat" ToolTip.Tip="{l:T Editor.PrintTip}" AutomationProperties.Name="{l:T Editor.Print}">
+                            <Path Classes="icon" Data="{DynamicResource IconPrinter}" />
+                        </Button>
+                        <Button x:Name="EmailButton" Classes="flat" ToolTip.Tip="{l:T Editor.EmailTip}" AutomationProperties.Name="{l:T Editor.Email}">
+                            <Path Classes="icon" Data="{DynamicResource IconEnvelope}" />
+                        </Button>
+                        <Rectangle Classes="toolbar-separator" />
+                        <Button x:Name="UndoButton" Classes="flat" ToolTip.Tip="{l:T Editor.UndoTip}">
+                            <Path Classes="icon" Data="{DynamicResource IconUndo}" />
+                        </Button>
+                        <Button x:Name="RedoButton" Classes="flat" ToolTip.Tip="{l:T Editor.RedoTip}">
+                            <Path Classes="icon" Data="{DynamicResource IconRedo}" />
+                        </Button>
+                    </StackPanel>
+                </DockPanel>
+            </Border>
+
+            <!-- Contextual properties of the current tool or selection -->
+            <Border DockPanel.Dock="Top" Background="{DynamicResource WindowBrush}" BorderBrush="{DynamicResource LineBrush}"
+                    BorderThickness="0,0,0,1" Padding="12,0" Height="46">
+                <DockPanel>
+                    <TextBlock x:Name="ToolHint" DockPanel.Dock="Right" VerticalAlignment="Center" Margin="12,0,0,0" Classes="muted"
+                               FontSize="11.5" TextTrimming="CharacterEllipsis" MaxWidth="360" />
+                    <StackPanel Orientation="Horizontal" VerticalAlignment="Center">
+                        <TextBlock x:Name="ToolName" FontWeight="SemiBold" FontSize="13.5" VerticalAlignment="Center" MinWidth="96" />
+
+                        <StackPanel x:Name="ColorSection" Orientation="Horizontal" Margin="8,0,0,0">
+                            <Rectangle Classes="toolbar-separator" />
+                            <StackPanel x:Name="PalettePanel" Orientation="Horizontal" VerticalAlignment="Center" />
+                            <Button x:Name="CustomColorButton" Classes="flat" ToolTip.Tip="{l:T Editor.CurrentColorTip}" Margin="4,0" Padding="3" Focusable="False">
+                                <Border x:Name="CurrentColorSwatch" Width="24" Height="24" CornerRadius="12" BorderBrush="{DynamicResource MutedTextBrush}"
+                                        BorderThickness="1.5" Background="Red" />
+                            </Button>
+                        </StackPanel>
+
+                        <StackPanel x:Name="ThicknessSection" Orientation="Horizontal">
+                            <Rectangle Classes="toolbar-separator" />
+                            <TextBlock x:Name="ThicknessLabel" Classes="property-label" Text="{l:T Editor.Thickness}" />
+                            <ComboBox x:Name="ThicknessBox" MinWidth="80" VerticalAlignment="Center" />
+                        </StackPanel>
+
+                        <StackPanel x:Name="FontSection" Orientation="Horizontal">
+                            <Rectangle Classes="toolbar-separator" />
+                            <TextBlock Classes="property-label" Text="{l:T Editor.FontSize}" />
+                            <ComboBox x:Name="FontSizeBox" MinWidth="80" VerticalAlignment="Center" />
+                        </StackPanel>
+
+                        <StackPanel x:Name="VariantSection" Orientation="Horizontal">
+                            <Rectangle Classes="toolbar-separator" />
+                            <TextBlock x:Name="VariantLabel" Classes="property-label" Text="{l:T Editor.Shape}" />
+                            <ComboBox x:Name="VariantBox" MinWidth="120" VerticalAlignment="Center" />
+                        </StackPanel>
+
+                        <StackPanel x:Name="LensZoomSection" Orientation="Horizontal">
+                            <Rectangle Classes="toolbar-separator" />
+                            <TextBlock Classes="property-label" Text="{l:T Editor.Zoom}" />
+                            <ComboBox x:Name="LensZoomBox" MinWidth="80" VerticalAlignment="Center" ToolTip.Tip="{l:T Editor.ZoomTip}" />
+                        </StackPanel>
+
+                        <StackPanel x:Name="FillSection" Orientation="Horizontal">
+                            <Rectangle Classes="toolbar-separator" />
+                            <CheckBox x:Name="FillBox" Content="{l:T Editor.Fill}" VerticalAlignment="Center" Focusable="False"
+                                      ToolTip.Tip="{l:T Editor.FillTip}" />
+                        </StackPanel>
+
+                        <StackPanel x:Name="StampSection" Orientation="Horizontal">
+                            <Rectangle Classes="toolbar-separator" />
+                            <ToggleButton x:Name="StampPickerButton" Classes="tool" Padding="6,2" Focusable="False" ToolTip.Tip="{l:T Editor.StampPickerTip}">
+                                <StackPanel Orientation="Horizontal">
+                                    <local:DrawingPreview x:Name="CurrentStampImage" Height="28" MaxWidth="90" />
+                                    <TextBlock Margin="8,0,2,0" VerticalAlignment="Center">
+                                        <Run Text="{l:T Editor.StampPicker}" /><Run Text=" ▾" />
+                                    </TextBlock>
+                                </StackPanel>
+                            </ToggleButton>
+                            <TextBlock Classes="property-label" Text="{l:T Editor.Size}" Margin="12,0,6,0" />
+                            <Slider x:Name="StampSizeSlider" Width="110" Minimum="0.25" Maximum="3" Value="1" VerticalAlignment="Center"
+                                    Focusable="False" Margin="0,-6" />
+                            <TextBlock x:Name="StampSizeText" Width="44" Margin="6,0,0,0" VerticalAlignment="Center" />
+                        </StackPanel>
+
+                        <StackPanel x:Name="DeleteSection" Orientation="Horizontal">
+                            <Rectangle Classes="toolbar-separator" />
+                            <Button x:Name="DeleteButton" Classes="flat" ToolTip.Tip="{l:T Editor.DeleteTip}">
+                                <StackPanel Orientation="Horizontal">
+                                    <Path Classes="icon" Data="{DynamicResource IconDelete}" />
+                                    <TextBlock Classes="button-label" Text="{l:T Editor.Delete}" />
+                                </StackPanel>
+                            </Button>
+                        </StackPanel>
+                    </StackPanel>
+                </DockPanel>
+            </Border>
+
+            <Border DockPanel.Dock="Bottom" Classes="status-bar" Padding="10,1">
+                <DockPanel>
+                    <StackPanel DockPanel.Dock="Right" Orientation="Horizontal">
+                        <Button x:Name="ZoomOutButton" Classes="flat" ToolTip.Tip="{l:T Editor.ZoomOutTip}">
+                            <Path Classes="icon" Data="{DynamicResource IconZoomOut}" />
+                        </Button>
+                        <TextBlock x:Name="ZoomText" Width="52" TextAlignment="Center" VerticalAlignment="Center" />
+                        <Button x:Name="ZoomInButton" Classes="flat" ToolTip.Tip="{l:T Editor.ZoomInTip}">
+                            <Path Classes="icon" Data="{DynamicResource IconZoomIn}" />
+                        </Button>
+                        <Button x:Name="ZoomActualButton" Classes="flat" ToolTip.Tip="{l:T Editor.ZoomActualTip}">
+                            <TextBlock Text="1:1" FontWeight="SemiBold" Margin="2,0" />
+                        </Button>
+                        <Button x:Name="ZoomFitButton" Classes="flat" ToolTip.Tip="{l:T Editor.ZoomFitTip}">
+                            <Path Classes="icon" Data="{DynamicResource IconFit}" />
+                        </Button>
+                    </StackPanel>
+                    <TextBlock x:Name="InfoText" VerticalAlignment="Center" TextTrimming="CharacterEllipsis" />
+                </DockPanel>
+            </Border>
+
+            <!-- Tools -->
+            <Border DockPanel.Dock="Left" Background="{DynamicResource ToolbarBrush}" BorderBrush="{DynamicResource LineBrush}"
+                    BorderThickness="0,0,1,0" Padding="6,8">
+                <ScrollViewer VerticalScrollBarVisibility="Auto" HorizontalScrollBarVisibility="Disabled">
+                    <StackPanel x:Name="ToolButtons">
+                        <RadioButton Classes="rail" GroupName="Tools" Tag="Select" IsChecked="True" ToolTip.Tip="{l:T Editor.Tool.SelectTip}">
+                            <Path Classes="icon" Data="{DynamicResource IconSelect}" />
+                        </RadioButton>
+                        <Rectangle Classes="rail-separator" />
+                        <RadioButton Classes="rail" GroupName="Tools" Tag="Arrow" ToolTip.Tip="{l:T Editor.Tool.ArrowTip}">
+                            <Path Classes="icon" Data="{DynamicResource IconArrow}" />
+                        </RadioButton>
+                        <RadioButton Classes="rail" GroupName="Tools" Tag="Line" ToolTip.Tip="{l:T Editor.Tool.LineTip}">
+                            <Path Classes="icon" Data="{DynamicResource IconLine}" />
+                        </RadioButton>
+                        <RadioButton Classes="rail" GroupName="Tools" Tag="Rectangle" ToolTip.Tip="{l:T Editor.Tool.RectangleTip}">
+                            <Path Classes="icon" Data="{DynamicResource IconRectangle}" />
+                        </RadioButton>
+                        <RadioButton Classes="rail" GroupName="Tools" Tag="Ellipse" ToolTip.Tip="{l:T Editor.Tool.EllipseTip}">
+                            <Path Classes="icon" Data="{DynamicResource IconEllipse}" />
+                        </RadioButton>
+                        <RadioButton Classes="rail" GroupName="Tools" Tag="Pen" ToolTip.Tip="{l:T Editor.Tool.PenTip}">
+                            <Path Classes="icon" Data="{DynamicResource IconPen}" />
+                        </RadioButton>
+                        <Rectangle Classes="rail-separator" />
+                        <RadioButton Classes="rail" GroupName="Tools" Tag="Text" ToolTip.Tip="{l:T Editor.Tool.TextTip}">
+                            <Path Classes="icon" Data="{DynamicResource IconText}" />
+                        </RadioButton>
+                        <RadioButton Classes="rail" GroupName="Tools" Tag="Step" ToolTip.Tip="{l:T Editor.Tool.StepTip}">
+                            <Path Classes="icon" Data="{DynamicResource IconStep}" />
+                        </RadioButton>
+                        <RadioButton Classes="rail" GroupName="Tools" Tag="Stamp" ToolTip.Tip="{l:T Editor.Tool.StampTip}">
+                            <Path Classes="icon" Data="{DynamicResource IconStamp}" />
+                        </RadioButton>
+                        <Rectangle Classes="rail-separator" />
+                        <RadioButton Classes="rail" GroupName="Tools" Tag="Highlight" ToolTip.Tip="{l:T Editor.Tool.HighlightTip}">
+                            <Path Classes="icon" Data="{DynamicResource IconHighlight}" />
+                        </RadioButton>
+                        <RadioButton Classes="rail" GroupName="Tools" Tag="Spotlight" ToolTip.Tip="{l:T Editor.Tool.SpotlightTip}">
+                            <Path Classes="icon" Data="{DynamicResource IconSpotlight}" />
+                        </RadioButton>
+                        <RadioButton Classes="rail" GroupName="Tools" Tag="Pixelate" ToolTip.Tip="{l:T Editor.Tool.PixelateTip}">
+                            <Path Classes="icon" Data="{DynamicResource IconPixelate}" />
+                        </RadioButton>
+                        <RadioButton Classes="rail" GroupName="Tools" Tag="Magnifier" ToolTip.Tip="{l:T Editor.Tool.MagnifierTip}">
+                            <Path Classes="icon" Data="{DynamicResource IconMagnifier}" />
+                        </RadioButton>
+                        <Rectangle Classes="rail-separator" />
+                        <RadioButton Classes="rail" GroupName="Tools" Tag="Crop" ToolTip.Tip="{l:T Editor.Tool.CropTip}">
+                            <Path Classes="icon" Data="{DynamicResource IconCrop}" />
+                        </RadioButton>
+                    </StackPanel>
+                </ScrollViewer>
+            </Border>
+
+            <!-- The image and its drawings are never mirrored, even in a right-to-left language -->
+            <ScrollViewer x:Name="Scroller" HorizontalScrollBarVisibility="Auto" VerticalScrollBarVisibility="Auto"
+                          Background="{DynamicResource CanvasBrush}" Focusable="False" FlowDirection="LeftToRight"
+                          DragDrop.AllowDrop="True">
+                <Grid Margin="32" HorizontalAlignment="Center" VerticalAlignment="Center" ClipToBounds="False">
+                    <LayoutTransformControl x:Name="ZoomHost" ClipToBounds="False">
+                        <Grid x:Name="Surface" ClipToBounds="False">
+                            <!-- Page under the image: stays white in dark mode; hidden when the image effects draw their own shadow -->
+                            <Border x:Name="ImagePage" Background="White" BoxShadow="0 2 18 0 #38000000" />
+                            <!-- Margins and shadow of the image effects; the image keeps its coordinates over it -->
+                            <local:EffectsBackdrop x:Name="Backdrop" HorizontalAlignment="Left" VerticalAlignment="Top" />
+                            <Grid x:Name="ImageLayer" HorizontalAlignment="Left" VerticalAlignment="Top" ClipToBounds="False">
+                                <local:AnnotationCanvas x:Name="AnnotCanvas" />
+                                <Canvas x:Name="TextLayer" ClipToBounds="False" />
+                            </Grid>
+                        </Grid>
+                    </LayoutTransformControl>
+                </Grid>
+            </ScrollViewer>
+        </DockPanel>
+
+        <!-- Stamp picker -->
+        <Popup x:Name="StampPopup" Placement="Bottom" IsLightDismissEnabled="True">
+            <Border Classes="popup" Padding="4">
+                <ScrollViewer MaxHeight="460" Width="560" VerticalScrollBarVisibility="Auto">
+                    <StackPanel x:Name="StampCatalog" Margin="8,4,8,8" />
+                </ScrollViewer>
+            </Border>
+        </Popup>
+
+        <!-- Presets of the clicked tool; closes as soon as the user draws -->
+        <Popup x:Name="PresetPopup" Placement="Right" HorizontalOffset="4" VerticalOffset="-12" IsLightDismissEnabled="False">
+            <Border Classes="popup" Padding="12,10,12,10">
+                <StackPanel Width="396">
+                    <DockPanel Margin="0,0,0,8">
+                        <Button x:Name="PresetCloseButton" DockPanel.Dock="Right" Classes="flat" Padding="4" ToolTip.Tip="{l:T Preset.CloseTip}">
+                            <Path Classes="icon" Data="{DynamicResource IconClose}" Width="10" Height="10" Stretch="Uniform" Margin="3" />
+                        </Button>
+                        <TextBlock x:Name="PresetTitle" FontWeight="SemiBold" FontSize="13" VerticalAlignment="Center" />
+                    </DockPanel>
+                    <WrapPanel x:Name="PresetPanel" />
+                    <DockPanel Margin="0,8,0,0">
+                        <Button x:Name="PresetResetButton" DockPanel.Dock="Right" Classes="flat" ToolTip.Tip="{l:T Preset.ResetTip}">
+                            <TextBlock Text="{l:T Preset.Reset}" Classes="muted" />
+                        </Button>
+                        <Button x:Name="PresetAddButton" Classes="flat" HorizontalAlignment="Left" ToolTip.Tip="{l:T Preset.AddTip}">
+                            <StackPanel Orientation="Horizontal">
+                                <Path Classes="icon" Data="{DynamicResource IconAdd}" />
+                                <TextBlock Classes="button-label" Text="{l:T Preset.Add}" />
+                            </StackPanel>
+                        </Button>
+                    </DockPanel>
+                </StackPanel>
+            </Border>
+        </Popup>
+
+        <!-- Image effects, applied live; each change is one undo step -->
+        <Popup x:Name="EffectsPopup" Placement="Bottom" IsLightDismissEnabled="True">
+            <Border x:Name="EffectsPanel" Classes="popup" Padding="14,10,14,12" TextElement.Foreground="{DynamicResource TextBrush}">
+                <StackPanel Width="340" Grid.IsSharedSizeScope="True">
+                    <DockPanel Margin="0,0,0,6">
+                        <Button x:Name="EffectsNoneButton" DockPanel.Dock="Right" Classes="flat" ToolTip.Tip="{l:T Effects.NoneTip}">
+                            <TextBlock Text="{l:T Effects.None}" Classes="muted" />
+                        </Button>
+                        <TextBlock Text="{l:T Effects.Title}" FontWeight="SemiBold" FontSize="13" VerticalAlignment="Center" />
+                    </DockPanel>
+
+                    <!-- Drop shadow -->
+                    <CheckBox x:Name="ShadowCheck" Content="{l:T Effects.Shadow}" FontWeight="SemiBold" Focusable="False" Margin="0,6,0,4" />
+                    <Grid Margin="22,0,0,0" RowDefinitions="Auto,Auto,Auto">
+                        <Grid.ColumnDefinitions>
+                            <ColumnDefinition Width="Auto" SharedSizeGroup="EffectLabel" />
+                            <ColumnDefinition Width="*" />
+                            <ColumnDefinition Width="50" />
+                        </Grid.ColumnDefinitions>
+                        <TextBlock Classes="property-label" Text="{l:T Effects.Blur}" Margin="0,0,10,0" />
+                        <Slider x:Name="ShadowBlurSlider" Classes="effect" Grid.Column="1" Minimum="0" Maximum="60" />
+                        <TextBlock x:Name="ShadowBlurText" Classes="value" Grid.Column="2" />
+                        <TextBlock Grid.Row="1" Classes="property-label" Text="{l:T Effects.Opacity}" Margin="0,0,10,0" />
+                        <Slider x:Name="ShadowOpacitySlider" Classes="effect" Grid.Row="1" Grid.Column="1" Minimum="0" Maximum="100" />
+                        <TextBlock x:Name="ShadowOpacityText" Classes="value" Grid.Row="1" Grid.Column="2" />
+                        <TextBlock Grid.Row="2" Classes="property-label" Text="{l:T Effects.Offset}" Margin="0,0,10,0" />
+                        <Slider x:Name="ShadowOffsetSlider" Classes="effect" Grid.Row="2" Grid.Column="1" Minimum="0" Maximum="40" />
+                        <TextBlock x:Name="ShadowOffsetText" Classes="value" Grid.Row="2" Grid.Column="2" />
+                    </Grid>
+
+                    <!-- Border -->
+                    <CheckBox x:Name="BorderCheck" Content="{l:T Effects.Border}" FontWeight="SemiBold" Focusable="False" Margin="0,10,0,4" />
+                    <Grid Margin="22,0,0,0" RowDefinitions="Auto,Auto">
+                        <Grid.ColumnDefinitions>
+                            <ColumnDefinition Width="Auto" SharedSizeGroup="EffectLabel" />
+                            <ColumnDefinition Width="*" />
+                            <ColumnDefinition Width="50" />
+                        </Grid.ColumnDefinitions>
+                        <TextBlock Classes="property-label" Text="{l:T Effects.Color}" Margin="0,0,10,0" />
+                        <StackPanel x:Name="BorderColors" Grid.Column="1" Grid.ColumnSpan="2" Orientation="Horizontal" Margin="0,3" />
+                        <TextBlock Grid.Row="1" Classes="property-label" Text="{l:T Effects.Width}" Margin="0,0,10,0" />
+                        <Slider x:Name="BorderWidthSlider" Classes="effect" Grid.Row="1" Grid.Column="1" Minimum="1" Maximum="40" />
+                        <TextBlock x:Name="BorderWidthText" Classes="value" Grid.Row="1" Grid.Column="2" />
+                    </Grid>
+
+                    <!-- Rounded corners -->
+                    <Grid Margin="0,10,0,0" ColumnDefinitions="Auto,*,50">
+                        <TextBlock Text="{l:T Effects.Corners}" FontWeight="SemiBold" VerticalAlignment="Center" Margin="0,0,10,0" />
+                        <Slider x:Name="CornerSlider" Classes="effect" Grid.Column="1" Minimum="0" Maximum="80" />
+                        <TextBlock x:Name="CornerText" Classes="value" Grid.Column="2" />
+                    </Grid>
+
+                    <!-- Torn edges -->
+                    <TextBlock Text="{l:T Effects.Torn}" FontWeight="SemiBold" Margin="0,10,0,4" />
+                    <StackPanel Margin="22,0,0,0">
+                        <WrapPanel>
+                            <CheckBox x:Name="TornTopCheck" Content="{l:T Effects.Top}" Focusable="False" Margin="0,2,14,2" />
+                            <CheckBox x:Name="TornBottomCheck" Content="{l:T Effects.Bottom}" Focusable="False" Margin="0,2,14,2" />
+                            <CheckBox x:Name="TornLeftCheck" Content="{l:T Effects.Left}" Focusable="False" Margin="0,2,14,2" />
+                            <CheckBox x:Name="TornRightCheck" Content="{l:T Effects.Right}" Focusable="False" Margin="0,2,14,2" />
+                        </WrapPanel>
+                        <Grid>
+                            <Grid.ColumnDefinitions>
+                                <ColumnDefinition Width="Auto" SharedSizeGroup="EffectLabel" />
+                                <ColumnDefinition Width="*" />
+                                <ColumnDefinition Width="50" />
+                            </Grid.ColumnDefinitions>
+                            <TextBlock Classes="property-label" Text="{l:T Effects.TornSize}" Margin="0,0,10,0" />
+                            <Slider x:Name="TornSizeSlider" Classes="effect" Grid.Column="1" Minimum="4" Maximum="40" />
+                            <TextBlock x:Name="TornSizeText" Classes="value" Grid.Column="2" />
+                        </Grid>
+                        <Button x:Name="TornReseedButton" Classes="flat" HorizontalAlignment="Left" ToolTip.Tip="{l:T Effects.ReseedTip}">
+                            <TextBlock Text="{l:T Effects.Reseed}" />
+                        </Button>
+                    </StackPanel>
+
+                    <!-- Background of the margins and of the parts cut off -->
+                    <DockPanel Margin="0,10,0,0">
+                        <TextBlock Text="{l:T Effects.Background}" FontWeight="SemiBold" VerticalAlignment="Center" Margin="0,0,10,0" />
+                        <StackPanel x:Name="BackgroundColors" Orientation="Horizontal" />
+                    </DockPanel>
+                    <TextBlock Text="{l:T Effects.BackgroundNote}" Classes="muted" FontSize="11.5" TextWrapping="Wrap" Margin="0,6,0,0" />
+                </StackPanel>
+            </Border>
+        </Popup>
+    </Grid>
+</Window>

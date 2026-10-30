@@ -1,9 +1,10 @@
 using System.Text.Json.Serialization;
-using System.Windows;
-using System.Windows.Media;
-using System.Windows.Media.Imaging;
-using Snaplume.Core;
-using static Snaplume.Editor.Freezables;
+using Avalonia;
+using Avalonia.Media;
+using Avalonia.Media.Immutable;
+using Avalonia.Media.Imaging;
+using SkiaSharp;
+using Snaplume.Imaging;
 
 namespace Snaplume.Editor;
 
@@ -106,15 +107,20 @@ public readonly record struct Int32Thickness(int Left, int Top, int Right, int B
     public Thickness ToThickness() => new(Left, Top, Right, Bottom);
 }
 
+/// <summary>Outline of the image: for clipping on screen (Avalonia) and for the shadow mask (Skia).</summary>
+internal sealed record ImageOutline(Geometry Geometry, SKPath Path);
+
 /// <summary>
 /// Everything needed to draw the effects of an image of a given size, computed once
 /// (see <see cref="EffectsRenderer.For"/>). Coordinates are those of the image: the margins are negative.
 /// </summary>
 public sealed class EffectsLayout
 {
-    private readonly Brush _background;
+    private static readonly RenderOptions SmoothScaling = new() { BitmapInterpolationMode = BitmapInterpolationMode.MediumQuality };
+
+    private readonly IImmutableBrush _background;
     private readonly ShadowMask? _shadow;
-    private readonly Pen? _borderPen;
+    private readonly IPen? _borderPen;
     private readonly Rect _borderRect;
 
     internal EffectsLayout(ImageEffects effects, int width, int height)
@@ -123,21 +129,22 @@ public sealed class EffectsLayout
         Width = width;
         Height = height;
         Padding = effects.GetPadding();
-        OutlineGeometry = EffectsRenderer.Outline(effects, width, height);
+        var outline = EffectsRenderer.Outline(effects, width, height);
+        OutlineGeometry = outline?.Geometry;
 
         var background = effects.Background;
-        _background = Frozen(new SolidColorBrush(Color.FromRgb(background.R, background.G, background.B)));
+        _background = new ImmutableSolidColorBrush(Color.FromRgb(background.R, background.G, background.B));
 
         if (effects.Shadow && effects.ShadowOpacity > 0)
-            _shadow = EffectsRenderer.Shadow(effects, OutlineGeometry, width, height);
+            _shadow = EffectsRenderer.Shadow(effects, outline, width, height);
 
         if (effects.Border)
         {
             double border = Math.Min(effects.BorderWidth, Math.Min(width, height) / 2.0);
-            var brush = Frozen(new SolidColorBrush(effects.BorderColor));
+            var brush = new ImmutableSolidColorBrush(effects.BorderColor);
             // Around an outline the pen is centered on it and clipped to it: twice as wide.
-            var outline = OutlineGeometry;
-            _borderPen = Frozen(new Pen(brush, outline == null ? border : border * 2) { LineJoin = outline == null ? PenLineJoin.Miter : PenLineJoin.Round });
+            _borderPen = new ImmutablePen(brush, outline == null ? border : border * 2, null, PenLineCap.Flat,
+                outline == null ? PenLineJoin.Miter : PenLineJoin.Round);
             _borderRect = new Rect(border / 2, border / 2, Math.Max(0, width - border), Math.Max(0, height - border));
         }
     }
@@ -161,23 +168,15 @@ public sealed class EffectsLayout
         dc.DrawRectangle(_background, null, OutputArea);
         if (_shadow == null) return;
         // The opacity is applied here: changing it reuses the same blurred mask.
-        var area = _shadow.Area;
-        area.Offset(Effects.ShadowOffsetX, Effects.ShadowOffsetY);
-        dc.PushOpacity(Effects.ShadowOpacity);
-        dc.DrawImage(_shadow.Bitmap, area);
-        dc.Pop();
+        var area = Rects.Offset(_shadow.Area, new Vector(Effects.ShadowOffsetX, Effects.ShadowOffsetY));
+        using (dc.PushOpacity(Effects.ShadowOpacity))
+        using (dc.PushRenderOptions(SmoothScaling))
+            dc.DrawImage(_shadow.Bitmap, area);
     }
 
-    /// <summary>Clips what follows (the image and its annotations) to <see cref="OutlineGeometry"/>; call <see cref="PopOutline"/> after.</summary>
-    public void PushOutline(DrawingContext dc)
-    {
-        if (OutlineGeometry != null) dc.PushClip(OutlineGeometry);
-    }
-
-    public void PopOutline(DrawingContext dc)
-    {
-        if (OutlineGeometry != null) dc.Pop();
-    }
+    /// <summary>Clips what follows (the image and its annotations) to <see cref="OutlineGeometry"/> until disposed.</summary>
+    public IDisposable PushOutline(DrawingContext dc) =>
+        OutlineGeometry != null ? dc.PushGeometryClip(OutlineGeometry) : NoState.Instance;
 
     /// <summary>Border inside the outline of the image, drawn over the annotations.</summary>
     public void DrawBorder(DrawingContext dc)
@@ -188,28 +187,35 @@ public sealed class EffectsLayout
             dc.DrawRectangle(null, _borderPen, _borderRect);
             return;
         }
-        dc.PushClip(OutlineGeometry);
-        dc.DrawGeometry(null, _borderPen, OutlineGeometry);
-        dc.Pop();
+        using (dc.PushGeometryClip(OutlineGeometry))
+            dc.DrawGeometry(null, _borderPen, OutlineGeometry);
     }
 
     /// <summary>Draws the whole output: backdrop, then <paramref name="drawImage"/> clipped to the outline, then the border.</summary>
     public void Render(DrawingContext dc, Action<DrawingContext> drawImage)
     {
-        dc.PushTransform(new TranslateTransform(Padding.Left, Padding.Top));
-        DrawBackdrop(dc);
-        PushOutline(dc);
-        dc.PushClip(new RectangleGeometry(new Rect(0, 0, Width, Height)));
-        drawImage(dc);
-        dc.Pop();
-        PopOutline(dc);
-        DrawBorder(dc);
-        dc.Pop();
+        using (dc.PushTransform(Matrix.CreateTranslation(Padding.Left, Padding.Top)))
+        {
+            DrawBackdrop(dc);
+            using (PushOutline(dc))
+            using (dc.PushClip(new Rect(0, 0, Width, Height)))
+                drawImage(dc);
+            DrawBorder(dc);
+        }
+    }
+
+    private sealed class NoState : IDisposable
+    {
+        public static readonly NoState Instance = new();
+
+        public void Dispose()
+        {
+        }
     }
 }
 
 /// <summary>Blurred outline of the image, fully opaque, and where to draw it (before the offset of the shadow).</summary>
-internal sealed record ShadowMask(BitmapSource Bitmap, Rect Area);
+internal sealed record ShadowMask(Bitmap Bitmap, Rect Area);
 
 public static class EffectsRenderer
 {
@@ -225,7 +231,7 @@ public static class EffectsRenderer
     // saved image, do not rebuild them in turn. Only the drawing parts are keyed: changing the opacity or the
     // offset of the shadow, or the border, reuses the outline and the blurred mask.
     private static readonly SmallCache<(ImageEffects Effects, int Width, int Height), EffectsLayout> Layouts = new(4);
-    private static readonly SmallCache<OutlineKey, Geometry?> Outlines = new(4);
+    private static readonly SmallCache<OutlineKey, ImageOutline?> Outlines = new(4);
     private static readonly SmallCache<(OutlineKey Outline, double Blur), ShadowMask> Shadows = new(4);
 
     /// <summary>What the outline of the image depends on.</summary>
@@ -253,30 +259,90 @@ public static class EffectsRenderer
     }
 
     /// <summary>Outline with the rounded corners and the torn edges, or null for a plain rectangle.</summary>
-    internal static Geometry? Outline(ImageEffects effects, int width, int height)
+    internal static ImageOutline? Outline(ImageEffects effects, int width, int height)
     {
         var key = KeyOf(effects, width, height);
         return Outlines.GetOrAdd(key, () => BuildOutline(key));
     }
 
-    private static Geometry? BuildOutline(OutlineKey key)
+    private static ImageOutline? BuildOutline(OutlineKey key)
     {
         var bounds = new Rect(0, 0, key.Width, key.Height);
+        var skBounds = new SKRect(0, 0, key.Width, key.Height);
         if (key.Edges == TornEdges.None)
-            return key.Radius > 0 ? Frozen(new RectangleGeometry(bounds, key.Radius, key.Radius)) : null;
+        {
+            if (key.Radius <= 0) return null;
+            var rounded = new SKPath();
+            rounded.AddRoundRect(skBounds, (float)key.Radius, (float)key.Radius);
+            return new ImageOutline(new RectangleGeometry(bounds, key.Radius, key.Radius), rounded);
+        }
 
-        var torn = TornPolygon(key);
-        if (key.Radius <= 0) return torn;
-        // One intersection, flattened once: clipping with a polygon is faster than with a combined geometry.
-        var rounded = new RectangleGeometry(bounds, key.Radius, key.Radius);
-        return Frozen(new CombinedGeometry(GeometryCombineMode.Intersect, rounded, torn).GetFlattenedPathGeometry(0.25, ToleranceType.Absolute));
+        var torn = PathOf(TornPolygon(key));
+        if (key.Radius <= 0) return new ImageOutline(ToGeometry(torn), torn);
+        // One intersection, flattened once by Skia: clipping with a single path is faster than with a combined geometry.
+        using var corners = new SKPath();
+        corners.AddRoundRect(skBounds, (float)key.Radius, (float)key.Radius);
+        var both = torn.Op(corners, SKPathOp.Intersect) ?? torn;
+        return new ImageOutline(ToGeometry(both), both);
+    }
+
+    private static SKPath PathOf(List<Point> polygon)
+    {
+        var path = new SKPath { FillType = SKPathFillType.Winding };
+        path.MoveTo((float)polygon[0].X, (float)polygon[0].Y);
+        for (int i = 1; i < polygon.Count; i++) path.LineTo((float)polygon[i].X, (float)polygon[i].Y);
+        path.Close();
+        return path;
+    }
+
+    /// <summary>The Skia outline as an Avalonia geometry, curves kept (conics become quadratic curves).</summary>
+    internal static Geometry ToGeometry(SKPath path)
+    {
+        var geometry = new StreamGeometry();
+        using var ctx = geometry.Open();
+        ctx.SetFillRule(path.FillType is SKPathFillType.EvenOdd or SKPathFillType.InverseEvenOdd ? FillRule.EvenOdd : FillRule.NonZero);
+        using var iterator = path.CreateRawIterator();
+        var points = new SKPoint[4];
+        bool open = false;
+        static Point P(SKPoint p) => new(p.X, p.Y);
+        SKPathVerb verb;
+        while ((verb = iterator.Next(points)) != SKPathVerb.Done)
+        {
+            switch (verb)
+            {
+                case SKPathVerb.Move:
+                    if (open) ctx.EndFigure(true);
+                    ctx.BeginFigure(P(points[0]), true);
+                    open = true;
+                    break;
+                case SKPathVerb.Line:
+                    ctx.LineTo(P(points[1]));
+                    break;
+                case SKPathVerb.Quad:
+                    ctx.QuadraticBezierTo(P(points[1]), P(points[2]));
+                    break;
+                case SKPathVerb.Conic:
+                    var quads = SKPath.ConvertConicToQuads(points[0], points[1], points[2], iterator.ConicWeight(), 2);
+                    for (int i = 1; i + 1 < quads.Length; i += 2) ctx.QuadraticBezierTo(P(quads[i]), P(quads[i + 1]));
+                    break;
+                case SKPathVerb.Cubic:
+                    ctx.CubicBezierTo(P(points[1]), P(points[2]), P(points[3]));
+                    break;
+                case SKPathVerb.Close:
+                    if (open) ctx.EndFigure(true);
+                    open = false;
+                    break;
+            }
+        }
+        if (open) ctx.EndFigure(true);
+        return geometry;
     }
 
     /// <summary>
     /// The image outline as one polygon, clockwise from the top-left: each side is a straight line or a jagged
     /// line, and consecutive sides are joined where they cross near their common corner.
     /// </summary>
-    private static Geometry TornPolygon(OutlineKey key)
+    private static List<Point> TornPolygon(OutlineKey key)
     {
         int width = key.Width, height = key.Height;
         var order = new[] { TornEdges.Top, TornEdges.Right, TornEdges.Bottom, TornEdges.Left };
@@ -305,15 +371,7 @@ public static class EffectsRenderer
             points.Add(startAt);
             for (int i = startIndex + 1; i <= endIndex && i < sides[s].Count; i++) points.Add(sides[s][i]);
         }
-
-        var geometry = new StreamGeometry { FillRule = FillRule.Nonzero };
-        using (var ctx = geometry.Open())
-        {
-            ctx.BeginFigure(points[0], isFilled: true, isClosed: true);
-            ctx.PolyLineTo(points.Skip(1).ToList(), isStroked: false, isSmoothJoin: false);
-        }
-        geometry.Freeze();
-        return geometry;
+        return points;
     }
 
     /// <summary>
@@ -342,7 +400,7 @@ public static class EffectsRenderer
                     bestJ = j;
                 }
             }
-            if (bestJ >= 0) return (i, bestJ, a[i] + (a[i + 1] - a[i]) * bestT);
+            if (bestJ >= 0) return (i, bestJ, a[i] + (Vector)(a[i + 1] - a[i]) * bestT);
         }
         // Not expected (the sides always cross near the corner): joined by a straight line.
         return (a.Count - 1, -1, a[^1]);
@@ -351,13 +409,13 @@ public static class EffectsRenderer
     /// <summary>Position along p1-p2 (0 to 1) where it crosses q1-q2, or null.</summary>
     private static double? Cross(Point p1, Point p2, Point q1, Point q2)
     {
-        var r = p2 - p1;
-        var s = q2 - q1;
-        double denominator = Vector.CrossProduct(r, s);
+        Vector r = p2 - p1;
+        Vector s = q2 - q1;
+        double denominator = Vector.Cross(r, s);
         if (Math.Abs(denominator) < 1e-12) return null;
-        var qp = q1 - p1;
-        double t = Vector.CrossProduct(qp, s) / denominator;
-        double u = Vector.CrossProduct(qp, r) / denominator;
+        Vector qp = q1 - p1;
+        double t = Vector.Cross(qp, s) / denominator;
+        double u = Vector.Cross(qp, r) / denominator;
         return t >= 0 && t <= 1 && u >= 0 && u <= 1 ? t : null;
     }
 
@@ -408,10 +466,10 @@ public static class EffectsRenderer
     }
 
     /// <summary>The blurred mask of the shadow, shared by the layouts that differ only by opacity, offset or border.</summary>
-    internal static ShadowMask Shadow(ImageEffects effects, Geometry? outline, int width, int height)
+    internal static ShadowMask Shadow(ImageEffects effects, ImageOutline? outline, int width, int height)
     {
         var key = (KeyOf(effects, width, height), effects.ShadowBlur);
-        return Shadows.GetOrAdd(key, () => BuildShadow(effects.ShadowBlur, outline, width, height));
+        return Shadows.GetOrAdd(key, () => BuildShadow(effects.ShadowBlur, outline?.Path, width, height));
     }
 
     /// <summary>
@@ -419,7 +477,7 @@ public static class EffectsRenderer
     /// reduced for big blurs and big images, then drawn enlarged under the image. A plain rectangle is
     /// blurred as two lines (the blur of a rectangle is the product of the blurs of its sides).
     /// </summary>
-    private static ShadowMask BuildShadow(double blur, Geometry? outline, int width, int height)
+    private static ShadowMask BuildShadow(double blur, SKPath? outline, int width, int height)
     {
         int extent = (int)Math.Ceiling(blur * 1.3);
         double area = (width + 2.0 * extent) * (height + 2.0 * extent);
@@ -428,8 +486,9 @@ public static class EffectsRenderer
         int maskWidth = Math.Max(1, (int)Math.Ceiling((width + 2.0 * pad) / factor));
         int maskHeight = Math.Max(1, (int)Math.Ceiling((height + 2.0 * pad) / factor));
         int radius = (int)Math.Round(blur / 2 / factor);
-        int stride = maskWidth * 4;
-        var pixels = new byte[(long)stride * maskHeight];
+        var mask = new PixelBuffer(maskWidth, maskHeight);
+        var pixels = mask.Pixels;
+        int stride = mask.Stride;
 
         if (outline == null)
         {
@@ -440,40 +499,39 @@ public static class EffectsRenderer
                 BoxBlur(columns, radius);
                 BoxBlur(rows, radius);
             }
-            // Black shadow, premultiplied: only the alpha is set.
+            // Black shadow: only the alpha is set.
             for (int y = 0; y < maskHeight; y++)
             {
                 double row = rows[y] * 255;
                 if (row <= 0) continue;
-                long line = (long)y * stride + 3;
+                int line = y * stride + 3;
                 for (int x = 0; x < maskWidth; x++) pixels[line + x * 4] = (byte)Math.Round(columns[x] * row);
             }
         }
         else
         {
-            var visual = new DrawingVisual();
-            using (var dc = visual.RenderOpen())
+            var alpha = new byte[maskWidth * maskHeight];
+            using (var bitmap = new SKBitmap(new SKImageInfo(maskWidth, maskHeight, SKColorType.Alpha8, SKAlphaType.Premul)))
             {
-                dc.PushTransform(new ScaleTransform(1.0 / factor, 1.0 / factor));
-                dc.PushTransform(new TranslateTransform(pad, pad));
-                dc.DrawGeometry(Brushes.Black, null, outline);
-                dc.Pop();
-                dc.Pop();
+                using (var canvas = new SKCanvas(bitmap))
+                using (var paint = new SKPaint { IsAntialias = true, Color = SKColors.Black, Style = SKPaintStyle.Fill })
+                {
+                    canvas.Clear(SKColors.Transparent);
+                    canvas.Scale(1f / factor);
+                    canvas.Translate(pad, pad);
+                    canvas.DrawPath(outline, paint);
+                }
+                var rowBytes = bitmap.RowBytes;
+                var source = bitmap.GetPixelSpan();
+                for (int y = 0; y < maskHeight; y++)
+                    source.Slice(y * rowBytes, maskWidth).CopyTo(alpha.AsSpan(y * maskWidth, maskWidth));
             }
-            var target = new RenderTargetBitmap(maskWidth, maskHeight, 96, 96, PixelFormats.Pbgra32);
-            target.Render(visual);
-            target.CopyPixels(pixels, stride, 0);
-
-            var alpha = new byte[(long)maskWidth * maskHeight];
-            for (long i = 0; i < alpha.LongLength; i++) alpha[i] = pixels[i * 4 + 3];
             if (radius > 0) BoxBlur(alpha, maskWidth, maskHeight, radius);
-            Array.Clear(pixels);
-            for (long i = 0; i < alpha.LongLength; i++) pixels[i * 4 + 3] = alpha[i];
+            for (int i = 0; i < alpha.Length; i++) pixels[i * 4 + 3] = alpha[i];
         }
 
-        var bitmap = BitmapSource.Create(maskWidth, maskHeight, 96, 96, PixelFormats.Pbgra32, null, pixels, stride);
-        bitmap.Freeze();
-        return new ShadowMask(bitmap, new Rect(-pad, -pad, maskWidth * factor, maskHeight * factor));
+        var image = AvaloniaImages.ToBitmap(mask);
+        return new ShadowMask(image, new Rect(-pad, -pad, maskWidth * factor, maskHeight * factor));
     }
 
     /// <summary>Share of each mask cell covered by the image (from <paramref name="start"/>, <paramref name="length"/> long).</summary>

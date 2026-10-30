@@ -1,12 +1,12 @@
 using System.Text.Json;
 using System.Text.Json.Serialization;
 using System.Text.Json.Serialization.Metadata;
-using System.Windows;
-using System.Windows.Media;
+using Avalonia;
+using Avalonia.Media;
 
 namespace Snaplume.Editor;
 
-/// <summary>Content of the sidecar file keeping annotations editable.</summary>
+/// <summary>Content of the sidecar file keeping annotations editable (same format as Snaplume 1.1).</summary>
 public sealed class SidecarData
 {
     /// <summary>
@@ -51,9 +51,9 @@ public static class AnnotationJson
     }
 
     /// <summary>
-    /// Colors as "#AARRGGBB" (also reads "#RRGGBB"). Never through <see cref="ColorConverter"/>: it also accepts
-    /// "ContextColor &lt;uri&gt; ...", which makes WPF open a color profile at that address (a network path would
-    /// leak the user's credentials) when a crafted sidecar or presets file is read.
+    /// Colors as "#AARRGGBB" (also reads "#RRGGBB"), through <see cref="HexColor"/> only: a general color parser
+    /// accepts other syntaxes (named colors, and in WPF "ContextColor &lt;uri&gt;", which opened a color profile at
+    /// that address), none of which may come from a crafted sidecar or presets file.
     /// </summary>
     private sealed class ColorJsonConverter : JsonConverter<Color>
     {

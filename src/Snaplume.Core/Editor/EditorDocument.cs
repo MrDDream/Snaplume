@@ -1,15 +1,17 @@
 using System.Text.Json;
-using System.Windows;
-using System.Windows.Media;
-using System.Windows.Media.Imaging;
+using Avalonia;
+using Avalonia.Media;
+using Avalonia.Media.Imaging;
+using SkiaSharp;
 using Snaplume.Core;
+using Snaplume.Imaging;
 
 namespace Snaplume.Editor;
 
 /// <summary>
 /// A capture being edited: base image + vector annotations + image effects + undo history.
 /// The flattened result overwrites the capture file, while the base image and the
-/// annotations are kept in a hidden ".snaplume" folder to stay editable.
+/// annotations are kept in a hidden ".snaplume" folder to stay editable (see <see cref="SidecarFiles"/>).
 /// The base image kept there already has the pixelated areas burnt in, so that a hidden
 /// secret never stays readable on disk.
 /// </summary>
@@ -18,21 +20,14 @@ public sealed class EditorDocument
     /// <summary>Largest width or height of an image (resize); the number of pixels is limited by <see cref="ImageIO.MaxPixels"/>.</summary>
     public const int MaxDimension = 30000;
 
-    private const string SidecarFolder = ".snaplume";
-    private const string LegacySidecarFolder = ".librecapture";
-    private const string BaseSuffix = ".base.png";
-    private const string JsonSuffix = ".json";
     private const int MaxUndoSteps = 100;
     /// <summary>Bigger sidecar files are ignored: they cannot come from the editor.</summary>
     private const long MaxSidecarLength = 64 * 1024 * 1024;
 
-    /// <summary>Folders whose legacy sidecar folder was already looked for in this session.</summary>
-    private static readonly HashSet<string> MigratedFolders = new(StringComparer.OrdinalIgnoreCase);
-
     /// <summary>State of the document, for undo and for modifications that may be abandoned (see <see cref="BeginChange"/>).</summary>
     public sealed class Snapshot
     {
-        internal Snapshot(BitmapSource baseImage, List<Annotation> annotations, ImageEffects effects, long version)
+        internal Snapshot(EditorImage baseImage, List<Annotation> annotations, ImageEffects effects, long version)
         {
             BaseImage = baseImage;
             Annotations = annotations;
@@ -40,7 +35,7 @@ public sealed class EditorDocument
             Version = version;
         }
 
-        internal BitmapSource BaseImage { get; }
+        internal EditorImage BaseImage { get; }
         internal List<Annotation> Annotations { get; }
         internal ImageEffects Effects { get; }
         internal long Version { get; }
@@ -55,11 +50,11 @@ public sealed class EditorDocument
     private long _savedVersion;
 
     // Base image written in the sidecar folder, and the pixelated areas burnt into it.
-    private BitmapSource? _writtenBase;
+    private EditorImage? _writtenBase;
     private string? _writtenRedaction;
 
     public string FilePath { get; }
-    public BitmapSource BaseImage { get; private set; }
+    public EditorImage BaseImage { get; private set; }
     public List<Annotation> Annotations { get; private set; }
     /// <summary>Shadow, border, corners and edges of the whole image (see <see cref="SetEffects"/>).</summary>
     public ImageEffects Effects { get; private set; } = ImageEffects.None;
@@ -100,33 +95,34 @@ public sealed class EditorDocument
     /// <summary>The shadow of the effects could not be shown (see <see cref="PreviewLayout"/>).</summary>
     public bool PreviewShadowFailed { get; private set; }
 
-    private EditorDocument(string path, BitmapSource baseImage, List<Annotation> annotations)
+    private EditorDocument(string path, EditorImage baseImage, List<Annotation> annotations)
     {
         FilePath = path;
         BaseImage = baseImage;
         Annotations = annotations;
     }
 
+    /// <summary>Opens a capture, with its annotations when the sidecar files still match it.</summary>
+    /// <exception cref="InvalidDataException">Not a readable image, or too large.</exception>
     public static EditorDocument Load(string path)
     {
         var dir = Path.GetDirectoryName(path)!;
-        MigrateLegacySidecars(dir);
-        CleanOrphanSidecars(dir);
-        var document = TryLoadSidecar(path) ?? new EditorDocument(path, ImageIO.Load(path), new List<Annotation>());
-        document.UpdatePreviewLayout();
+        SidecarFiles.MigrateLegacy(dir);
+        SidecarFiles.CleanOrphans(dir);
+        var document = TryLoadSidecar(path) ?? new EditorDocument(path, new EditorImage(ImageIO.Load(path)), new List<Annotation>());
         return document;
     }
 
     /// <summary>Rebuilds <see cref="PreviewLayout"/> when the effects or the image size changed; never throws.</summary>
     private void UpdatePreviewLayout()
     {
-        var key = (Effects, BaseImage.PixelWidth, BaseImage.PixelHeight);
+        var key = (Effects, BaseImage.Width, BaseImage.Height);
         if (_previewLayoutFor == key) return;
         _previewLayoutFor = key;
         PreviewShadowFailed = false;
         try
         {
-            _previewLayout = EffectsRenderer.For(key.Effects, key.PixelWidth, key.PixelHeight);
+            _previewLayout = EffectsRenderer.For(key.Effects, key.Width, key.Height);
         }
         catch (Exception ex)
         {
@@ -134,7 +130,7 @@ public sealed class EditorDocument
             PreviewShadowFailed = key.Effects.Shadow;
             try
             {
-                _previewLayout = EffectsRenderer.For(key.Effects with { Shadow = false }, key.PixelWidth, key.PixelHeight);
+                _previewLayout = EffectsRenderer.For(key.Effects with { Shadow = false }, key.Width, key.Height);
             }
             catch (Exception fallbackEx)
             {
@@ -154,7 +150,7 @@ public sealed class EditorDocument
     /// <summary>Base image and annotations saved next to the capture, if they still match it.</summary>
     private static EditorDocument? TryLoadSidecar(string path)
     {
-        var (basePath, jsonPath) = SidecarPaths(path);
+        var (basePath, jsonPath) = SidecarFiles.PathsOf(path);
         if (!File.Exists(jsonPath) || !File.Exists(basePath)) return null;
         try
         {
@@ -177,7 +173,7 @@ public sealed class EditorDocument
                 ErrorLog.Write($"Effets invalides ignorés dans {jsonPath}", new InvalidDataException(effects.ToString()));
                 effects = ImageEffects.None;
             }
-            var document = new EditorDocument(path, ImageIO.Load(basePath), annotations) { Effects = effects };
+            var document = new EditorDocument(path, new EditorImage(ImageIO.Load(basePath)), annotations) { Effects = effects };
             document._writtenBase = document.BaseImage;
             document._writtenRedaction = document.RedactionKey();
             return document;
@@ -271,32 +267,32 @@ public sealed class EditorDocument
     {
         get
         {
-            var (width, height) = OutputSizeOf(BaseImage.PixelWidth, BaseImage.PixelHeight, Effects);
+            var (width, height) = OutputSizeOf(BaseImage.Width, BaseImage.Height, Effects);
             return new Size(width, height);
         }
     }
 
-    public void Crop(Int32Rect area)
+    /// <summary>Keeps only <paramref name="area"/> of the image (clamped to it); annotations follow, those left outside are dropped.</summary>
+    public void Crop(PixelRect area)
     {
-        int x = Math.Clamp(area.X, 0, BaseImage.PixelWidth - 1);
-        int y = Math.Clamp(area.Y, 0, BaseImage.PixelHeight - 1);
-        area = new Int32Rect(x, y,
-            Math.Clamp(area.Width, 1, BaseImage.PixelWidth - x),
-            Math.Clamp(area.Height, 1, BaseImage.PixelHeight - y));
-        var cropped = ImageIO.Normalize(new CroppedBitmap(BaseImage, area));
+        int x = Math.Clamp(area.X, 0, BaseImage.Width - 1);
+        int y = Math.Clamp(area.Y, 0, BaseImage.Height - 1);
+        int width = Math.Clamp(area.Width, 1, BaseImage.Width - x);
+        int height = Math.Clamp(area.Height, 1, BaseImage.Height - y);
+        var cropped = new EditorImage(BaseImage.Pixels.Crop(x, y, width, height));
         PushUndo();
-        BaseImage = cropped;
-        var offset = new Vector(-area.X, -area.Y);
+        SetBaseImage(cropped);
+        var offset = new Vector(-x, -y);
         foreach (var annotation in Annotations) annotation.Translate(offset);
         // Annotations left entirely outside would be invisible but still saved.
-        var bounds = new Rect(0, 0, area.Width, area.Height);
-        Annotations.RemoveAll(a => !a.GetBounds().IntersectsWith(bounds));
+        var bounds = new Rect(0, 0, width, height);
+        Annotations.RemoveAll(a => !Rects.Touch(a.GetBounds(), bounds));
         foreach (var magnifier in Annotations.OfType<MagnifierAnnotation>().ToList())
         {
-            var source = Rect.Intersect(magnifier.GetRect(), bounds);
+            var source = Rects.Intersect(magnifier.GetRect(), bounds);
             // A lens whose area left the image would only show the background.
-            if (source.IsEmpty || source.Width <= 0 || source.Height <= 0) Annotations.Remove(magnifier);
-            else if (!magnifier.GetLensRect().IntersectsWith(bounds)) magnifier.PlaceLens(bounds);
+            if (source is not Rect s || s.Width <= 0 || s.Height <= 0) Annotations.Remove(magnifier);
+            else if (!Rects.Touch(magnifier.GetLensRect(), bounds)) magnifier.PlaceLens(bounds);
         }
         RaiseChanged();
     }
@@ -310,7 +306,7 @@ public sealed class EditorDocument
 
     /// <summary>Effects after resizing the image to this size: their sizes follow the mean factor, like the annotations.</summary>
     public ImageEffects ResizedEffects(int width, int height) =>
-        Effects.Scaled(((double)width / BaseImage.PixelWidth + (double)height / BaseImage.PixelHeight) / 2);
+        Effects.Scaled(((double)width / BaseImage.Width + (double)height / BaseImage.Height) / 2);
 
     /// <summary>Resizes the image (high quality resampling); annotations and effect sizes follow.</summary>
     /// <exception cref="InvalidDataException">The result, margins of the effects included, would be too big.</exception>
@@ -318,18 +314,18 @@ public sealed class EditorDocument
     {
         width = Math.Clamp(width, 1, MaxDimension);
         height = Math.Clamp(height, 1, MaxDimension);
-        if (width == BaseImage.PixelWidth && height == BaseImage.PixelHeight) return;
+        if (width == BaseImage.Width && height == BaseImage.Height) return;
         // Checked before anything is allocated: the saved image also has the margins of the shadow.
         var effects = ResizedEffects(width, height);
         var (outputWidth, outputHeight) = OutputSizeOf(width, height, effects);
         ImageIO.CheckSize(outputWidth, outputHeight);
-        double sx = (double)width / BaseImage.PixelWidth, sy = (double)height / BaseImage.PixelHeight;
+        double sx = (double)width / BaseImage.Width, sy = (double)height / BaseImage.Height;
 
         // Computed first: running out of memory must leave the document and its history untouched.
-        var resized = Render(width, height, dc => dc.DrawImage(BaseImage, new Rect(0, 0, width, height)));
+        var resized = new EditorImage(ImageIO.Resize(BaseImage.Pixels, width, height));
 
         PushUndo();
-        BaseImage = resized;
+        SetBaseImage(resized);
         Effects = effects;
         foreach (var annotation in Annotations) annotation.Scale(sx, sy);
         RaiseChanged();
@@ -339,11 +335,11 @@ public sealed class EditorDocument
     /// Image after inserting an image at <paramref name="area"/>: the image itself, or bigger when the inserted
     /// image goes past its edges (see <see cref="InsertImage"/>).
     /// </summary>
-    public static Int32Rect InsertedBounds(int width, int height, Rect area)
+    public static PixelRect InsertedBounds(int width, int height, Rect area)
     {
-        var union = Rect.Union(new Rect(0, 0, width, height), area);
+        var union = Rects.Union(new Rect(0, 0, width, height), area);
         int left = (int)Math.Floor(union.Left), top = (int)Math.Floor(union.Top);
-        return new Int32Rect(left, top, (int)Math.Ceiling(union.Right) - left, (int)Math.Ceiling(union.Bottom) - top);
+        return new PixelRect(left, top, (int)Math.Ceiling(union.Right) - left, (int)Math.Ceiling(union.Bottom) - top);
     }
 
     /// <summary>
@@ -353,26 +349,34 @@ public sealed class EditorDocument
     /// annotations follow the image when it grows to the left or to the top.
     /// </summary>
     /// <exception cref="InvalidDataException">The result, margins of the effects included, would be too big.</exception>
-    public void InsertImage(BitmapSource image, Rect area, Color background)
+    public void InsertImage(PixelBuffer image, Rect area, Color background)
     {
-        int w = BaseImage.PixelWidth, h = BaseImage.PixelHeight;
+        int w = BaseImage.Width, h = BaseImage.Height;
         var bounds = InsertedBounds(w, h, area);
         if (bounds.Width > MaxDimension || bounds.Height > MaxDimension)
             throw new InvalidDataException(Loc.T("App.ImageTooLarge", bounds.Width, bounds.Height));
         var (outputWidth, outputHeight) = OutputSizeOf(bounds.Width, bounds.Height, Effects);
         ImageIO.CheckSize(outputWidth, outputHeight);
         var offset = new Vector(-bounds.X, -bounds.Y);
+        bool grows = bounds.Width != w || bounds.Height != h;
 
         // Computed first: running out of memory must leave the document and its history untouched.
-        var merged = Render(bounds.Width, bounds.Height, dc =>
+        var merged = SkiaPixels.Render(bounds.Width, bounds.Height, canvas =>
         {
-            if (bounds.Width != w || bounds.Height != h)
-                dc.DrawRectangle(new SolidColorBrush(background), null, new Rect(0, 0, bounds.Width, bounds.Height));
-            dc.DrawImage(BaseImage, new Rect(offset.X, offset.Y, w, h));
-            dc.DrawImage(image, Rect.Offset(area, offset));
+            canvas.Clear(grows ? new SKColor(background.R, background.G, background.B, background.A) : SKColors.Transparent);
+            using (var baseImage = SkiaPixels.ToImage(BaseImage.Pixels))
+                canvas.DrawImage(baseImage, (float)offset.X, (float)offset.Y);
+            var target = Rects.Offset(area, offset);
+            bool shrinks = target.Width < image.Width || target.Height < image.Height;
+            var sampling = shrinks
+                ? new SKSamplingOptions(SKFilterMode.Linear, SKMipmapMode.Linear)
+                : new SKSamplingOptions(SKCubicResampler.Mitchell);
+            using var inserted = SkiaPixels.ToImage(image);
+            using var paint = new SKPaint { IsAntialias = true };
+            canvas.DrawImage(inserted, new SKRect((float)target.Left, (float)target.Top, (float)target.Right, (float)target.Bottom), sampling, paint);
         });
         PushUndo();
-        BaseImage = merged;
+        SetBaseImage(new EditorImage(merged));
         if (offset != default)
         {
             foreach (var annotation in Annotations) annotation.Translate(offset);
@@ -380,40 +384,45 @@ public sealed class EditorDocument
         RaiseChanged();
     }
 
-    /// <summary>Draws a new base image (high quality resampling), as 96 DPI Bgra32.</summary>
-    private static BitmapSource Render(int width, int height, Action<DrawingContext> draw)
-    {
-        var visual = new DrawingVisual();
-        RenderOptions.SetBitmapScalingMode(visual, BitmapScalingMode.HighQuality);
-        using (var dc = visual.RenderOpen()) draw(dc);
-        var target = new RenderTargetBitmap(width, height, 96, 96, PixelFormats.Pbgra32);
-        target.Render(visual);
-        return ImageIO.Normalize(target);
-    }
-
-    /// <summary>Base image with all annotations burnt in, and the image effects around it.</summary>
-    public BitmapSource Flatten() => RenderImage(Annotations, Effects);
+    /// <summary>Base image with all annotations burnt in, and the image effects around it (Avalonia rendering).</summary>
+    public PixelBuffer Flatten() => RenderImage(Annotations, Effects);
 
     /// <summary>Base image with only the pixelated areas burnt in: what is kept in the sidecar folder.</summary>
-    private BitmapSource RedactedBase()
+    internal PixelBuffer RedactedBase()
     {
-        var pixelated = Annotations.OfType<PixelateAnnotation>().Cast<Annotation>().ToList();
-        return pixelated.Count == 0 ? BaseImage : RenderImage(pixelated, ImageEffects.None);
+        var pixelated = Annotations.OfType<PixelateAnnotation>().ToList();
+        if (pixelated.Count == 0) return BaseImage.Pixels;
+        var source = BaseImage.Pixels;
+        var result = new PixelBuffer(source.Width, source.Height, (byte[])source.Pixels.Clone());
+        foreach (var pixelate in pixelated)
+        {
+            var area = pixelate.GetPixelArea(BaseImage);
+            if (area.Width < 1 || area.Height < 1) continue;
+            var blocks = BaseImage.PixelatedPixels(pixelate.BlockSize);
+            for (int y = area.Y; y < area.Y + area.Height; y++)
+                Buffer.BlockCopy(blocks.Pixels, y * source.Stride + area.X * 4, result.Pixels, y * source.Stride + area.X * 4, area.Width * 4);
+        }
+        return result;
     }
 
-    private BitmapSource RenderImage(IReadOnlyList<Annotation> annotations, ImageEffects effects)
+    private PixelBuffer RenderImage(IReadOnlyList<Annotation> annotations, ImageEffects effects)
     {
-        int w = BaseImage.PixelWidth, h = BaseImage.PixelHeight;
+        int w = BaseImage.Width, h = BaseImage.Height;
         // Checks the size of the output, margins included, before building anything.
         var layout = EffectsRenderer.For(effects, w, h);
+        // Nothing to draw: the pixels as they are, exactly.
+        if (layout == null && annotations.Count == 0)
+            return new PixelBuffer(w, h, (byte[])BaseImage.Pixels.Pixels.Clone());
+
         void DrawImage(DrawingContext dc)
         {
-            dc.DrawImage(BaseImage, new Rect(0, 0, w, h));
+            dc.DrawImage(BaseImage.Bitmap, BaseImage.Bounds);
             AnnotationRenderer.Render(dc, BaseImage, annotations);
         }
 
-        var visual = new DrawingVisual();
-        using (var dc = visual.RenderOpen())
+        int outputWidth = layout?.OutputWidth ?? w, outputHeight = layout?.OutputHeight ?? h;
+        using var target = new RenderTargetBitmap(new PixelSize(outputWidth, outputHeight), AvaloniaImages.Dpi);
+        using (var dc = target.CreateDrawingContext())
         {
             if (layout != null)
             {
@@ -421,20 +430,10 @@ public sealed class EditorDocument
             }
             else
             {
-                dc.PushClip(new RectangleGeometry(new Rect(0, 0, w, h)));
-                DrawImage(dc);
-                dc.Pop();
+                using (dc.PushClip(BaseImage.Bounds)) DrawImage(dc);
             }
         }
-        if (layout != null)
-        {
-            w = layout.OutputWidth;
-            h = layout.OutputHeight;
-        }
-        var target = new RenderTargetBitmap(w, h, 96, 96, PixelFormats.Pbgra32);
-        target.Render(visual);
-        target.Freeze();
-        return target;
+        return AvaloniaImages.ToPixelBuffer(target);
     }
 
     /// <summary>Identifies the pixelated areas burnt into the saved base image.</summary>
@@ -449,12 +448,12 @@ public sealed class EditorDocument
     /// </summary>
     public void Save(int jpegQuality = 90)
     {
-        var (basePath, jsonPath) = SidecarPaths(FilePath);
+        var (basePath, jsonPath) = SidecarFiles.PathsOf(FilePath);
         var flattened = Flatten();
         if (Annotations.Count == 0 && Effects.IsEmpty)
         {
             ImageIO.Save(flattened, FilePath, jpegQuality);
-            DeleteSidecar(FilePath);
+            SidecarFiles.Delete(FilePath);
         }
         else
         {
@@ -464,8 +463,7 @@ public sealed class EditorDocument
             bool writeBase = !ReferenceEquals(BaseImage, _writtenBase) || redaction != _writtenRedaction || !File.Exists(basePath);
             var redactedBase = writeBase ? RedactedBase() : null;
 
-            var info = Directory.CreateDirectory(Path.GetDirectoryName(basePath)!);
-            info.Attributes |= FileAttributes.Hidden;
+            SidecarFiles.EnsureFolder(Path.GetDirectoryName(basePath)!);
             if (redactedBase != null)
             {
                 ImageIO.Save(redactedBase, basePath);
@@ -478,7 +476,7 @@ public sealed class EditorDocument
         }
 
         _savedVersion = Version;
-        CleanOrphanSidecars(Path.GetDirectoryName(FilePath)!);
+        SidecarFiles.CleanOrphans(Path.GetDirectoryName(FilePath)!);
         RaiseChanged();
     }
 
@@ -506,74 +504,58 @@ public sealed class EditorDocument
         File.Move(temp, jsonPath, overwrite: true);
     }
 
-    public static (string BasePath, string JsonPath) SidecarPaths(string file)
-    {
-        var folder = Path.Combine(Path.GetDirectoryName(file)!, SidecarFolder);
-        var name = Path.GetFileName(file);
-        return (Path.Combine(folder, name + BaseSuffix), Path.Combine(folder, name + JsonSuffix));
-    }
-
-    /// <summary>Renames the sidecar folder of older versions (".librecapture"), once per folder and session.</summary>
-    public static void MigrateLegacySidecars(string dir)
-    {
-        lock (MigratedFolders)
-        {
-            if (!MigratedFolders.Add(Path.GetFullPath(dir))) return;
-        }
-        var folder = Path.Combine(dir, SidecarFolder);
-        var legacy = Path.Combine(dir, LegacySidecarFolder);
-        if (Directory.Exists(folder) || !Directory.Exists(legacy)) return;
-        try { Directory.Move(legacy, folder); }
-        catch (Exception ex) { ErrorLog.Write("Migration des annotations", ex); }
-    }
-
-    /// <summary>Deletes the sidecar files whose capture no longer exists (deleted or renamed outside Snaplume).</summary>
-    private static void CleanOrphanSidecars(string dir)
-    {
-        try
-        {
-            var folder = Path.Combine(dir, SidecarFolder);
-            if (!Directory.Exists(folder)) return;
-            foreach (var file in Directory.EnumerateFiles(folder))
-            {
-                var name = Path.GetFileName(file);
-                string? capture = name.EndsWith(BaseSuffix, StringComparison.OrdinalIgnoreCase) ? name[..^BaseSuffix.Length]
-                    : name.EndsWith(JsonSuffix, StringComparison.OrdinalIgnoreCase) ? name[..^JsonSuffix.Length]
-                    : null;
-                if (string.IsNullOrEmpty(capture) || File.Exists(Path.Combine(dir, capture))) continue;
-                File.Delete(file);
-            }
-        }
-        catch (Exception ex)
-        {
-            ErrorLog.Write("Nettoyage des annotations orphelines", ex);
-        }
-    }
-
-    public static void DeleteSidecar(string file)
-    {
-        MigrateLegacySidecars(Path.GetDirectoryName(file)!);
-        var (basePath, jsonPath) = SidecarPaths(file);
-        if (File.Exists(basePath)) File.Delete(basePath);
-        if (File.Exists(jsonPath)) File.Delete(jsonPath);
-    }
-
-    public static void RenameSidecar(string oldFile, string newFile)
-    {
-        MigrateLegacySidecars(Path.GetDirectoryName(oldFile)!);
-        MigrateLegacySidecars(Path.GetDirectoryName(newFile)!);
-        var (oldBase, oldJson) = SidecarPaths(oldFile);
-        var (newBase, newJson) = SidecarPaths(newFile);
-        if (File.Exists(oldBase)) File.Move(oldBase, newBase, overwrite: true);
-        if (File.Exists(oldJson)) File.Move(oldJson, newJson, overwrite: true);
-    }
-
     private void Restore(Snapshot snapshot)
     {
-        BaseImage = snapshot.BaseImage;
+        SetBaseImage(snapshot.BaseImage);
         Annotations = snapshot.Annotations;
         Effects = snapshot.Effects;
         Version = snapshot.Version;
         RaiseChanged();
+    }
+
+    /// <summary>The previous image stays in the undo history with its pixels only (see <see cref="EditorImage.ReleaseBitmaps"/>).</summary>
+    private void SetBaseImage(EditorImage image)
+    {
+        var previous = BaseImage;
+        BaseImage = image;
+        if (!ReferenceEquals(previous, image)) previous.ReleaseBitmaps();
+    }
+}
+
+/// <summary>Pixel work with SkiaSharp on <see cref="PixelBuffer"/> (straight alpha in and out).</summary>
+internal static class SkiaPixels
+{
+    /// <summary>A Skia copy of the pixels, for drawing them.</summary>
+    public static SKImage ToImage(PixelBuffer image)
+    {
+        var info = new SKImageInfo(image.Width, image.Height, SKColorType.Bgra8888, SKAlphaType.Unpremul);
+        unsafe
+        {
+            fixed (byte* p = image.Pixels)
+            {
+                using var pixmap = new SKPixmap(info, (IntPtr)p, image.Stride);
+                return SKImage.FromPixelCopy(pixmap) ?? throw new InvalidOperationException("Image Skia impossible");
+            }
+        }
+    }
+
+    /// <summary>Draws a new image of this size (transparent at first).</summary>
+    public static PixelBuffer Render(int width, int height, Action<SKCanvas> draw)
+    {
+        var result = new PixelBuffer(width, height);
+        using var surface = SKSurface.Create(new SKImageInfo(width, height, SKColorType.Bgra8888, SKAlphaType.Premul))
+                            ?? throw new InsufficientMemoryException($"Surface {width} × {height}");
+        draw(surface.Canvas);
+        surface.Canvas.Flush();
+        unsafe
+        {
+            fixed (byte* p = result.Pixels)
+            {
+                var info = new SKImageInfo(width, height, SKColorType.Bgra8888, SKAlphaType.Unpremul);
+                if (!surface.ReadPixels(info, (IntPtr)p, result.Stride, 0, 0))
+                    throw new InvalidOperationException("Lecture des pixels impossible");
+            }
+        }
+        return result;
     }
 }
