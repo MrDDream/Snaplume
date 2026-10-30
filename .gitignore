@@ -8,3 +8,6 @@ publish/
 
 # Release packaging (build/build-release.ps1)
 artifacts/
+
+# Agent worktrees and local session files
+.claude/
