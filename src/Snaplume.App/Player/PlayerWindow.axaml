@@ -1,0 +1,156 @@
+<Window xmlns="https://github.com/avaloniaui"
+        xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+        xmlns:l="using:Snaplume.Ui"
+        x:Class="Snaplume.Player.PlayerWindow"
+        Title="{l:T Player.Title}" Width="1100" Height="680" MinWidth="620" MinHeight="300"
+        Background="{DynamicResource PlayerBackgroundBrush}" WindowStartupLocation="CenterScreen" UseLayoutRounding="True">
+    <!-- Colors: the Player* brushes of the themes (the player stays dark in both, like mpv) -->
+    <Window.Styles>
+        <Style Selector="Button.player">
+            <Setter Property="Width" Value="36" />
+            <Setter Property="Height" Value="34" />
+            <Setter Property="Padding" Value="0" />
+            <Setter Property="Focusable" Value="False" />
+            <Setter Property="Foreground" Value="{DynamicResource PlayerTextBrush}" />
+            <Setter Property="Background" Value="Transparent" />
+            <Setter Property="BorderThickness" Value="0" />
+            <Setter Property="CornerRadius" Value="6" />
+            <Setter Property="HorizontalContentAlignment" Value="Center" />
+            <Setter Property="VerticalContentAlignment" Value="Center" />
+        </Style>
+        <Style Selector="Button.player:pointerover /template/ ContentPresenter#PART_ContentPresenter">
+            <Setter Property="Background" Value="{DynamicResource PlayerHoverBrush}" />
+        </Style>
+        <Style Selector="Button.player:pressed /template/ ContentPresenter#PART_ContentPresenter">
+            <Setter Property="Background" Value="{DynamicResource PlayerHoverBrush}" />
+        </Style>
+        <Style Selector="Path.player-icon">
+            <Setter Property="Width" Value="24" />
+            <Setter Property="Height" Value="24" />
+            <Setter Property="Stretch" Value="None" />
+            <Setter Property="Stroke" Value="{DynamicResource PlayerTextBrush}" />
+            <Setter Property="StrokeThickness" Value="1.9" />
+            <Setter Property="StrokeJoin" Value="Round" />
+            <Setter Property="StrokeLineCap" Value="Round" />
+        </Style>
+        <Style Selector="Slider.player">
+            <Setter Property="Focusable" Value="False" />
+            <Setter Property="VerticalAlignment" Value="Center" />
+            <Setter Property="Foreground" Value="{DynamicResource PlayerAccentBrush}" />
+        </Style>
+    </Window.Styles>
+    <Window.Resources>
+        <!-- Thin seek and volume bars of the Fluent slider: red fill on a light track, white thumb (the player is dark in both themes) -->
+        <ResourceDictionary>
+            <SolidColorBrush x:Key="SliderTrackValueFill" Color="#E53935" />
+            <SolidColorBrush x:Key="SliderTrackValueFillPointerOver" Color="#EF5350" />
+            <SolidColorBrush x:Key="SliderTrackValueFillPressed" Color="#EF5350" />
+            <SolidColorBrush x:Key="SliderTrackFill" Color="#55FFFFFF" />
+            <SolidColorBrush x:Key="SliderTrackFillPointerOver" Color="#77FFFFFF" />
+            <SolidColorBrush x:Key="SliderTrackFillPressed" Color="#77FFFFFF" />
+            <SolidColorBrush x:Key="SliderThumbBackground" Color="#FFFFFF" />
+            <SolidColorBrush x:Key="SliderThumbBackgroundPointerOver" Color="#FFFFFF" />
+            <SolidColorBrush x:Key="SliderThumbBackgroundPressed" Color="#FFFFFF" />
+        </ResourceDictionary>
+    </Window.Resources>
+
+    <Grid x:Name="Root" Background="{DynamicResource PlayerBackgroundBrush}">
+        <Image x:Name="VideoImage" Stretch="Uniform" FlowDirection="LeftToRight" RenderOptions.BitmapInterpolationMode="HighQuality" />
+
+        <!-- On-screen messages, mpv style -->
+        <Border x:Name="Osd" HorizontalAlignment="Left" VerticalAlignment="Top" Margin="18" Padding="10,5"
+                Background="{DynamicResource PlayerOsdBrush}" CornerRadius="4" Opacity="0" IsHitTestVisible="False">
+            <TextBlock x:Name="OsdText" Foreground="{DynamicResource PlayerTextBrush}" FontSize="18" />
+        </Border>
+
+        <TextBlock x:Name="ErrorText" Foreground="{DynamicResource PlayerTextBrush}" FontSize="16" TextAlignment="Center" TextWrapping="Wrap"
+                   HorizontalAlignment="Center" VerticalAlignment="Center" Margin="40" IsVisible="False" />
+
+        <!-- Export in progress (extract or GIF): progress and cancel -->
+        <Border x:Name="ExportPanel" HorizontalAlignment="Right" VerticalAlignment="Top" Margin="18" Padding="14,10,8,10"
+                Background="{DynamicResource PlayerOsdBrush}" CornerRadius="6" IsVisible="False">
+            <StackPanel Orientation="Horizontal">
+                <StackPanel Width="240" VerticalAlignment="Center">
+                    <TextBlock x:Name="ExportText" Foreground="{DynamicResource PlayerTextBrush}" FontSize="13" TextTrimming="CharacterEllipsis" />
+                    <Grid Height="4" Margin="0,8,0,0">
+                        <Border Background="{DynamicResource PlayerTrackBrush}" CornerRadius="2" />
+                        <Border x:Name="ExportBar" Background="{DynamicResource PlayerAccentBrush}" CornerRadius="2" HorizontalAlignment="Left" Width="0" />
+                    </Grid>
+                </StackPanel>
+                <Button Classes="player" Margin="8,0,0,0" Click="OnCancelExportClick" ToolTip.Tip="{l:T Player.CancelExportTip}">
+                    <Path Classes="player-icon" Data="M7,7 L17,17 M17,7 L7,17" />
+                </Button>
+            </StackPanel>
+        </Border>
+
+        <!-- Controller (fades away when the mouse is idle) -->
+        <Border x:Name="Controller" VerticalAlignment="Bottom" Padding="14,28,14,8" Background="{DynamicResource PlayerControllerBrush}">
+            <StackPanel>
+                <!-- Not mirrored right-to-left: time runs left to right, like the arrow keys -->
+                <Grid FlowDirection="LeftToRight">
+                    <!-- Extract (in → out points), drawn under the seek bar -->
+                    <Canvas x:Name="RangeLayer" IsHitTestVisible="False" ClipToBounds="True">
+                        <Border x:Name="RangeBand" Canvas.Top="14" Height="8" CornerRadius="2" Background="{DynamicResource PlayerTextBrush}"
+                                Opacity="0.35" IsVisible="False" />
+                        <Rectangle x:Name="InMarker" Canvas.Top="10" Width="2" Height="16" Fill="{DynamicResource PlayerTextBrush}" IsVisible="False" />
+                        <Rectangle x:Name="OutMarker" Canvas.Top="10" Width="2" Height="16" Fill="{DynamicResource PlayerTextBrush}" IsVisible="False" />
+                    </Canvas>
+                    <Slider x:Name="SeekBar" Classes="player" Minimum="0" Maximum="1" ToolTip.Tip="{l:T Player.SeekTip}" />
+                </Grid>
+                <DockPanel Margin="0,4,0,0">
+                    <StackPanel DockPanel.Dock="Right" Orientation="Horizontal">
+                        <Button x:Name="SpeedButton" Classes="player" Width="54" Click="OnSpeedClick" ToolTip.Tip="{l:T Player.SpeedTip}">
+                            <TextBlock x:Name="SpeedText" Text="1×" Foreground="{DynamicResource PlayerTextBrush}" FontSize="13" FontWeight="SemiBold" />
+                        </Button>
+                        <Button Classes="player" Click="OnMuteClick" ToolTip.Tip="{l:T Player.MuteTip}">
+                            <Path x:Name="VolumeIcon" Classes="player-icon" />
+                        </Button>
+                        <Slider x:Name="VolumeBar" Classes="player" Width="90" Minimum="0" Maximum="1" Value="0.8"
+                                Margin="2,0,8,0" ToolTip.Tip="{l:T Player.VolumeTip}" />
+                        <Button Classes="player" Click="OnLoopClick" ToolTip.Tip="{l:T Player.LoopTip}">
+                            <Path x:Name="LoopIcon" Classes="player-icon" Opacity="0.5"
+                                  Data="M4,12 V10 A3,3 0 0 1 7,7 H18 M15,4 L18,7 L15,10 M20,12 V14 A3,3 0 0 1 17,17 H6 M9,20 L6,17 L9,14" />
+                        </Button>
+                        <Button Classes="player" Click="OnExportFrameClick" ToolTip.Tip="{l:T Player.ExportFrameTip}">
+                            <Path Classes="player-icon" Data="M3,8 H7 L9,5 H15 L17,8 H21 V19 H3 Z M12,10 A3.5,3.5 0 1 1 11.99,10 Z" />
+                        </Button>
+                        <Button x:Name="ExportButton" Classes="player" ToolTip.Tip="{l:T Player.ExportTip}">
+                            <Path Classes="player-icon" Data="M12,4 V14 M8,8 L12,4 L16,8 M5,13 V19 H19 V13" />
+                            <Button.Flyout>
+                                <MenuFlyout Placement="Top">
+                                    <MenuItem x:Name="ExportClipItem" Header="{l:T Player.ExportClip}" InputGesture="E" Click="OnExportClipClick" />
+                                    <MenuItem x:Name="ExportGifItem" Header="{l:T Player.ExportGif}" InputGesture="G" Click="OnExportGifClick" />
+                                    <Separator />
+                                    <MenuItem Header="{l:T Player.ExportFrame}" InputGesture="S" Click="OnExportFrameClick" />
+                                </MenuFlyout>
+                            </Button.Flyout>
+                        </Button>
+                        <Button Classes="player" Click="OnFullscreenClick" ToolTip.Tip="{l:T Player.FullscreenTip}">
+                            <Path Classes="player-icon" Data="M4,9 V4 H9 M15,4 H20 V9 M20,15 V20 H15 M9,20 H4 V15" />
+                        </Button>
+                    </StackPanel>
+                    <StackPanel Orientation="Horizontal">
+                        <Button Classes="player" Click="OnPlayClick" ToolTip.Tip="{l:T Player.PlayTip}">
+                            <Path x:Name="PlayIcon" Fill="{DynamicResource PlayerTextBrush}" Width="24" Height="24" Stretch="None" FlowDirection="LeftToRight" />
+                        </Button>
+                        <TextBlock x:Name="TimeText" Foreground="{DynamicResource PlayerTextBrush}" FontSize="13" VerticalAlignment="Center" Margin="8,0,0,0"
+                                   Text="00:00 / 00:00" />
+                        <!-- Extract: in / out points -->
+                        <Rectangle Width="1" Height="18" Fill="{DynamicResource PlayerTrackBrush}" Margin="12,0,6,0" VerticalAlignment="Center" />
+                        <Button Classes="player" Click="OnSetInClick" ToolTip.Tip="{l:T Player.SetInTip}">
+                            <Path Classes="player-icon" Data="M10,5 H6 V19 H10 M13,8.5 L18,12 L13,15.5 Z" FlowDirection="LeftToRight" />
+                        </Button>
+                        <Button Classes="player" Click="OnSetOutClick" ToolTip.Tip="{l:T Player.SetOutTip}">
+                            <Path Classes="player-icon" Data="M14,5 H18 V19 H14 M6,8.5 L11,12 L6,15.5 Z" FlowDirection="LeftToRight" />
+                        </Button>
+                        <TextBlock x:Name="RangeText" Foreground="{DynamicResource PlayerTextBrush}" FontSize="12" VerticalAlignment="Center" Margin="4,0,0,0"
+                                   Opacity="0.85" FlowDirection="LeftToRight" IsVisible="False" />
+                        <Button x:Name="ClearRangeButton" Classes="player" Click="OnClearRangeClick" ToolTip.Tip="{l:T Player.ClearRangeTip}" IsVisible="False">
+                            <Path Classes="player-icon" Data="M7,7 L17,17 M17,7 L7,17" />
+                        </Button>
+                    </StackPanel>
+                </DockPanel>
+            </StackPanel>
+        </Border>
+    </Grid>
+</Window>
