@@ -104,7 +104,7 @@ internal sealed class PortalHotkeys : IGlobalHotkeys
     {
         if (_activatedWatch != null) return;
         var connection = await DBusCalls.SessionAsync().ConfigureAwait(false);
-        _activatedWatch = await connection.WatchSignalAsync(null, Portal.ObjectPath, Portal.GlobalShortcutsInterface, "Activated",
+        _activatedWatch = await DBusCalls.WatchAsync(connection, Portal.ObjectPath, Portal.GlobalShortcutsInterface, "Activated",
             (message, _) =>
             {
                 var reader = message.GetBodyReader();
@@ -112,17 +112,15 @@ internal sealed class PortalHotkeys : IGlobalHotkeys
                 var id = reader.ReadString();
                 return (Session: session, Id: id);
             },
-            (exception, activation) =>
+            activation =>
             {
-                if (exception != null) return;
                 Action? action = null;
                 lock (_gate)
                 {
                     if (activation.Session == _session && _shortcuts.TryGetValue(activation.Id, out var shortcut)) action = shortcut.Action;
                 }
                 if (action != null) Dispatcher.UIThread.Post(() => Run(action));
-            },
-            null, false, ObserverFlags.None).ConfigureAwait(false);
+            }).ConfigureAwait(false);
     }
 
     private static void Run(Action action)

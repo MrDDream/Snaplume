@@ -89,20 +89,15 @@ internal static class Portal
         };
     }
 
-    private static async Task<IDisposable> WatchResponseAsync(DBusConnection connection, string path, TaskCompletionSource<PortalResponse> answer) =>
-        await connection.WatchSignalAsync(null, path, "org.freedesktop.portal.Request", "Response",
+    private static Task<IDisposable> WatchResponseAsync(DBusConnection connection, string path, TaskCompletionSource<PortalResponse> answer) =>
+        DBusCalls.WatchAsync(connection, path, "org.freedesktop.portal.Request", "Response",
             (message, _) =>
             {
                 var reader = message.GetBodyReader();
                 uint code = reader.ReadUInt32();
                 return new PortalResponse(code, reader.ReadDictionaryOfStringToVariantValue());
             },
-            (exception, response) =>
-            {
-                if (exception != null) answer.TrySetException(exception);
-                else answer.TrySetResult(response);
-            },
-            null, false, ObserverFlags.None).ConfigureAwait(false);
+            response => answer.TrySetResult(response));
 
     /// <summary>Closes a Request or a Session object (both have a Close method without arguments).</summary>
     public static async Task CloseAsync(string path, string @interface = "org.freedesktop.portal.Session")

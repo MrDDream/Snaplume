@@ -125,6 +125,16 @@ internal static class DBusCalls
         }
     }
 
+    /// <summary>Subscribes to a signal; <paramref name="onValue"/> runs on a D-Bus thread for each emission.</summary>
+    public static async Task<IDisposable> WatchAsync<T>(DBusConnection connection, string path, string @interface, string signal,
+        MessageValueReader<T> reader, Action<T> onValue) =>
+        await connection.WatchSignalAsync(null, path, @interface, signal, reader,
+            (Notification<T> notification) =>
+            {
+                if (notification.HasValue) onValue(notification.Value);
+            },
+            ObserverFlags.None, false, null).ConfigureAwait(false);
+
     /// <summary>The value inside a variant, however deeply it is wrapped.</summary>
     public static VariantValue Unwrap(VariantValue value)
     {
