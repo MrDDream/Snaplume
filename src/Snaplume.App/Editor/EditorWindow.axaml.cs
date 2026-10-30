@@ -734,7 +734,8 @@ public partial class EditorWindow : Window
         Canvas.SetLeft(box, text.Position.X + TextAnnotation.Pad - 3);
         Canvas.SetTop(box, text.Position.Y + TextAnnotation.Pad - 1);
         box.LostFocus += (_, _) => EndTextEdit();
-        box.KeyDown += (_, e) =>
+        // Seen before the text box, which would take Ctrl+Enter as a new line.
+        box.AddHandler(KeyDownEvent, (_, e) =>
         {
             if (e.Key == Key.Escape || (e.Key == Key.Enter && e.KeyModifiers == KeyModifiers.Control))
             {
@@ -742,7 +743,7 @@ public partial class EditorWindow : Window
                 EndTextEdit();
                 AnnotCanvas.Focus();
             }
-        };
+        }, RoutingStrategies.Tunnel);
         TextLayer.Children.Add(box);
         _textEditor = box;
         Dispatcher.UIThread.Post(() =>

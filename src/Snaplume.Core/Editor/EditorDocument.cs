@@ -281,7 +281,7 @@ public sealed class EditorDocument
         int height = Math.Clamp(area.Height, 1, BaseImage.Height - y);
         var cropped = new EditorImage(BaseImage.Pixels.Crop(x, y, width, height));
         PushUndo();
-        BaseImage = cropped;
+        SetBaseImage(cropped);
         var offset = new Vector(-x, -y);
         foreach (var annotation in Annotations) annotation.Translate(offset);
         // Annotations left entirely outside would be invisible but still saved.
@@ -325,7 +325,7 @@ public sealed class EditorDocument
         var resized = new EditorImage(ImageIO.Resize(BaseImage.Pixels, width, height));
 
         PushUndo();
-        BaseImage = resized;
+        SetBaseImage(resized);
         Effects = effects;
         foreach (var annotation in Annotations) annotation.Scale(sx, sy);
         RaiseChanged();
@@ -376,7 +376,7 @@ public sealed class EditorDocument
             canvas.DrawImage(inserted, new SKRect((float)target.Left, (float)target.Top, (float)target.Right, (float)target.Bottom), sampling, paint);
         });
         PushUndo();
-        BaseImage = new EditorImage(merged);
+        SetBaseImage(new EditorImage(merged));
         if (offset != default)
         {
             foreach (var annotation in Annotations) annotation.Translate(offset);
@@ -506,11 +506,19 @@ public sealed class EditorDocument
 
     private void Restore(Snapshot snapshot)
     {
-        BaseImage = snapshot.BaseImage;
+        SetBaseImage(snapshot.BaseImage);
         Annotations = snapshot.Annotations;
         Effects = snapshot.Effects;
         Version = snapshot.Version;
         RaiseChanged();
+    }
+
+    /// <summary>The previous image stays in the undo history with its pixels only (see <see cref="EditorImage.ReleaseBitmaps"/>).</summary>
+    private void SetBaseImage(EditorImage image)
+    {
+        var previous = BaseImage;
+        BaseImage = image;
+        if (!ReferenceEquals(previous, image)) previous.ReleaseBitmaps();
     }
 }
 

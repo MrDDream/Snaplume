@@ -50,12 +50,40 @@ public class EditorWindowTests
 
             var frame = window.CaptureRenderedFrame();
             Assert.NotNull(frame);
+            var pixels = AvaloniaImages.ToPixelBuffer(frame!);
             // Kept with the test results to look at the layout; never committed.
-            frame!.Save(Path.Combine(AppContext.BaseDirectory, "editor-window.png"));
-            var pixels = AvaloniaImages.ToPixelBuffer(frame);
+            ImageIO.Save(pixels, Path.Combine(AppContext.BaseDirectory, "editor-window.png"));
             var center = OnWindow(window, canvas, 200, 130) * window.RenderScaling;
             Assert.True(Near(At(pixels, (int)center.X, (int)center.Y), Color.FromRgb(0xDD, 0xE6, 0xF0)));
             window.Close();
+        }
+    }
+
+    [AvaloniaFact]
+    public void Annotations_and_effects_are_drawn_in_the_window()
+    {
+        var (window, canvas, folder) = Open();
+        using (folder)
+        {
+            var document = canvas.Document!;
+            document.PushUndo();
+            document.Annotations.Add(new RectangleAnnotation { Start = new(20, 20), End = new(180, 120), Color = Colors.Red, Filled = true });
+            document.Annotations.Add(new StepAnnotation { Center = new(300, 60), Shape = StepShape.Leader, Target = new(240, 100) });
+            document.Annotations.Add(new TextAnnotation { Position = new(220, 150), Text = "Snaplume", HasBackground = true });
+            document.Annotations.Add(new MagnifierAnnotation { Start = new(160, 100), End = new(200, 140), LensCenter = new(90, 200), Color = Colors.Black });
+            document.SetEffects(ImageEffects.None with { Shadow = true, CornerRadius = 16, Border = true });
+            Dispatcher.UIThread.RunJobs();
+
+            var pixels = AvaloniaImages.ToPixelBuffer(window.CaptureRenderedFrame()!);
+            // Kept with the test results to look at the drawing; never committed.
+            ImageIO.Save(pixels, Path.Combine(AppContext.BaseDirectory, "editor-window-annotations.png"));
+            var inRectangle = OnWindow(window, canvas, 100, 70) * window.RenderScaling;
+            Assert.True(Near(At(pixels, (int)inRectangle.X, (int)inRectangle.Y), Colors.Red));
+            // The rounded corner cuts the image: the background (and the edge of the shadow) shows there.
+            var corner = OnWindow(window, canvas, 1, 1) * window.RenderScaling;
+            Assert.False(Near(At(pixels, (int)corner.X, (int)corner.Y), Color.FromRgb(0xDD, 0xE6, 0xF0), 16));
+            Assert.True(At(pixels, (int)corner.X, (int)corner.Y).R > 200);
+            ForceClose(window);
         }
     }
 
@@ -117,6 +145,14 @@ public class EditorWindowTests
             window.MouseMove(OnWindow(window, canvas, start.X + 150, start.Y));
             window.MouseUp(OnWindow(window, canvas, start.X + 150, start.Y), MouseButton.Left);
             Assert.True(canvas.FloatingRect.Right > 200);
+            // Still grabbed where it is outside the capture; Alt moves it without sticking to the edges.
+            var outside = new Point(canvas.FloatingRect.Right - 5, canvas.FloatingRect.Center.Y);
+            Assert.True(outside.X > 200);
+            double left = canvas.FloatingRect.Left;
+            window.MouseDown(OnWindow(window, canvas, outside.X, outside.Y), MouseButton.Left);
+            window.MouseMove(OnWindow(window, canvas, outside.X + 7, outside.Y), RawInputModifiers.Alt);
+            window.MouseUp(OnWindow(window, canvas, outside.X + 7, outside.Y), MouseButton.Left, RawInputModifiers.Alt);
+            Assert.Equal(left + 7, canvas.FloatingRect.Left, 1);
             window.KeyPress(Key.Enter, RawInputModifiers.None, PhysicalKey.Enter, null);
             Assert.False(canvas.HasFloatingImage);
             Assert.True(canvas.Document.BaseImage.Width > 200);
@@ -181,6 +217,15 @@ public class EditorWindowTests
             window.KeyPress(Key.Escape, RawInputModifiers.None, PhysicalKey.Escape, null);
             var text = Assert.IsType<TextAnnotation>(Assert.Single(canvas.Document!.Annotations));
             Assert.Equal("Bonjour", text.Text);
+
+            // Ctrl+Enter also ends the edit (the text box would take it as a new line).
+            window.MouseDown(OnWindow(window, canvas, 40, 150), MouseButton.Left);
+            window.MouseUp(OnWindow(window, canvas, 40, 150), MouseButton.Left);
+            Dispatcher.UIThread.RunJobs();
+            window.KeyTextInput("Ligne");
+            window.KeyPress(Key.Enter, RawInputModifiers.Control, PhysicalKey.Enter, null);
+            Assert.Equal(2, canvas.Document.Annotations.Count);
+            Assert.Equal("Ligne", ((TextAnnotation)canvas.Document.Annotations[1]).Text);
             ForceClose(window);
         }
     }

@@ -43,6 +43,21 @@ public sealed class EditorImage
         }
     }
 
+    /// <summary>
+    /// Frees what was made for drawing (made again if needed): an image only kept by the undo history then holds
+    /// its pixels once, not twice. Bitmaps still shown keep their own reference until the next frame.
+    /// </summary>
+    public void ReleaseBitmaps()
+    {
+        lock (_pixelated)
+        {
+            _bitmap?.Dispose();
+            _bitmap = null;
+            foreach (var (_, bitmap) in _pixelated.Values) bitmap?.Dispose();
+            _pixelated.Clear();
+        }
+    }
+
     /// <summary>Pixels of <see cref="PixelatedBitmap"/> (burnt into the base image kept on disk).</summary>
     public PixelBuffer PixelatedPixels(int block)
     {
