@@ -760,5 +760,9 @@
   "Update.AutoDescription": "يستعلم من GitHub مرة واحدة يوميًا وينبّهك عند صدور إصدار جديد. لا تُرسل أي بيانات أخرى.",
   "Update.LastChecked": "آخر تحقق: {0}",
   "Update.AvailableTitle": "يتوفر تحديث",
-  "Update.AvailableText": "يتوفر Snaplume {0}. انقر لفتح صفحة التنزيل."
+  "Update.AvailableText": "يتوفر Snaplume {0}. انقر لفتح صفحة التنزيل.",
+  "Dialog.Ok": "موافق",
+  "Dialog.Cancel": "إلغاء",
+  "Dialog.Yes": "نعم",
+  "Dialog.No": "لا"
 }

@@ -760,5 +760,9 @@
   "Update.AutoDescription": "Fragt GitHub einmal am Tag und informiert Sie über neue Versionen. Es werden keine weiteren Daten gesendet.",
   "Update.LastChecked": "Zuletzt geprüft: {0}",
   "Update.AvailableTitle": "Update verfügbar",
-  "Update.AvailableText": "Snaplume {0} ist verfügbar. Klicken, um die Downloadseite zu öffnen."
+  "Update.AvailableText": "Snaplume {0} ist verfügbar. Klicken, um die Downloadseite zu öffnen.",
+  "Dialog.Ok": "OK",
+  "Dialog.Cancel": "Abbrechen",
+  "Dialog.Yes": "Ja",
+  "Dialog.No": "Nein"
 }

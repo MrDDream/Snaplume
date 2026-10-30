@@ -1,6 +1,9 @@
 <Solution>
   <Folder Name="/src/">
     <Project Path="src/Snaplume.Core/Snaplume.Core.csproj" />
+    <Project Path="src/Snaplume.App/Snaplume.App.csproj" />
+    <Project Path="src/Snaplume.Platform.Windows/Snaplume.Platform.Windows.csproj" />
+    <Project Path="src/Snaplume.Platform.Linux/Snaplume.Platform.Linux.csproj" />
   </Folder>
   <Folder Name="/tests/">
     <Project Path="tests/Snaplume.Tests/Snaplume.Tests.csproj" />

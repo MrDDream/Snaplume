@@ -760,5 +760,9 @@
   "Update.AutoDescription": "Interroga GitHub una volta al giorno e ti avvisa quando esce una nuova versione. Non viene inviato nessun altro dato.",
   "Update.LastChecked": "Ultima verifica: {0}",
   "Update.AvailableTitle": "Aggiornamento disponibile",
-  "Update.AvailableText": "È disponibile Snaplume {0}. Fai clic per aprire la pagina di download."
+  "Update.AvailableText": "È disponibile Snaplume {0}. Fai clic per aprire la pagina di download.",
+  "Dialog.Ok": "OK",
+  "Dialog.Cancel": "Annulla",
+  "Dialog.Yes": "Sì",
+  "Dialog.No": "No"
 }

@@ -1,0 +1,45 @@
+<Project Sdk="Microsoft.NET.Sdk">
+
+  <!--
+    Windows services (see Snaplume.Core/Platform/IPlatform.cs): Win32 (hotkeys, windows under the mouse, SendInput,
+    display affinity, Recycle Bin), WinRT (OCR, video editing and playback), ScreenRecorderLib (video), MAPI (e-mail),
+    WPF printing (System.Printing / XPS) and clipboard, WinForms notification icon.
+  -->
+  <PropertyGroup>
+    <!-- Windows 10 SDK projection: Windows.Media.Ocr, Windows.Media.Editing, Windows.Media.Playback. -->
+    <TargetFramework>net10.0-windows10.0.19041.0</TargetFramework>
+    <SupportedOSPlatformVersion>10.0.19041.0</SupportedOSPlatformVersion>
+    <RootNamespace>Snaplume.Platform.Windows</RootNamespace>
+    <AssemblyName>Snaplume.Platform.Windows</AssemblyName>
+    <UseWPF>true</UseWPF>
+    <UseWindowsForms>true</UseWindowsForms>
+    <AllowUnsafeBlocks>true</AllowUnsafeBlocks>
+    <PlatformTarget>x64</PlatformTarget>
+  </PropertyGroup>
+
+  <ItemGroup>
+    <!-- Avoid WPF/WinForms/Avalonia type name clashes (Point, Color, Application...). -->
+    <Using Remove="System.Windows.Forms" />
+    <Using Remove="System.Drawing" />
+  </ItemGroup>
+
+  <ItemGroup>
+    <PackageReference Include="Avalonia" Version="$(AvaloniaVersion)" />
+  </ItemGroup>
+
+  <!--
+    Video recording (MIT, Media Foundation). The package's own targets require a solution
+    platform; reference its x64 assembly directly instead so "dotnet build/run" just works.
+  -->
+  <ItemGroup>
+    <PackageReference Include="ScreenRecorderLib" Version="7.0.1" ExcludeAssets="build" GeneratePathProperty="true" />
+    <Reference Include="ScreenRecorderLib">
+      <HintPath>$(PkgScreenRecorderLib)\build\x64\ScreenRecorderLib.dll</HintPath>
+    </Reference>
+  </ItemGroup>
+
+  <ItemGroup>
+    <ProjectReference Include="..\Snaplume.Core\Snaplume.Core.csproj" />
+  </ItemGroup>
+
+</Project>
