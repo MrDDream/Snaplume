@@ -1,4 +1,4 @@
-﻿using Snaplume.Capturing;
+using Snaplume.Capturing;
 using Snaplume.Platform.Linux.Interop;
 using static Snaplume.Platform.Linux.Interop.Xlib;
 

@@ -18,6 +18,8 @@ internal static class FfmpegArguments
             "-hide_banner", "-nostdin", "-y", "-loglevel", "error", "-nostats", "-progress", "pipe:1",
             "-ss", Seconds(start), "-i", source, "-t", Seconds(end - start),
             "-map", "0:v:0", "-map", "0:a:0?",
+            // 4:2:0 encoders need even sizes; a window recorded under Wayland may have an odd one.
+            "-vf", "scale=trunc(iw/2)*2:trunc(ih/2)*2",
         };
         args.AddRange(VideoEncoderOptions(videoEncoder));
         if (hasAudio) args.AddRange(new[] { "-c:a", "aac", "-b:a", "160k" });
@@ -27,13 +29,13 @@ internal static class FfmpegArguments
     }
 
     /// <summary>Distributions ship different H.264 encoders (Fedora's ffmpeg-free has no libx264).</summary>
-    public static readonly string[] VideoEncoders = { "libx264", "libopenh264", "h264_vaapi", "mpeg4" };
+    public static readonly string[] VideoEncoders = { "libx264", "libopenh264", "mpeg4" };
 
     private static string[] VideoEncoderOptions(string encoder) => encoder switch
     {
         "libx264" => new[] { "-c:v", "libx264", "-preset", "veryfast", "-crf", "20", "-pix_fmt", "yuv420p" },
         "libopenh264" => new[] { "-c:v", "libopenh264", "-b:v", "8M", "-pix_fmt", "yuv420p" },
-        "h264_vaapi" => new[] { "-vaapi_device", "/dev/dri/renderD128", "-vf", "format=nv12,hwupload", "-c:v", "h264_vaapi", "-qp", "22" },
+        // MPEG-4 part 2: still an MP4 every player reads, when no H.264 encoder is built in.
         _ => new[] { "-c:v", "mpeg4", "-q:v", "3", "-pix_fmt", "yuv420p" },
     };
 

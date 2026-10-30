@@ -87,7 +87,9 @@ internal sealed class LinuxDesktopShell : IDesktopShell
             arguments.Add("--attach");
             arguments.Add(path);
         }
-        var code = ExternalTools.LaunchAsync(email, arguments, TimeSpan.FromSeconds(30)).GetAwaiter().GetResult();
+        // xdg-email may stay until the mail program it started is closed (Thunderbird): only an immediate
+        // failure is waited for, the rest of the run goes on in the background.
+        var code = ExternalTools.LaunchAsync(email, arguments, TimeSpan.FromSeconds(3)).GetAwaiter().GetResult();
         // xdg-email: 3 = a required tool is missing, 4 = the action failed (no mail client configured).
         if (code is 3 or 4) throw new InvalidOperationException(Loc.T("Linux.EmailNoClient"));
         if (code is { } c and not 0) throw new InvalidOperationException(Loc.T("Linux.EmailFailed") + $" (xdg-email {c})");
