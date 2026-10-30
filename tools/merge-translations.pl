@@ -20,6 +20,9 @@ for my $fragment (@ARGV) {
     my $data = JSON::PP->new->utf8->decode($raw);
     # Keys in the order of the "fr" section (a key is a string followed by a colon).
     my @reference = $raw =~ /"fr"\s*:\s*\{(.*?)\}/s ? ($1 =~ /"((?:[^"\\]|\\.)+)"\s*:/g) : ();
+    # Texts containing braces or quotes defeat that scan: alphabetical order then.
+    my $fr = $data->{fr} or die "$fragment: no \"fr\" section\n";
+    @reference = sort keys %$fr if join("\n", sort @reference) ne join("\n", sort keys %$fr);
     for my $lang (@languages) {
         my $values = $data->{$lang} or die "$fragment: no \"$lang\" section\n";
         die "$fragment: \"$lang\" has not the same keys as \"fr\"\n"
