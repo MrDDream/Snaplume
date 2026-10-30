@@ -16,7 +16,7 @@
             <!-- Capture gallery layout (the quick panel uses smaller items) -->
             <x:Double x:Key="GalleryItemWidth">200</x:Double>
             <x:Double x:Key="GalleryThumbnailHeight">130</x:Double>
-            <TextAlignment x:Key="GalleryTextAlignment">Left</TextAlignment>
+            <TextAlignment x:Key="GalleryTextAlignment">Start</TextAlignment>
         </ResourceDictionary>
     </Application.Resources>
     <Application.Styles>

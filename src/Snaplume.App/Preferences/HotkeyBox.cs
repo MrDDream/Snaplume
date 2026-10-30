@@ -13,6 +13,7 @@ public sealed class HotkeyBox : TextBox
 
     public HotkeyBox()
     {
+        Classes.Add("hotkey");
         IsReadOnly = true;
         CaretBrush = Brushes.Transparent;
         Cursor = new Cursor(StandardCursorType.Arrow);

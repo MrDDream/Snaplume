@@ -140,6 +140,8 @@ public partial class CaptureGallery : UserControl
         if (_hostWindow != null) _hostWindow.PropertyChanged -= OnHostPropertyChanged;
         _hostWindow = OwnerWindow;
         if (_hostWindow != null) _hostWindow.PropertyChanged += OnHostPropertyChanged;
+        // The window template (and so the gallery) is only attached when the window is first shown.
+        if (_refreshPending && IsShown) Refresh();
     }
 
     protected override void OnDetachedFromVisualTree(VisualTreeAttachmentEventArgs e)

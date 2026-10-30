@@ -7,10 +7,16 @@
         Title="{l:T Ocr.Title}" Width="640" Height="480" MinWidth="380" MinHeight="260"
         Icon="/Assets/app.ico"
         WindowStartupLocation="CenterScreen" UseLayoutRounding="True">
+    <Window.Styles>
+        <!-- The text fills the window: no frame, even when focused -->
+        <Style Selector="TextBox#ResultBox /template/ Border#PART_BorderElement">
+            <Setter Property="BorderThickness" Value="0" />
+        </Style>
+    </Window.Styles>
     <DockPanel>
         <Border DockPanel.Dock="Top" Classes="toolbar" Padding="12,8">
             <DockPanel>
-                <TextBlock Name="StatusText" DockPanel.Dock="Right" VerticalAlignment="Center" Margin="12,0,0,0"
+                <TextBlock Name="StatusText" DockPanel.Dock="Right" VerticalAlignment="Center" Margin="12,0,0,0" MaxWidth="300"
                            Foreground="{DynamicResource MutedTextBrush}" TextTrimming="CharacterEllipsis" />
                 <StackPanel Orientation="Horizontal">
                     <TextBlock Classes="property-label" Text="{l:T Ocr.Language}" Margin="0,0,8,0" />

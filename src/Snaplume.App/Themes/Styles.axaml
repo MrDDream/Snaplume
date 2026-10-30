@@ -22,6 +22,8 @@
         <Setter Property="Background" Value="{DynamicResource WindowBrush}" />
         <Setter Property="Foreground" Value="{DynamicResource TextBrush}" />
         <Setter Property="FontSize" Value="12" />
+        <!-- The application icon on every window, message boxes included (a window may set its own) -->
+        <Setter Property="Icon" Value="/Assets/app.ico" />
     </Style>
 
     <!-- ===== Icons: line icons drawn on a 24x24 grid (Icons.axaml), shown at 80 % ===== -->

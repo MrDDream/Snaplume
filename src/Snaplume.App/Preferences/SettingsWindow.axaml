@@ -12,7 +12,7 @@
             <Setter Property="MinWidth" Value="170" />
             <Setter Property="VerticalAlignment" Value="Center" />
         </Style>
-        <Style Selector="local|HotkeyBox">
+        <Style Selector="TextBox.hotkey">
             <Setter Property="Width" Value="230" />
             <Setter Property="VerticalAlignment" Value="Center" />
             <Setter Property="FontWeight" Value="SemiBold" />
