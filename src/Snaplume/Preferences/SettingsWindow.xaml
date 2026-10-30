@@ -515,6 +515,33 @@
                             </WrapPanel>
                         </StackPanel>
                     </Border>
+
+                    <TextBlock Style="{StaticResource CardHeader}" Text="{l:T Update.Header}" />
+                    <Border Style="{StaticResource Card}">
+                        <StackPanel>
+                            <Border Style="{StaticResource Row}">
+                                <DockPanel>
+                                    <Button x:Name="CheckUpdateButton" DockPanel.Dock="Right" VerticalAlignment="Center" Content="{l:T Update.CheckNow}"
+                                            Style="{StaticResource FlatButton}" BorderBrush="{DynamicResource LineBrush}" Padding="12,4" Click="OnCheckUpdates" />
+                                    <StackPanel>
+                                        <TextBlock Style="{StaticResource RowTitle}" Text="{l:T Update.Title}" />
+                                        <TextBlock x:Name="UpdateStatus" Style="{StaticResource RowDescription}" Text="{l:T Update.NotChecked}" />
+                                        <Button x:Name="OpenUpdateButton" Visibility="Collapsed" HorizontalAlignment="Left" Margin="0,8,0,0"
+                                                Content="{l:T Update.Open}" Style="{StaticResource AccentButton}" Padding="12,4" Click="OnOpenUpdate" />
+                                    </StackPanel>
+                                </DockPanel>
+                            </Border>
+                            <Border Style="{StaticResource LastRow}">
+                                <DockPanel>
+                                    <CheckBox x:Name="AutoUpdateCheck" Style="{StaticResource Switch}" DockPanel.Dock="Right" />
+                                    <StackPanel>
+                                        <TextBlock Style="{StaticResource RowTitle}" Text="{l:T Update.Auto}" />
+                                        <TextBlock Style="{StaticResource RowDescription}" Text="{l:T Update.AutoDescription}" />
+                                    </StackPanel>
+                                </DockPanel>
+                            </Border>
+                        </StackPanel>
+                    </Border>
                 </StackPanel>
             </Grid>
         </ScrollViewer>

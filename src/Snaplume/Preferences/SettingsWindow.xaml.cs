@@ -87,6 +87,9 @@ public partial class SettingsWindow : Window
         SnippingWarning.Visibility = AppSettings.SnippingToolOwnsPrintScreen() ? Visibility.Visible : Visibility.Collapsed;
 
         VersionText.Text = Loc.T("Settings.About.Version", typeof(App).Assembly.GetName().Version?.ToString(3));
+        AutoUpdateCheck.IsChecked = settings.CheckForUpdates;
+        if (settings.LastUpdateCheckUtc != default)
+            UpdateStatus.Text = Loc.T("Update.LastChecked", settings.LastUpdateCheckUtc.ToLocalTime().ToString("g", Loc.Culture));
         ShowPage(_lastPage.Length > 0 ? _lastPage : PageGeneral.Name);
         UpdatePrefixExample();
     }
@@ -183,6 +186,49 @@ public partial class SettingsWindow : Window
         if (File.Exists(ErrorLog.FilePath)) OpenOrWarn(ErrorLog.FilePath);
         else MessageBox.Show(this, Loc.T("Settings.About.NoErrors"), "Snaplume", MessageBoxButton.OK, MessageBoxImage.Information);
     }
+
+    private string? _updatePage;
+
+    /// <summary>Asks GitHub for the latest version (the only request Snaplume sends, see <see cref="UpdateChecker"/>).</summary>
+    private async void OnCheckUpdates(object sender, RoutedEventArgs e)
+    {
+        CheckUpdateButton.IsEnabled = false;
+        OpenUpdateButton.Visibility = Visibility.Collapsed;
+        UpdateStatus.Text = Loc.T("Update.Checking");
+        try
+        {
+            var release = await UpdateChecker.GetLatestAsync();
+            // Kept by the application whether this window is validated or not.
+            var settings = App.Instance.Settings;
+            settings.LastUpdateCheckUtc = DateTime.UtcNow;
+            if (release.IsNewer)
+            {
+                settings.UpdateNotifiedVersion = release.DisplayVersion;
+                _updatePage = release.Page;
+                UpdateStatus.Text = Loc.T("Update.Available", release.DisplayVersion, UpdateChecker.CurrentVersion.ToString(3));
+                OpenUpdateButton.Visibility = Visibility.Visible;
+            }
+            else
+            {
+                UpdateStatus.Text = Loc.T("Update.UpToDate", UpdateChecker.CurrentVersion.ToString(3));
+            }
+        }
+        catch (Exception ex) when (ex is System.Net.Http.HttpRequestException or TaskCanceledException)
+        {
+            UpdateStatus.Text = Loc.T("Update.Offline");
+        }
+        catch (Exception ex)
+        {
+            ErrorLog.Write("Vérification des mises à jour", ex);
+            UpdateStatus.Text = Loc.T("Update.Failed", ex.Message);
+        }
+        finally
+        {
+            CheckUpdateButton.IsEnabled = true;
+        }
+    }
+
+    private void OnOpenUpdate(object sender, RoutedEventArgs e) => OpenOrWarn(_updatePage ?? UpdateChecker.ReleasesPage);
 
     private void OnOpenWindowsKeyboardSettings(object sender, RoutedEventArgs e) => OpenOrWarn("ms-settings:easeofaccess-keyboard");
 
@@ -388,6 +434,7 @@ public partial class SettingsWindow : Window
         Result.HotkeyText = TextHotkey.Hotkey.ToString();
         Result.Language = (LanguageBox.SelectedItem as ChoiceOption)?.Code ?? "";
         Result.Theme = (ThemeBox.SelectedItem as ChoiceOption)?.Code ?? ThemeManager.Auto;
+        Result.CheckForUpdates = AutoUpdateCheck.IsChecked == true;
         DialogResult = true;
     }
 }

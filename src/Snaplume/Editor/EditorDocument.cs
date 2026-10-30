@@ -326,18 +326,65 @@ public sealed class EditorDocument
         double sx = (double)width / BaseImage.PixelWidth, sy = (double)height / BaseImage.PixelHeight;
 
         // Computed first: running out of memory must leave the document and its history untouched.
-        var visual = new DrawingVisual();
-        RenderOptions.SetBitmapScalingMode(visual, BitmapScalingMode.HighQuality);
-        using (var dc = visual.RenderOpen()) dc.DrawImage(BaseImage, new Rect(0, 0, width, height));
-        var target = new RenderTargetBitmap(width, height, 96, 96, PixelFormats.Pbgra32);
-        target.Render(visual);
-        var resized = ImageIO.Normalize(target);
+        var resized = Render(width, height, dc => dc.DrawImage(BaseImage, new Rect(0, 0, width, height)));
 
         PushUndo();
         BaseImage = resized;
         Effects = effects;
         foreach (var annotation in Annotations) annotation.Scale(sx, sy);
         RaiseChanged();
+    }
+
+    /// <summary>
+    /// Burns an inserted image (pasted, opened or captured) into the base image at <paramref name="area"/>,
+    /// as one undo step. The annotations stay above it; what falls outside the image is cut off.
+    /// </summary>
+    public void InsertImage(BitmapSource image, Rect area)
+    {
+        int w = BaseImage.PixelWidth, h = BaseImage.PixelHeight;
+        // Computed first: running out of memory must leave the document and its history untouched.
+        var merged = Render(w, h, dc =>
+        {
+            dc.DrawImage(BaseImage, new Rect(0, 0, w, h));
+            dc.DrawImage(image, area);
+        });
+        PushUndo();
+        BaseImage = merged;
+        RaiseChanged();
+    }
+
+    /// <summary>
+    /// Enlarges the image to <paramref name="width"/> x <paramref name="height"/> (never smaller), the new area
+    /// filled with <paramref name="background"/>. The image and its annotations keep their place, at the top left.
+    /// </summary>
+    /// <exception cref="InvalidDataException">The result, margins of the effects included, would be too big.</exception>
+    public void ExtendCanvas(int width, int height, Color background)
+    {
+        int w = BaseImage.PixelWidth, h = BaseImage.PixelHeight;
+        width = Math.Clamp(width, w, Math.Max(w, MaxDimension));
+        height = Math.Clamp(height, h, Math.Max(h, MaxDimension));
+        if (width == w && height == h) return;
+        var (outputWidth, outputHeight) = OutputSizeOf(width, height, Effects);
+        ImageIO.CheckSize(outputWidth, outputHeight);
+        var extended = Render(width, height, dc =>
+        {
+            dc.DrawRectangle(new SolidColorBrush(background), null, new Rect(0, 0, width, height));
+            dc.DrawImage(BaseImage, new Rect(0, 0, w, h));
+        });
+        PushUndo();
+        BaseImage = extended;
+        RaiseChanged();
+    }
+
+    /// <summary>Draws a new base image (high quality resampling), as 96 DPI Bgra32.</summary>
+    private static BitmapSource Render(int width, int height, Action<DrawingContext> draw)
+    {
+        var visual = new DrawingVisual();
+        RenderOptions.SetBitmapScalingMode(visual, BitmapScalingMode.HighQuality);
+        using (var dc = visual.RenderOpen()) draw(dc);
+        var target = new RenderTargetBitmap(width, height, 96, 96, PixelFormats.Pbgra32);
+        target.Render(visual);
+        return ImageIO.Normalize(target);
     }
 
     /// <summary>Base image with all annotations burnt in, and the image effects around it.</summary>

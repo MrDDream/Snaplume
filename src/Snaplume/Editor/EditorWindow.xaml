@@ -11,6 +11,19 @@
         <Border DockPanel.Dock="Top" Style="{StaticResource Toolbar}" Padding="8,6">
             <DockPanel>
                 <StackPanel DockPanel.Dock="Right" Orientation="Horizontal">
+                    <Button x:Name="InsertButton" Style="{StaticResource FlatButton}" Click="OnInsertMenu" ToolTip="{l:T Editor.Insert.Tip}">
+                        <StackPanel Orientation="Horizontal">
+                            <Path Style="{StaticResource Icon}" Data="{StaticResource IconInsertImage}" />
+                            <TextBlock Style="{StaticResource ButtonLabel}" Text="{l:T Editor.Insert.Button}" />
+                        </StackPanel>
+                        <Button.ContextMenu>
+                            <ContextMenu>
+                                <MenuItem Header="{l:T Editor.Insert.Paste}" InputGestureText="Ctrl+V" Click="OnInsertPaste" />
+                                <MenuItem Header="{l:T Editor.Insert.File}" Click="OnInsertFile" />
+                                <MenuItem Header="{l:T Editor.Insert.Capture}" Click="OnInsertCapture" />
+                            </ContextMenu>
+                        </Button.ContextMenu>
+                    </Button>
                     <ToggleButton x:Name="EffectsButton" Style="{StaticResource FlatButton}" Checked="OnEffectsOpen" ToolTip="{l:T Effects.ButtonTip}">
                         <StackPanel Orientation="Horizontal">
                             <Path Style="{StaticResource Icon}" Data="{StaticResource IconEffects}" />
@@ -379,7 +392,8 @@
 
         <!-- The image and its drawings are never mirrored, even in a right-to-left language -->
         <ScrollViewer x:Name="Scroller" HorizontalScrollBarVisibility="Auto" VerticalScrollBarVisibility="Auto"
-                      Background="{DynamicResource CanvasBrush}" PreviewMouseWheel="OnScrollerWheel" Focusable="False" FlowDirection="LeftToRight">
+                      Background="{DynamicResource CanvasBrush}" PreviewMouseWheel="OnScrollerWheel" Focusable="False" FlowDirection="LeftToRight"
+                      AllowDrop="True" DragOver="OnImageDragOver" Drop="OnImageDrop">
             <Grid Margin="32" HorizontalAlignment="Center" VerticalAlignment="Center">
                 <!-- Shadow on a separate layer so the image itself stays pixel-sharp -->
                 <!-- Page under the image: stays white in dark mode; hidden when the image effects draw their own shadow -->

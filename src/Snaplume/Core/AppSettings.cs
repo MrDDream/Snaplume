@@ -52,6 +52,15 @@ public sealed class AppSettings
     /// <summary>Width of the webcam picture, in % of the width of the recorded area.</summary>
     public int VideoWebcamSize { get; set; } = 20;
 
+    /// <summary>
+    /// Asks GitHub once a day whether a newer version was published (see <see cref="UpdateChecker"/>). Off by
+    /// default: Snaplume contacts nothing unless the user asks for it.
+    /// </summary>
+    public bool CheckForUpdates { get; set; }
+    public DateTime LastUpdateCheckUtc { get; set; }
+    /// <summary>Version already announced by a notification: each new version is announced once.</summary>
+    public string UpdateNotifiedVersion { get; set; } = "";
+
     /// <summary>Corners the webcam picture can be placed in (values of <see cref="VideoWebcamCorner"/>).</summary>
     public static readonly string[] WebcamCorners = { "TopLeft", "TopRight", "BottomLeft", "BottomRight" };
 
@@ -189,6 +198,8 @@ public sealed class AppSettings
         HotkeyVideo ??= defaults.HotkeyVideo;
         HotkeyText ??= defaults.HotkeyText;
         OcrLanguage ??= defaults.OcrLanguage;
+        UpdateNotifiedVersion ??= defaults.UpdateNotifiedVersion;
+        if (LastUpdateCheckUtc > DateTime.UtcNow) LastUpdateCheckUtc = default;
 
         WorkspaceFolder = NormalizeFolder(WorkspaceFolder) ?? defaults.WorkspaceFolder;
         ActiveWorkspace = ActiveWorkspace?.Trim() is { } active && Workspaces.IsPlainName(active) ? active : "";

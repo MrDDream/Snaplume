@@ -48,6 +48,7 @@
 - **Numéros d'étapes** : chaque clic ajoute le numéro ou la lettre suivante, en cinq styles (rond, rond avec repère, bulle, épingle, rond sombre).
 - **54 tampons vectoriels** : symboles (validé, refusé, attention, bug…), tampons de texte (APPROUVÉ, CONFIDENTIEL, BROUILLON…) et curseurs de souris.
 - **Surligneur, pixelisation, projecteur, loupe** pour guider le regard et masquer ce qui doit rester privé.
+- **Insertion d'images, comme dans Paint** : collez (<kbd>Ctrl</kbd>+<kbd>V</kbd>), ouvrez un fichier, glissez-déposez ou faites une nouvelle capture d'une zone, puis déplacez et redimensionnez l'image avant de la fixer.
 - **Recadrage, redimensionnement** (pixels ou pourcentage) et **effets** : ombre, bordure, coins arrondis, bord déchiré.
 - **Styles prédéfinis par outil** : un clic sur un outil propose ses styles ; ajoutez les vôtres.
 - Annuler / rétablir (jusqu'à 100 étapes), et des annotations **toujours modifiables** après enregistrement.
@@ -196,7 +197,8 @@ Snaplume.exe --record screen --duration 30 --exit                   # vidéo de 
 
 Snaplume fonctionne **100 % hors ligne** :
 
-- pas de compte, pas de connexion, pas d'envoi dans le cloud, pas de télémétrie, pas de statistiques, pas de publicité, aucune vérification de mise à jour ;
+- pas de compte, pas de connexion, pas d'envoi dans le cloud, pas de télémétrie, pas de statistiques, pas de publicité ;
+- la seule requête réseau est la **vérification des mises à jour**, uniquement quand vous la lancez (Paramètres › À propos) ou si vous activez sa vérification quotidienne (désactivée par défaut) ; elle demande à GitHub la dernière version et n'envoie rien d'autre ;
 - l'OCR utilise le moteur de reconnaissance de texte intégré à Windows, les QR codes sont décodés localement ;
 - l'e-mail passe par **votre** logiciel de messagerie, le générateur de documents écrit des fichiers locaux ;
 - les captures sont de simples fichiers dans le dossier de votre choix (par défaut `Images\Snaplume`), les paramètres un fichier JSON dans `%APPDATA%\Snaplume` (ou à côté de l'application en mode portable).

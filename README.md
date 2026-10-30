@@ -48,6 +48,7 @@ English | [Français](README.fr.md)
 - **Step numbers**: each click adds the next number or letter, in five styles (circle, circle with leader, bubble, pin, dark).
 - **54 vector stamps**: symbols (approved, rejected, warning, bug…), text stamps (APPROVED, CONFIDENTIAL, DRAFT…) and mouse cursors.
 - **Highlighter, pixelate, spotlight, magnifier** to guide the eye and hide what must stay private.
+- **Insert images, like in Paint**: paste (<kbd>Ctrl</kbd>+<kbd>V</kbd>), open a file, drag and drop, or take a new capture of an area, then move and resize it before it is placed.
 - **Crop, resize** (pixels or percent), and **effects**: shadow, border, rounded corners, torn edge.
 - **Presets per tool**: one click on a tool offers its saved styles; add your own.
 - Undo / redo (up to 100 steps), and annotations that **stay editable** after saving.
@@ -196,7 +197,8 @@ Snaplume.exe --record screen --duration 30 --exit                 # 30-second sc
 
 Snaplume works **100% offline**:
 
-- no account, no sign-in, no cloud upload, no telemetry, no analytics, no ads, no auto-update pings;
+- no account, no sign-in, no cloud upload, no telemetry, no analytics, no ads;
+- the only network request is the **update check**, and only when you ask for it (Settings › About) or turn on its daily check (off by default); it asks GitHub for the latest version and sends nothing else;
 - OCR uses the text recognition engine built into Windows, QR codes are decoded locally;
 - e-mail goes through **your** mail client, and the document generator writes local files;
 - captures are plain files in a folder you choose (default `Pictures\Snaplume`), settings are a JSON file in `%APPDATA%\Snaplume` (or next to the app in portable mode).

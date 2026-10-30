@@ -4,6 +4,7 @@ using System.Windows;
 using System.Windows.Controls;
 using System.Windows.Input;
 using System.Windows.Media;
+using System.Windows.Media.Imaging;
 using System.Windows.Threading;
 using Snaplume.Core;
 using Snaplume.Export;
@@ -150,6 +151,8 @@ public partial class EditorWindow : Window
 
         AnnotCanvas.SelectionChanged += OnSelectionChanged;
         AnnotCanvas.TextEditRequested += BeginTextEdit;
+        AnnotCanvas.FloatingImageChanged += UpdateContext;
+        AnnotCanvas.FloatingImageFailed += ex => ShowInsertError(ex);
         _document.Changed += UpdateUi;
 
         Loaded += (_, _) =>
@@ -173,7 +176,7 @@ public partial class EditorWindow : Window
     private void OnToolChecked(object sender, RoutedEventArgs e)
     {
         if (!_ready || sender is not RadioButton { Tag: string tag }) return;
-        EndTextEdit();
+        EndPendingEdits();
         var tool = Enum.Parse<EditorTool>(tag);
         // A tool chosen with the keyboard: the presets of the previous one no longer apply.
         if (tool != _presetTool) PresetPopup.IsOpen = false;
@@ -246,6 +249,11 @@ public partial class EditorWindow : Window
         ShowStyle();
         Show(StampSection, kind == EditorTool.Stamp && selected == null);
         Show(DeleteSection, selected != null);
+        if (AnnotCanvas.HasFloatingImage)
+        {
+            ToolName.Text = Loc.T("Editor.Insert.Floating");
+            ToolHint.Text = Loc.T("Editor.Insert.FloatingHint");
+        }
     }
 
     /// <summary>Shows the current style (the selection's when there is one) in the properties bar.</summary>
@@ -740,7 +748,7 @@ public partial class EditorWindow : Window
 
     private void OnEffectsOpen(object sender, RoutedEventArgs e)
     {
-        EndTextEdit();
+        EndPendingEdits();
         AnnotCanvas.CancelOperation();
         PresetPopup.IsOpen = false;
         ShowEffects();
@@ -878,6 +886,180 @@ public partial class EditorWindow : Window
     private void OnEffectsNone(object sender, RoutedEventArgs e) =>
         ChangeEffects(null, fx => fx with { Shadow = false, Border = false, CornerRadius = 0, TornEdges = TornEdges.None });
 
+    // ---- Inserting an image ----
+
+    /// <summary>
+    /// Validates what is in progress before a command: the text being typed, the image being inserted.
+    /// Returns false when the inserted image could not be burnt in (it is still floating).
+    /// </summary>
+    private bool EndPendingEdits()
+    {
+        EndTextEdit();
+        AnnotCanvas.CommitFloatingImage();
+        return !AnnotCanvas.HasFloatingImage;
+    }
+
+    private void OnInsertMenu(object sender, RoutedEventArgs e)
+    {
+        var menu = InsertButton.ContextMenu;
+        menu.PlacementTarget = InsertButton;
+        menu.Placement = System.Windows.Controls.Primitives.PlacementMode.Bottom;
+        menu.IsOpen = true;
+    }
+
+    private void OnInsertPaste(object sender, RoutedEventArgs e) => PasteImage();
+
+    private void OnInsertFile(object sender, RoutedEventArgs e)
+    {
+        var patterns = string.Join(";", ImageIO.Extensions.Select(x => "*" + x));
+        var dialog = new Microsoft.Win32.OpenFileDialog
+        {
+            Title = Loc.T("Editor.Insert.FileTitle"),
+            Filter = $"{Loc.T("Editor.Insert.FileFilter")}|{patterns}",
+            InitialDirectory = Path.GetDirectoryName(_document.FilePath),
+        };
+        if (dialog.ShowDialog(this) == true) InsertFile(dialog.FileName);
+    }
+
+    /// <summary>A new capture of an area of the screen, this window hidden meanwhile.</summary>
+    private async void OnInsertCapture(object sender, RoutedEventArgs e)
+    {
+        if (!EndPendingEdits()) return;
+        AnnotCanvas.CancelOperation();
+        var image = await App.Instance.Captures.PickImageAsync(this);
+        Activate();
+        if (image != null) InsertImage(image);
+    }
+
+    private void OnImageDragOver(object sender, DragEventArgs e)
+    {
+        e.Effects = DroppedImage(e.Data) != null ? DragDropEffects.Copy : DragDropEffects.None;
+        e.Handled = true;
+    }
+
+    private void OnImageDrop(object sender, DragEventArgs e)
+    {
+        if (DroppedImage(e.Data) is not { } file) return;
+        e.Handled = true;
+        Activate();
+        InsertFile(file);
+    }
+
+    /// <summary>First image file dragged from Explorer or from the workspace, if any.</summary>
+    private static string? DroppedImage(IDataObject data) =>
+        data.GetDataPresent(DataFormats.FileDrop) && data.GetData(DataFormats.FileDrop) is string[] files
+            ? files.FirstOrDefault(ImageIO.IsImage)
+            : null;
+
+    private void InsertFile(string path)
+    {
+        BitmapSource image;
+        try
+        {
+            image = ImageIO.Load(path);
+        }
+        catch (Exception ex)
+        {
+            ErrorLog.Write("Lecture de l'image à insérer", ex);
+            MessageBox.Show(this, Loc.T("Editor.Insert.ReadError", ex.Message), Loc.T("Editor.Insert.Title"), MessageBoxButton.OK, MessageBoxImage.Error);
+            return;
+        }
+        InsertImage(image);
+    }
+
+    /// <summary>Ctrl+V: the image of the clipboard, or the first image file copied in Explorer.</summary>
+    private void PasteImage()
+    {
+        BitmapSource? image;
+        try
+        {
+            image = ClipboardImage();
+        }
+        catch (Exception ex)
+        {
+            // Clipboard held by another application, unreadable or too big image...
+            ErrorLog.Write("Collage d'une image", ex);
+            MessageBox.Show(this, Loc.T("Editor.Insert.ReadError", ex.Message), Loc.T("Editor.Insert.Title"), MessageBoxButton.OK, MessageBoxImage.Error);
+            return;
+        }
+        if (image == null)
+        {
+            InfoText.Text = Loc.T("Editor.Insert.NoImage");
+            return;
+        }
+        InsertImage(image);
+    }
+
+    /// <summary>The PNG flavour first: unlike the bitmap one, it keeps the transparency.</summary>
+    private static BitmapSource? ClipboardImage()
+    {
+        var data = Clipboard.GetDataObject();
+        if (data == null) return null;
+        if (data.GetDataPresent("PNG") && data.GetData("PNG") is MemoryStream png)
+        {
+            using (png)
+            {
+                var decoder = BitmapDecoder.Create(png, BitmapCreateOptions.PreservePixelFormat | BitmapCreateOptions.IgnoreColorProfile,
+                    BitmapCacheOption.None);
+                return ImageIO.Normalize(decoder.Frames[0]);
+            }
+        }
+        if (DroppedImage(data) is { } file) return ImageIO.Load(file);
+        return data.GetDataPresent(DataFormats.Bitmap) && Clipboard.GetImage() is { } bitmap ? ImageIO.Normalize(bitmap) : null;
+    }
+
+    /// <summary>
+    /// Shows <paramref name="image"/> floating over the capture, in the middle of what is visible, to be moved
+    /// and resized before it is burnt in (see <see cref="AnnotationCanvas.FloatImage"/>). An image bigger than
+    /// the capture either enlarges it or is shrunk to fit, as the user chooses.
+    /// </summary>
+    private void InsertImage(BitmapSource image)
+    {
+        if (!EndPendingEdits()) return;
+        AnnotCanvas.CancelOperation();
+        var area = AnnotCanvas.ImageArea;
+        double width = image.PixelWidth, height = image.PixelHeight;
+        if (width > area.Width || height > area.Height)
+        {
+            var answer = MessageBox.Show(this, Loc.T("Editor.Insert.Larger", image.PixelWidth, image.PixelHeight, (int)area.Width, (int)area.Height),
+                Loc.T("Editor.Insert.Title"), MessageBoxButton.YesNoCancel, MessageBoxImage.Question);
+            if (answer == MessageBoxResult.Cancel) return;
+            if (answer == MessageBoxResult.Yes)
+            {
+                try
+                {
+                    _document.ExtendCanvas(Math.Max(image.PixelWidth, (int)area.Width), Math.Max(image.PixelHeight, (int)area.Height), Colors.White);
+                }
+                catch (Exception ex)
+                {
+                    ShowInsertError(ex);
+                    return;
+                }
+                area = AnnotCanvas.ImageArea;
+                ZoomToFit(onlyShrink: true);
+            }
+            else
+            {
+                double scale = Math.Min(area.Width / width, area.Height / height);
+                width = Math.Max(1, width * scale);
+                height = Math.Max(1, height * scale);
+            }
+        }
+
+        UpdateLayout();
+        var center = Scroller.TranslatePoint(new Point(Scroller.ViewportWidth / 2, Scroller.ViewportHeight / 2), AnnotCanvas);
+        double x = Math.Clamp(center.X - width / 2, 0, Math.Max(0, area.Width - width));
+        double y = Math.Clamp(center.Y - height / 2, 0, Math.Max(0, area.Height - height));
+        AnnotCanvas.FloatImage(image, new Rect(Math.Round(x), Math.Round(y), width, height));
+        AnnotCanvas.Focus();
+    }
+
+    private void ShowInsertError(Exception ex)
+    {
+        ErrorLog.Write("Insertion d'une image", ex);
+        MessageBox.Show(this, Loc.T("Editor.Insert.Error", ex.Message), Loc.T("Editor.Insert.Title"), MessageBoxButton.OK, MessageBoxImage.Error);
+    }
+
     // ---- Commands ----
 
     private void OnSave(object sender, RoutedEventArgs e) => Save();
@@ -885,7 +1067,7 @@ public partial class EditorWindow : Window
     private bool Save()
     {
         ApplyPendingSlider();
-        EndTextEdit();
+        if (!EndPendingEdits()) return false;
         try
         {
             _document.Save(App.Instance.Settings.JpegQuality);
@@ -904,7 +1086,7 @@ public partial class EditorWindow : Window
 
     private void Copy()
     {
-        EndTextEdit();
+        if (!EndPendingEdits()) return;
         try
         {
             ClipboardHelper.SetImage(_document.Flatten());
@@ -928,7 +1110,7 @@ public partial class EditorWindow : Window
 
     private void Export()
     {
-        EndTextEdit();
+        if (!EndPendingEdits()) return;
         var dialog = new Microsoft.Win32.SaveFileDialog
         {
             Title = Loc.T("Editor.ExportTitle"),
@@ -970,7 +1152,7 @@ public partial class EditorWindow : Window
     /// <summary>Prints the image as it is now, annotations and effects included.</summary>
     private void Print()
     {
-        EndTextEdit();
+        if (!EndPendingEdits()) return;
         AnnotCanvas.CancelOperation();
         try
         {
@@ -988,7 +1170,7 @@ public partial class EditorWindow : Window
     /// <summary>Sends the capture file by e-mail, saved first if the user wants the changes in it.</summary>
     private void OnEmail(object sender, RoutedEventArgs e)
     {
-        EndTextEdit();
+        if (!EndPendingEdits()) return;
         AnnotCanvas.CancelOperation();
         if (_document.IsDirty)
         {
@@ -1010,7 +1192,7 @@ public partial class EditorWindow : Window
     /// <summary>Text of the image as it is now, annotations included.</summary>
     private void OnReadText(object sender, RoutedEventArgs e)
     {
-        EndTextEdit();
+        if (!EndPendingEdits()) return;
         try
         {
             App.Instance.ShowOcr(_document.Flatten());
@@ -1026,7 +1208,7 @@ public partial class EditorWindow : Window
 
     private void Resize()
     {
-        EndTextEdit();
+        if (!EndPendingEdits()) return;
         AnnotCanvas.CancelOperation();
         var dialog = new ResizeDialog(this, _document);
         if (dialog.ShowDialog() != true) return;
@@ -1053,8 +1235,13 @@ public partial class EditorWindow : Window
     {
         ApplyPendingSlider();
         EndTextEdit();
-        // During a drawing or a drag, undo only cancels it.
+        // During a drawing or a drag, undo only cancels it; an image being inserted goes away, like in Paint.
         if (AnnotCanvas.CancelOperation()) return;
+        if (AnnotCanvas.HasFloatingImage)
+        {
+            AnnotCanvas.CancelFloatingImage();
+            return;
+        }
         _document.Undo();
     }
 
@@ -1063,6 +1250,8 @@ public partial class EditorWindow : Window
         ApplyPendingSlider();
         EndTextEdit();
         AnnotCanvas.CancelOperation();
+        // Placing the image would end the history that can be redone.
+        if (AnnotCanvas.HasFloatingImage) return;
         _document.Redo();
     }
 
@@ -1071,6 +1260,11 @@ public partial class EditorWindow : Window
     private void DeleteSelected()
     {
         EndTextEdit();
+        if (AnnotCanvas.HasFloatingImage && !AnnotCanvas.IsDragging)
+        {
+            AnnotCanvas.CancelFloatingImage();
+            return;
+        }
         if (AnnotCanvas.IsDragging || AnnotCanvas.Selected is not { } selected) return;
         _document.PushUndo();
         _document.Annotations.Remove(selected);
@@ -1080,6 +1274,11 @@ public partial class EditorWindow : Window
     private void Nudge(Vector offset)
     {
         EndTextEdit();
+        if (AnnotCanvas.HasFloatingImage)
+        {
+            AnnotCanvas.NudgeFloatingImage(offset);
+            return;
+        }
         if (AnnotCanvas.IsDragging || AnnotCanvas.Selected is not { } selected) return;
         bool sameStep = ReferenceEquals(selected, _nudged) && _document.Version == _nudgeVersion;
         if (!sameStep) _document.PushUndo();
@@ -1117,6 +1316,7 @@ public partial class EditorWindow : Window
                 case Key.Z: Undo(); break;
                 case Key.Y: Redo(); break;
                 case Key.C: Copy(); break;
+                case Key.V: PasteImage(); break;
                 case Key.R: Resize(); break;
                 case Key.P: Print(); break;
                 case Key.D0 or Key.NumPad0: SetZoom(1); break;
@@ -1138,9 +1338,11 @@ public partial class EditorWindow : Window
 
         double step = modifiers == ModifierKeys.Shift ? 10 : 1;
         bool inCombo = e.OriginalSource is ComboBox or ComboBoxItem;
+        bool canNudge = !inCombo && (AnnotCanvas.Selected != null || AnnotCanvas.HasFloatingImage);
         switch (key)
         {
             case Key.Delete or Key.Back: DeleteSelected(); break;
+            case Key.Enter when AnnotCanvas.HasFloatingImage && !inCombo: AnnotCanvas.CommitFloatingImage(); break;
             case Key.Escape:
                 if (PresetPopup.IsOpen)
                 {
@@ -1153,13 +1355,14 @@ public partial class EditorWindow : Window
                     break;
                 }
                 if (AnnotCanvas.CancelOperation()) break;
-                if (AnnotCanvas.Selected != null) AnnotCanvas.Select(null);
+                if (AnnotCanvas.HasFloatingImage) AnnotCanvas.CancelFloatingImage();
+                else if (AnnotCanvas.Selected != null) AnnotCanvas.Select(null);
                 else SelectTool(EditorTool.Select);
                 break;
-            case Key.Left when !inCombo && AnnotCanvas.Selected != null: Nudge(new Vector(-step, 0)); break;
-            case Key.Right when !inCombo && AnnotCanvas.Selected != null: Nudge(new Vector(step, 0)); break;
-            case Key.Up when !inCombo && AnnotCanvas.Selected != null: Nudge(new Vector(0, -step)); break;
-            case Key.Down when !inCombo && AnnotCanvas.Selected != null: Nudge(new Vector(0, step)); break;
+            case Key.Left when canNudge: Nudge(new Vector(-step, 0)); break;
+            case Key.Right when canNudge: Nudge(new Vector(step, 0)); break;
+            case Key.Up when canNudge: Nudge(new Vector(0, -step)); break;
+            case Key.Down when canNudge: Nudge(new Vector(0, step)); break;
             default:
                 if (modifiers != ModifierKeys.None || inCombo || !ToolKeys.TryGetValue(key, out var tool)) return;
                 SelectTool(tool);
@@ -1213,7 +1416,12 @@ public partial class EditorWindow : Window
 
     protected override void OnClosing(CancelEventArgs e)
     {
-        EndTextEdit();
+        // An image still being placed becomes a change to save (or to discard) like the others.
+        if (!EndPendingEdits())
+        {
+            e.Cancel = true;
+            return;
+        }
         if (_document.IsDirty)
         {
             var answer = MessageBox.Show(this, Loc.T("Editor.SaveChangesQuestion"), "Snaplume",

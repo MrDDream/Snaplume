@@ -586,6 +586,12 @@ public partial class CaptureGallery : UserControl
             MessageBox.Show(owner, Loc.T("Gallery.Delete.CloseViewer"), Loc.T("Gallery.Delete.Title"), MessageBoxButton.OK, MessageBoxImage.Information);
             return;
         }
+        var question = paths.Count == 1
+            ? Loc.T("Gallery.Delete.ConfirmOne", Path.GetFileName(paths[0]))
+            : Loc.T("Gallery.Delete.ConfirmMany", paths.Count);
+        if (MessageBox.Show(owner, question, Loc.T("Gallery.Delete.Title"), MessageBoxButton.YesNo, MessageBoxImage.Question,
+                MessageBoxResult.No) != MessageBoxResult.Yes)
+            return;
         int index = CaptureList.SelectedIndex;
         if (!FileOps.MoveToRecycleBin(paths))
             MessageBox.Show(owner, Loc.T("Gallery.Delete.Failed"), Loc.T("Gallery.Delete.Title"), MessageBoxButton.OK, MessageBoxImage.Warning);

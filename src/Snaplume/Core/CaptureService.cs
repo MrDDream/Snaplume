@@ -183,6 +183,36 @@ public sealed class CaptureService
     public Task<Window?> CaptureQrAsync(Window? hide = null, int settleMs = 0) =>
         PickAndShowAsync(Loc.T("Qr.SelectTitle"), Qr.QrService.Show, "QR code", "Qr.Failed", hide, settleMs);
 
+    /// <summary>
+    /// Select an area of the screen and return its image, e.g. to insert it into a capture being edited;
+    /// nothing is saved or copied. <paramref name="hide"/> is hidden meanwhile, then brought back.
+    /// </summary>
+    /// <returns>The image, or null if cancelled, failed, or another capture is in progress.</returns>
+    public async Task<BitmapSource?> PickImageAsync(Window? hide)
+    {
+        if (!Begin(hide, out var stop)) return null;
+        try
+        {
+            await _operation.SettleAsync(0);
+            if (stop.IsCancellationRequested) return null;
+
+            var snap = ScreenSnapshot.Take(Settings.IncludeCursor);
+            if (RegionSelectorWindow.Pick(snap) is not PixelRect rect || rect.IsEmpty || stop.IsCancellationRequested) return null;
+            return ImageIO.Normalize(new CroppedBitmap(snap.Image, rect.ToInt32Rect()));
+        }
+        catch (Exception ex)
+        {
+            ErrorLog.Write("Capture à insérer", ex);
+            _app.Tray?.ShowError(Loc.T("Capture.Failed"), ex.Message);
+            return null;
+        }
+        finally
+        {
+            _operation.RestoreWindow(activate: true);
+            End();
+        }
+    }
+
     /// <summary>Lets the user select an area, then shows a window working on that part of the screen.</summary>
     /// <param name="logContext">Label of the error log.</param>
     /// <param name="failedKey">Title of the notification shown on failure.</param>

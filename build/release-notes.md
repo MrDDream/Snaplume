@@ -3,7 +3,13 @@
 
 **Free, open-source screenshots, annotations and screen recording for Windows. 100% offline.**
 
-## Highlights of Snaplume 1.0
+## What's new in 1.1
+
+- **Insert images into a capture, like in Paint**: paste (Ctrl+V), open a file, drag and drop, or take a new capture of an area from the editor (**Insert** button), then move and resize the image before placing it. A larger image can enlarge the capture or be shrunk to fit.
+- **Update check** in Settings › About, with an optional daily check (off by default). It only asks GitHub for the latest version: nothing is downloaded or installed automatically.
+- **Confirmation before deleting** captures and videos (they still go to the Recycle Bin).
+
+## Highlights of Snaplume 1.x
 
 - **Capture**: smart region selection (windows and controls detected under the mouse), magnifier with pixel coordinates and color picker, full screen / all screens / active window / repeat last region, timer, **scrolling capture**, **text capture (offline Windows OCR)** and **QR code / barcode reading**. Multi-monitor and Per-Monitor v2 high-DPI aware.
 - **Editor**: arrows, lines, shapes, freehand pen, text with halo, **step numbers**, 54 vector stamps, highlighter, pixelate, spotlight and magnifier, crop, resize and effects (shadow, border, rounded corners, torn edge). Tool presets, unlimited undo/redo, and annotations that **stay editable** after saving.
@@ -32,6 +38,8 @@ All packages are self-contained: **no .NET installation needed**.
 ## En français
 
 Snaplume {{VERSION}} : capture d'écran, annotation et enregistrement vidéo libres (MIT) pour Windows, 100 % hors ligne, sans compte ni télémétrie.
+
+**Nouveautés de la 1.1** : insertion d'images dans une capture comme dans Paint (coller avec Ctrl+V, fichier, glisser-déposer ou nouvelle capture d'une zone, puis déplacer et redimensionner), vérification des mises à jour dans Paramètres › À propos (vérification quotidienne en option, désactivée par défaut), et confirmation avant de supprimer des captures.
 
 - **Programme d'installation** (`Snaplume-Setup-{{VERSION}}.exe`) : installation pour l'utilisateur courant sans droits administrateur (ou pour tous les utilisateurs), raccourcis, démarrage avec Windows en option, désinstalleur.
 - **Version portable** (`Snaplume-{{VERSION}}-portable.zip`) : décompressez le dossier `Snaplume` où vous voulez et lancez `Snaplume.exe` ; les paramètres restent dans le dossier.

@@ -145,6 +145,56 @@ public partial class App : Application
         _ = Task.Run(VideoService.DeleteStaleTempFiles);
 
         HandleArgs(CommandLine.Parse(args), startup: true);
+        StartUpdateChecks();
+    }
+
+    // ---- Updates ----
+
+    private DispatcherTimer? _updateTimer;
+    private bool _checkingUpdates;
+
+    /// <summary>
+    /// Automatic update check, when the user turned it on: a minute after startup (not to slow it down),
+    /// then every hour, each time doing nothing until a day has passed since the last check.
+    /// </summary>
+    private void StartUpdateChecks()
+    {
+        _updateTimer = new DispatcherTimer { Interval = TimeSpan.FromMinutes(1) };
+        _updateTimer.Tick += async (_, _) =>
+        {
+            _updateTimer.Interval = TimeSpan.FromHours(1);
+            await CheckForUpdatesInBackgroundAsync();
+        };
+        _updateTimer.Start();
+    }
+
+    private async Task CheckForUpdatesInBackgroundAsync()
+    {
+        if (!Settings.CheckForUpdates || _checkingUpdates || IsExiting) return;
+        if (DateTime.UtcNow - Settings.LastUpdateCheckUtc < TimeSpan.FromDays(1)) return;
+        _checkingUpdates = true;
+        try
+        {
+            var release = await UpdateChecker.GetLatestAsync();
+            Settings.LastUpdateCheckUtc = DateTime.UtcNow;
+            if (release.IsNewer && release.DisplayVersion != Settings.UpdateNotifiedVersion)
+            {
+                Settings.UpdateNotifiedVersion = release.DisplayVersion;
+                Tray?.ShowInfo(Loc.T("Update.AvailableTitle"), Loc.T("Update.AvailableText", release.DisplayVersion),
+                    () => FileOps.OpenWithDefaultApp(release.Page));
+            }
+            Settings.Save();
+        }
+        catch (Exception ex)
+        {
+            // Offline: tried again in an hour, without filling the error log.
+            if (ex is not (System.Net.Http.HttpRequestException or TaskCanceledException))
+                ErrorLog.Write("Vérification des mises à jour", ex);
+        }
+        finally
+        {
+            _checkingUpdates = false;
+        }
     }
 
     /// <summary>
@@ -567,9 +617,11 @@ public partial class App : Application
             {
                 var result = _settingsWindow.Result;
                 // The active workspace may have been changed from the tray menu meanwhile,
-                // and the OCR language from a text window: the dialog does not edit them.
+                // the OCR language from a text window, the update state by the background check: the dialog does not edit them.
                 result.ActiveWorkspace = Settings.ActiveWorkspace;
                 result.OcrLanguage = Settings.OcrLanguage;
+                result.LastUpdateCheckUtc = Settings.LastUpdateCheckUtc;
+                result.UpdateNotifiedVersion = Settings.UpdateNotifiedVersion;
                 result.Sanitize();
                 bool folderChanged = !string.Equals(Settings.WorkspaceFolder, result.WorkspaceFolder, StringComparison.OrdinalIgnoreCase);
                 bool languageChanged = Settings.Language != result.Language;

@@ -1,6 +1,7 @@
 using System.Windows;
 using System.Windows.Input;
 using System.Windows.Media;
+using System.Windows.Media.Imaging;
 using static Snaplume.Editor.Freezables;
 
 namespace Snaplume.Editor;
@@ -17,7 +18,10 @@ public enum EditorTool
 /// </summary>
 public sealed class AnnotationCanvas : FrameworkElement
 {
-    private enum DragMode { None, Create, Move, Handle, Crop }
+    private enum DragMode { None, Create, Move, Handle, Crop, FloatMove, FloatHandle }
+
+    /// <summary>Smallest width or height of an inserted image being resized, in image pixels.</summary>
+    private const double MinFloatingSize = 4;
 
     /// <summary>Smallest drag, in screen pixels, that draws a shape (a plain click does not).</summary>
     private const double MinDragOnScreen = 3;
@@ -39,6 +43,13 @@ public sealed class AnnotationCanvas : FrameworkElement
     private EditorDocument.Snapshot? _checkpoint;
     private Rect? _cropRect;
 
+    // Image being inserted (pasted, opened or captured), like a paste in Paint: it floats over the image, can be
+    // moved and resized, and is only burnt into the document by CommitFloatingImage.
+    private BitmapSource? _floatingImage;
+    private Rect _floatingRect;
+    /// <summary>Place of the inserted image before the drag in progress.</summary>
+    private Rect _floatingStart;
+
     // Annotations below and above the one being drawn or dragged, recorded once instead of at each mouse move.
     private DrawingGroup? _layerBelow, _layerAbove;
     private Annotation? _layerActive;
@@ -48,6 +59,10 @@ public sealed class AnnotationCanvas : FrameworkElement
     private Pen? _selectionPen, _selectionDashPen, _cropPen;
 
     public event Action? SelectionChanged;
+    /// <summary>An image started or stopped floating (see <see cref="FloatImage"/>).</summary>
+    public event Action? FloatingImageChanged;
+    /// <summary>The inserted image could not be burnt into the document (it keeps floating).</summary>
+    public event Action<Exception>? FloatingImageFailed;
     /// <summary>The text annotation to edit, and whether it is a new one.</summary>
     public event Action<TextAnnotation, bool>? TextEditRequested;
 
@@ -127,6 +142,64 @@ public sealed class AnnotationCanvas : FrameworkElement
 
     public void Select(Annotation? annotation) => SetSelected(annotation);
 
+    /// <summary>True while an inserted image waits to be placed.</summary>
+    public bool HasFloatingImage => _floatingImage != null;
+
+    /// <summary>Shows <paramref name="image"/> over the document at <paramref name="area"/>, to be moved and resized.</summary>
+    public void FloatImage(BitmapSource image, Rect area)
+    {
+        CancelOperation();
+        SetSelected(null);
+        _floatingImage = image;
+        _floatingRect = area;
+        InvalidateVisual();
+        FloatingImageChanged?.Invoke();
+    }
+
+    /// <summary>Burns the inserted image into the document, as one undo step. Returns false if there was none.</summary>
+    public bool CommitFloatingImage()
+    {
+        if (_floatingImage is not { } image || _document == null) return false;
+        CancelOperation();
+        // Not drawn floating any more once the document shows it.
+        _floatingImage = null;
+        try
+        {
+            _document.InsertImage(image, _floatingRect);
+        }
+        catch (Exception ex)
+        {
+            // Mostly not enough memory for a huge image: it keeps floating, nothing is lost.
+            _floatingImage = image;
+            InvalidateVisual();
+            FloatingImageFailed?.Invoke(ex);
+            return false;
+        }
+        InvalidateLayers();
+        FloatingImageChanged?.Invoke();
+        return true;
+    }
+
+    /// <summary>Drops the inserted image without changing the document.</summary>
+    public void CancelFloatingImage()
+    {
+        if (_floatingImage == null) return;
+        CancelOperation();
+        _floatingImage = null;
+        InvalidateVisual();
+        FloatingImageChanged?.Invoke();
+    }
+
+    public void NudgeFloatingImage(Vector offset)
+    {
+        if (_floatingImage == null || IsDragging) return;
+        _floatingRect.Offset(offset);
+        InvalidateVisual();
+    }
+
+    private Point[] FloatingHandles() =>
+        new[] { _floatingRect.TopLeft, _floatingRect.TopRight, _floatingRect.BottomRight, _floatingRect.BottomLeft };
+
     /// <summary>Applies a style change to the selection as one undoable step.</summary>
     public void ApplyToSelection(Action<Annotation> change)
     {
@@ -158,6 +231,7 @@ public sealed class AnnotationCanvas : FrameworkElement
                 if (index >= 0 && index < _document.Annotations.Count) SetSelected(_document.Annotations[index]);
             }
         }
+        if (mode is DragMode.FloatMove or DragMode.FloatHandle) _floatingRect = _floatingStart;
         _selected?.EndHandleDrag();
         _creating = null;
         _checkpoint = null;
@@ -182,6 +256,8 @@ public sealed class AnnotationCanvas : FrameworkElement
         dc.PushClip(new RectangleGeometry(bounds));
         effects?.PushOutline(dc);
         dc.DrawImage(image, bounds);
+        // Where it will be once burnt in: over the image, under the annotations.
+        if (_floatingImage != null) dc.DrawImage(_floatingImage, _floatingRect);
 
         var annotations = _document.Annotations;
         var active = ActiveAnnotation();
@@ -212,6 +288,7 @@ public sealed class AnnotationCanvas : FrameworkElement
 
         if (_selected != null && !ReferenceEquals(_selected, _editingText) && annotations.Contains(_selected))
             DrawSelection(dc, _selected);
+        if (_floatingImage != null) DrawFrame(dc, _floatingRect, FloatingHandles());
     }
 
     /// <summary>
@@ -276,19 +353,22 @@ public sealed class AnnotationCanvas : FrameworkElement
         return group;
     }
 
-    private void DrawSelection(DrawingContext dc, Annotation annotation)
+    private void DrawSelection(DrawingContext dc, Annotation annotation) =>
+        DrawFrame(dc, annotation is LineAnnotation ? null : annotation.GetBounds(), annotation.GetHandles());
+
+    /// <summary>Dashed frame around <paramref name="bounds"/> (none if null) and square handles, one screen pixel thin.</summary>
+    private void DrawFrame(DrawingContext dc, Rect? bounds, IReadOnlyList<Point> handles)
     {
         double unit = 1 / _viewScale;
         _selectionPen ??= Frozen(new Pen(AccentBrush, unit));
         _selectionDashPen ??= Frozen(new Pen(AccentBrush, unit) { DashStyle = DashStyles.Dash });
-        if (annotation is not LineAnnotation)
+        if (bounds is Rect frame)
         {
-            var bounds = annotation.GetBounds();
-            bounds.Inflate(3 * unit, 3 * unit);
-            dc.DrawRectangle(null, _selectionDashPen, bounds);
+            frame.Inflate(3 * unit, 3 * unit);
+            dc.DrawRectangle(null, _selectionDashPen, frame);
         }
         double size = 9 * unit;
-        foreach (var h in annotation.GetHandles())
+        foreach (var h in handles)
             dc.DrawRectangle(Brushes.White, _selectionPen, new Rect(h.X - size / 2, h.Y - size / 2, size, size));
     }
 
@@ -299,10 +379,31 @@ public sealed class AnnotationCanvas : FrameworkElement
         e.Handled = true;
         var p = e.GetPosition(this);
 
+        // An inserted image is placed whatever the current tool; a click beside it burns it in.
+        if (_floatingImage != null)
+        {
+            _floatingStart = _floatingRect;
+            int floatingHandle = HitHandle(FloatingHandles(), p);
+            if (floatingHandle >= 0)
+            {
+                _handleIndex = floatingHandle;
+                BeginDrag(DragMode.FloatHandle, p);
+            }
+            else if (_floatingRect.Contains(p))
+            {
+                BeginDrag(DragMode.FloatMove, p);
+            }
+            else
+            {
+                CommitFloatingImage();
+            }
+            return;
+        }
+
         // The handles of the selection can be dragged whatever the current tool.
         if (_selected != null && _tool != EditorTool.Crop)
         {
-            int handle = HitHandle(_selected, p);
+            int handle = HitHandle(_selected.GetHandles(), p);
             if (handle >= 0)
             {
                 _handleIndex = handle;
@@ -433,6 +534,14 @@ public sealed class AnnotationCanvas : FrameworkElement
                 if (shape is MagnifierAnnotation magnifier) magnifier.PlaceLens(ImageArea);
                 break;
 
+            case DragMode.FloatMove:
+                _floatingRect.Offset(p - _lastPosition);
+                break;
+
+            case DragMode.FloatHandle:
+                _floatingRect = ResizeFloating(p, keepRatio: !shift);
+                break;
+
             case DragMode.Crop:
                 var image = ImageArea;
                 var crop = new Rect(_dragStart, p);
@@ -476,6 +585,10 @@ public sealed class AnnotationCanvas : FrameworkElement
                         (int)Math.Round(r.Width), (int)Math.Round(r.Height)));
                 }
                 _cropRect = null;
+                break;
+
+            case DragMode.FloatMove or DragMode.FloatHandle:
+                // The inserted image is not part of the document yet: nothing to record.
                 break;
 
             default:
@@ -572,10 +685,29 @@ public sealed class AnnotationCanvas : FrameworkElement
         return null;
     }
 
-    private int HitHandle(Annotation annotation, Point p)
+    /// <summary>
+    /// Inserted image resized by its handle <see cref="_handleIndex"/> dragged to <paramref name="p"/>, the opposite
+    /// corner staying in place; with <paramref name="keepRatio"/>, its proportions follow the dominant axis.
+    /// </summary>
+    private Rect ResizeFloating(Point p, bool keepRatio)
+    {
+        var start = _floatingStart;
+        var anchor = new[] { start.BottomRight, start.BottomLeft, start.TopLeft, start.TopRight }[_handleIndex];
+        var v = p - anchor;
+        double width = Math.Max(Math.Abs(v.X), MinFloatingSize), height = Math.Max(Math.Abs(v.Y), MinFloatingSize);
+        if (keepRatio && start.Width > 0 && start.Height > 0)
+        {
+            double ratio = start.Width / start.Height;
+            width = Math.Max(width, height * ratio);
+            height = width / ratio;
+        }
+        // The handle may be dragged past the anchor: the image then grows on the other side.
+        return new Rect(anchor, anchor + new Vector(v.X < 0 ? -width : width, v.Y < 0 ? -height : height));
+    }
+
+    private int HitHandle(IReadOnlyList<Point> handles, Point p)
     {
         double tolerance = 7 / _viewScale;
-        var handles = annotation.GetHandles();
         for (int i = 0; i < handles.Count; i++)
         {
             if (Math.Abs(handles[i].X - p.X) <= tolerance && Math.Abs(handles[i].Y - p.Y) <= tolerance) return i;
@@ -586,7 +718,9 @@ public sealed class AnnotationCanvas : FrameworkElement
     private void UpdateHoverCursor(Point p)
     {
         Cursor cursor;
-        if (_selected != null && _tool != EditorTool.Crop && HitHandle(_selected, p) >= 0) cursor = Cursors.Hand;
+        if (_floatingImage != null)
+            cursor = HitHandle(FloatingHandles(), p) >= 0 ? Cursors.Hand : _floatingRect.Contains(p) ? Cursors.SizeAll : Cursors.Arrow;
+        else if (_selected != null && _tool != EditorTool.Crop && HitHandle(_selected.GetHandles(), p) >= 0) cursor = Cursors.Hand;
         else if (_tool == EditorTool.Select && HitTestAll(p) != null) cursor = Cursors.SizeAll;
         else if (_tool == EditorTool.Magnifier && HitTestAll(p) is MagnifierAnnotation) cursor = Cursors.SizeAll;
         else cursor = _tool switch
