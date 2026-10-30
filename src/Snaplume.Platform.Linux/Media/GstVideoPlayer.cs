@@ -10,7 +10,7 @@ namespace Snaplume.Platform.Linux.Media;
 /// <see cref="FrameReady"/>, the sound to the default output. A worker thread pulls the pictures and reads the
 /// bus; playbin itself is thread-safe, so the commands come straight from the UI thread.
 /// </summary>
-internal sealed unsafe class GstVideoPlayer : IVideoPlayer
+internal sealed unsafe class GstVideoPlayer : IVideoPlayer, IVideoPlayerSpeed
 {
     private const ulong Second = 1_000_000_000UL;
 
@@ -23,6 +23,7 @@ internal sealed unsafe class GstVideoPlayer : IVideoPlayer
     private volatile bool _playing;
     private PixelBuffer? _frame;
     private double _volume = 1;
+    private double _speed = 1;
 
     public event Action<PixelBuffer>? FrameReady;
     public event Action? StateChanged;
@@ -56,6 +57,23 @@ internal sealed unsafe class GstVideoPlayer : IVideoPlayer
                 if (_playbin != IntPtr.Zero) Gst.SetDouble(_playbin, "volume", _volume);
         }
     }
+
+    /// <summary>Playback speed: a seek to the current position with that rate (GStreamer has no rate property).</summary>
+    public double Speed
+    {
+        get => _speed;
+        set
+        {
+            _speed = Math.Clamp(value, 0.1, 8);
+            var position = Position;
+            lock (_gate)
+                if (_playbin != IntPtr.Zero) SeekAt(position.Ticks * 100, Gst.SeekFlagFlush | Gst.SeekFlagAccurate);
+        }
+    }
+
+    /// <summary>Seeks keeping the playback speed (a simple seek would reset it to 1). Call with the lock held.</summary>
+    private void SeekAt(long ns, int flags) =>
+        Gst.gst_element_seek(_playbin, _speed, Gst.FormatTime, flags, Gst.SeekTypeSet, Math.Max(0, ns), Gst.SeekTypeNone, -1);
 
     public Task OpenAsync(string path) => Task.Run(() =>
     {
@@ -103,7 +121,7 @@ internal sealed unsafe class GstVideoPlayer : IVideoPlayer
             if (_playbin == IntPtr.Zero) return;
             if (HasEnded)
             {
-                Gst.gst_element_seek_simple(_playbin, Gst.FormatTime, Gst.SeekFlagFlush | Gst.SeekFlagKeyUnit, 0);
+                SeekAt(0, Gst.SeekFlagFlush | Gst.SeekFlagKeyUnit);
                 HasEnded = false;
             }
             Gst.gst_element_set_state(_playbin, Gst.StatePlaying);
@@ -130,7 +148,7 @@ internal sealed unsafe class GstVideoPlayer : IVideoPlayer
         {
             if (_playbin == IntPtr.Zero) return;
             long ns = Math.Max(0, position.Ticks) * 100;
-            Gst.gst_element_seek_simple(_playbin, Gst.FormatTime, Gst.SeekFlagFlush | Gst.SeekFlagAccurate, ns);
+            SeekAt(ns, Gst.SeekFlagFlush | Gst.SeekFlagAccurate);
             HasEnded = false;
         }
     }

@@ -1,4 +1,4 @@
-# Generates src/Snaplume/Assets/app.ico (PNG-compressed entries, 16 to 256 px)
+# Generates src/Snaplume.App/Assets/app.ico (PNG-compressed entries, 16 to 256 px)
 # from the Snaplume logo (docs/branding/snaplume.svg), drawn in its 120x120 design space.
 param([string]$Out = (Join-Path $PSScriptRoot "..\src\Snaplume\Assets\app.ico"))
 

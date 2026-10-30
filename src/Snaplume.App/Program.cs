@@ -29,7 +29,10 @@ internal static class Program
     }
 
     /// <summary>Also used by the visual designer.</summary>
-    public static AppBuilder BuildAvaloniaApp() => AppBuilder.Configure<App>().UsePlatformDetect().LogToTrace();
+    public static AppBuilder BuildAvaloniaApp() => AppBuilder.Configure<App>().UsePlatformDetect().LogToTrace()
+        // Linux: the window class matches StartupWMClass of the .desktop file, so the dock groups the windows
+        // under the Snaplume launcher.
+        .With(new X11PlatformOptions { WmClass = "Snaplume" });
 
     /// <summary>Exception on another thread: the process ends, at least keep a trace.</summary>
     private static void OnFatalException(object sender, UnhandledExceptionEventArgs e) =>

@@ -19,7 +19,7 @@ namespace Snaplume.Platform.Windows.Video;
 /// The read-back goes through the GPU and the CPU, so pictures are dropped when one is still being copied: the
 /// player then shows fewer pictures per second, never late ones.
 /// </remarks>
-public sealed class MediaVideoPlayer : IVideoPlayer
+public sealed class MediaVideoPlayer : IVideoPlayer, IVideoPlayerSpeed
 {
     private readonly MediaPlayer _player;
     private readonly object _lock = new();
@@ -61,6 +61,13 @@ public sealed class MediaVideoPlayer : IVideoPlayer
     {
         get => _player.Volume;
         set => _player.Volume = Math.Clamp(value, 0, 1);
+    }
+
+    /// <summary>Playback speed of the media engine (the sound keeps its pitch).</summary>
+    public double Speed
+    {
+        get => Safe(() => _player.PlaybackSession.PlaybackRate, 1.0);
+        set => _player.PlaybackSession.PlaybackRate = Math.Clamp(value, 0.1, 8);
     }
 
     /// <summary>Opens the file; completes once it is ready to play or has failed (see <see cref="Error"/>).</summary>

@@ -67,6 +67,9 @@ internal static unsafe class Gst
     [DllImport(Core)] public static extern int gst_element_query_position(IntPtr element, int format, out long position);
     [DllImport(Core)] public static extern int gst_element_query_duration(IntPtr element, int format, out long duration);
     [DllImport(Core)] public static extern int gst_element_seek_simple(IntPtr element, int format, int flags, long position);
+    /// <summary>Seek with a playback rate (GstSeekType: 0 none, 1 set).</summary>
+    [DllImport(Core)] public static extern int gst_element_seek(IntPtr element, double rate, int format, int flags, int startType, long start, int stopType, long stop);
+    public const int SeekTypeNone = 0, SeekTypeSet = 1;
     [DllImport(Core)] public static extern IntPtr gst_sample_get_buffer(IntPtr sample);
     [DllImport(Core)] public static extern IntPtr gst_sample_get_caps(IntPtr sample);
     [DllImport(Core)] public static extern IntPtr gst_caps_get_structure(IntPtr caps, uint index);
