@@ -49,7 +49,7 @@ public class CaptureScrollingTests
     {
         var page = new FakeScrollingPage(Area, 2400);
         var bars = new List<FakeScrollBar>();
-        var result = await Capture(page, bars).RunAsync(Area);
+        var result = await Capture(page, bars).RunAsync(Area, TestContext.Current.CancellationToken);
 
         Assert.NotNull(result);
         AssertWholePage(page, result);
@@ -74,7 +74,7 @@ public class CaptureScrollingTests
     {
         // Each wheel step is animated over 90 ms: frames taken during the animation would be stitched at the wrong place.
         var page = new FakeScrollingPage(Area, 1800) { AnimationMs = 90 };
-        var result = await Capture(page).RunAsync(Area);
+        var result = await Capture(page).RunAsync(Area, TestContext.Current.CancellationToken);
 
         Assert.NotNull(result);
         AssertWholePage(page, result);
@@ -86,7 +86,7 @@ public class CaptureScrollingTests
     {
         // The first step of 3 notches (and the step back) jumps three times further: past the viewport.
         var page = new FakeScrollingPage(Area, 2000) { BurstNotches = 3, BurstCount = 2, AnimationMs = 30 };
-        var result = await Capture(page).RunAsync(Area);
+        var result = await Capture(page).RunAsync(Area, TestContext.Current.CancellationToken);
 
         Assert.NotNull(result);
         Assert.Equal(0, page.BurstCount);
@@ -102,7 +102,7 @@ public class CaptureScrollingTests
     public async Task EscapeStopsAndKeepsWhatWasCaptured()
     {
         var page = new FakeScrollingPage(Area, 3000) { EscapeAfterScrolls = 4 };
-        var result = await Capture(page).RunAsync(Area);
+        var result = await Capture(page).RunAsync(Area, TestContext.Current.CancellationToken);
 
         Assert.NotNull(result);
         Assert.False(result.NothingScrolled);
@@ -118,7 +118,7 @@ public class CaptureScrollingTests
     public async Task MouseTakenOutOfTheAreaStops()
     {
         var page = new FakeScrollingPage(Area, 3000) { LeaveAfterScrolls = 2 };
-        var result = await Capture(page).RunAsync(Area);
+        var result = await Capture(page).RunAsync(Area, TestContext.Current.CancellationToken);
 
         Assert.NotNull(result);
         Assert.False(result.NothingScrolled);
@@ -131,7 +131,7 @@ public class CaptureScrollingTests
         var bars = new List<FakeScrollBar>();
         var page = new FakeScrollingPage(Area, 3000);
         var capture = Capture(page, bars, externalStop: () => page.Scrolls >= 3);
-        var result = await capture.RunAsync(Area);
+        var result = await capture.RunAsync(Area, TestContext.Current.CancellationToken);
         Assert.NotNull(result);
         Assert.InRange(page.Scrolls, 3, 4);
 
@@ -148,7 +148,7 @@ public class CaptureScrollingTests
                 return bar;
             },
         };
-        var result2 = await capture2.RunAsync(Area);
+        var result2 = await capture2.RunAsync(Area, TestContext.Current.CancellationToken);
         Assert.NotNull(result2);
         Assert.Equal(0, page2.Scrolls);
         Assert.Equal(Area.Height, result2.Image.Height);
@@ -159,7 +159,7 @@ public class CaptureScrollingTests
     public async Task WindowIgnoringTheWheelIsReported()
     {
         var page = new FakeScrollingPage(Area, 3000) { IgnoresWheel = true };
-        var result = await Capture(page).RunAsync(Area);
+        var result = await Capture(page).RunAsync(Area, TestContext.Current.CancellationToken);
 
         Assert.NotNull(result);
         Assert.True(result.NothingScrolled);
@@ -170,7 +170,7 @@ public class CaptureScrollingTests
     public async Task RefusedPointerPermissionCapturesNothing()
     {
         var page = new FakeScrollingPage(Area, 3000) { Grant = false };
-        var result = await Capture(page).RunAsync(Area);
+        var result = await Capture(page).RunAsync(Area, TestContext.Current.CancellationToken);
 
         Assert.Null(result);
         Assert.Equal(0, page.Grabs);

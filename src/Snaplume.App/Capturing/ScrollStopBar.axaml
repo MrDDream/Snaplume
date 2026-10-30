@@ -1,0 +1,24 @@
+<Window xmlns="https://github.com/avaloniaui"
+        xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+        xmlns:l="using:Snaplume.Ui"
+        x:Class="Snaplume.Capturing.ScrollStopBar"
+        Title="{l:T Scroll.BarTitle}" WindowDecorations="None" Background="Transparent" TransparencyLevelHint="Transparent"
+        CanResize="False" SizeToContent="WidthAndHeight" Topmost="True" ShowInTaskbar="False" ShowActivated="False"
+        WindowStartupLocation="Manual" UseLayoutRounding="True">
+    <Border Background="{DynamicResource PopupBrush}" BorderBrush="{DynamicResource PopupBorderBrush}" BorderThickness="1"
+            CornerRadius="10" Padding="12,7,8,7">
+        <StackPanel Orientation="Horizontal">
+            <Path Classes="icon" Data="{StaticResource IconScroll}" Stroke="{DynamicResource AccentBrush}" VerticalAlignment="Center" />
+            <StackPanel Margin="8,0,16,0" VerticalAlignment="Center">
+                <TextBlock Text="{l:T Scroll.Running}" FontWeight="SemiBold" Foreground="{DynamicResource TextBrush}" />
+                <TextBlock x:Name="DetailText" Text="{l:T Scroll.StopHintZone}" FontSize="11.5" Foreground="{DynamicResource MutedTextBrush}" />
+            </StackPanel>
+            <Button Classes="accent" Click="OnStop" ToolTip.Tip="{l:T Scroll.StopTip}" VerticalAlignment="Center" Focusable="False">
+                <StackPanel Orientation="Horizontal">
+                    <Path Classes="icon" Data="{StaticResource IconStop}" Stroke="{DynamicResource OnAccentBrush}" />
+                    <TextBlock Classes="button-label" Text="{l:T Scroll.Stop}" FontWeight="SemiBold" VerticalAlignment="Center" />
+                </StackPanel>
+            </Button>
+        </StackPanel>
+    </Border>
+</Window>
