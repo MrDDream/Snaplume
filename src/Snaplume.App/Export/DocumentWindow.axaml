@@ -1,0 +1,139 @@
+<!-- "Create a document": PDF, Word or HTML made of the selected captures, in the order of the list. -->
+<Window xmlns="https://github.com/avaloniaui"
+        xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+        xmlns:l="using:Snaplume.Ui"
+        xmlns:local="using:Snaplume.Export"
+        x:Class="Snaplume.Export.DocumentWindow"
+        Title="{l:T Export.Title}" Width="720" Height="600" MinWidth="560" MinHeight="460"
+        Icon="/Assets/app.ico"
+        WindowStartupLocation="CenterOwner" ShowInTaskbar="False" UseLayoutRounding="True">
+    <Window.Styles>
+        <Style Selector="TextBlock.field-label">
+            <Setter Property="FontWeight" Value="SemiBold" />
+            <Setter Property="Margin" Value="0,12,0,4" />
+        </Style>
+        <Style Selector="ComboBox">
+            <Setter Property="HorizontalAlignment" Value="Stretch" />
+        </Style>
+
+        <!-- Rows of the capture list (theme colors, like the gallery) -->
+        <Style Selector="ListBox#EntryList ListBoxItem">
+            <Setter Property="Margin" Value="0,1" />
+            <Setter Property="Padding" Value="6,4" />
+            <Setter Property="CornerRadius" Value="5" />
+            <Setter Property="BorderThickness" Value="1" />
+            <Setter Property="BorderBrush" Value="Transparent" />
+        </Style>
+        <Style Selector="ListBox#EntryList ListBoxItem:pointerover /template/ ContentPresenter#PART_ContentPresenter">
+            <Setter Property="Background" Value="{DynamicResource HoverBrush}" />
+        </Style>
+        <Style Selector="ListBox#EntryList ListBoxItem:selected /template/ ContentPresenter#PART_ContentPresenter">
+            <Setter Property="Background" Value="{DynamicResource CheckedBrush}" />
+            <Setter Property="BorderBrush" Value="{DynamicResource AccentBrush}" />
+        </Style>
+
+        <Style Selector="ProgressBar.thin">
+            <Setter Property="Height" Value="6" />
+            <Setter Property="MinHeight" Value="6" />
+            <Setter Property="Background" Value="{DynamicResource TileBrush}" />
+            <Setter Property="Foreground" Value="{DynamicResource AccentBrush}" />
+            <Setter Property="CornerRadius" Value="3" />
+        </Style>
+    </Window.Styles>
+
+    <DockPanel>
+        <Border DockPanel.Dock="Bottom" BorderBrush="{DynamicResource LineBrush}" BorderThickness="0,1,0,0" Padding="16,12">
+            <DockPanel>
+                <StackPanel DockPanel.Dock="Right" Orientation="Horizontal" VerticalAlignment="Center">
+                    <Button Name="CreateButton" Classes="accent" Content="{l:T Export.Create}" IsDefault="True" Padding="16,5" Click="OnCreate" />
+                    <!-- Not IsCancel: while the document is written, Escape / this button only cancel it -->
+                    <Button Name="CloseButton" Content="{l:T Export.Close}" Padding="16,5" Margin="8,0,0,0" Click="OnCloseOrCancel" />
+                </StackPanel>
+                <StackPanel VerticalAlignment="Center" Margin="0,0,16,0">
+                    <TextBlock Name="StatusText" Foreground="{DynamicResource MutedTextBrush}" TextTrimming="CharacterEllipsis" />
+                    <ProgressBar Name="Progress" Classes="thin" Margin="0,6,0,0" IsVisible="False" />
+                </StackPanel>
+            </DockPanel>
+        </Border>
+
+        <Grid Margin="18,6,18,14" ColumnDefinitions="250,20,*">
+            <!-- Options -->
+            <ScrollViewer Name="OptionsPanel" VerticalScrollBarVisibility="Auto" HorizontalScrollBarVisibility="Disabled">
+                <StackPanel>
+                    <TextBlock Classes="field-label" Text="{l:T Export.DocumentTitle}" />
+                    <TextBox Name="TitleBox" MaxLength="150" />
+
+                    <TextBlock Classes="field-label" Text="{l:T Export.Format}" />
+                    <ComboBox Name="FormatBox" DisplayMemberBinding="{Binding Label, x:DataType=l:ChoiceItem}" />
+
+                    <TextBlock Classes="field-label" Text="{l:T Export.Layout}" />
+                    <ComboBox Name="LayoutBox" DisplayMemberBinding="{Binding Label, x:DataType=l:ChoiceItem}" />
+
+                    <TextBlock Classes="field-label" Text="{l:T Export.PageSize}" />
+                    <ComboBox Name="PageSizeBox" DisplayMemberBinding="{Binding Label, x:DataType=l:ChoiceItem}" />
+
+                    <TextBlock Classes="field-label" Text="{l:T Export.Orientation}" />
+                    <ComboBox Name="OrientationBox" DisplayMemberBinding="{Binding Label, x:DataType=l:ChoiceItem}" />
+
+                    <TextBlock Classes="field-label" Text="{l:T Export.Captions}" />
+                    <CheckBox Name="FileNameCheck" Content="{l:T Export.IncludeFileName}" Margin="0,2,0,0" />
+                    <CheckBox Name="DateCheck" Content="{l:T Export.IncludeDate}" Margin="0,2,0,0" />
+
+                    <CheckBox Name="OpenWhenDoneCheck" Content="{l:T Export.OpenWhenDone}" Margin="0,14,0,0" />
+                    <TextBlock Name="HtmlNote" Text="{l:T Export.HtmlNote}" TextWrapping="Wrap" FontSize="11.5" Margin="0,10,0,0"
+                               Foreground="{DynamicResource MutedTextBrush}" IsVisible="False" />
+                </StackPanel>
+            </ScrollViewer>
+
+            <!-- Captures, in document order -->
+            <DockPanel Grid.Column="2">
+                <DockPanel DockPanel.Dock="Top" Margin="0,12,0,4">
+                    <TextBlock Name="CountText" DockPanel.Dock="Right" Foreground="{DynamicResource MutedTextBrush}" VerticalAlignment="Bottom" />
+                    <TextBlock Text="{l:T Export.Order}" FontWeight="SemiBold" />
+                </DockPanel>
+                <StackPanel DockPanel.Dock="Bottom" Orientation="Horizontal" Margin="0,8,0,0">
+                    <Button Name="UpButton" Classes="flat" Click="OnMoveUp" ToolTip.Tip="{l:T Export.MoveUp}">
+                        <StackPanel Orientation="Horizontal">
+                            <Path Classes="icon" Data="{StaticResource IconChevronUp}" />
+                            <TextBlock Classes="button-label" Text="{l:T Export.MoveUp}" Foreground="{DynamicResource TextBrush}" />
+                        </StackPanel>
+                    </Button>
+                    <Button Name="DownButton" Classes="flat" Click="OnMoveDown" ToolTip.Tip="{l:T Export.MoveDown}">
+                        <StackPanel Orientation="Horizontal">
+                            <Path Classes="icon" Data="{StaticResource IconChevronDownLarge}" />
+                            <TextBlock Classes="button-label" Text="{l:T Export.MoveDown}" Foreground="{DynamicResource TextBrush}" />
+                        </StackPanel>
+                    </Button>
+                    <Button Name="RemoveButton" Classes="flat" Click="OnRemove" ToolTip.Tip="{l:T Export.RemoveTip}">
+                        <StackPanel Orientation="Horizontal">
+                            <Path Classes="icon" Data="{StaticResource IconDelete}" />
+                            <TextBlock Classes="button-label" Text="{l:T Export.Remove}" Foreground="{DynamicResource TextBrush}" />
+                        </StackPanel>
+                    </Button>
+                </StackPanel>
+                <ListBox Name="EntryList" SelectionMode="Multiple"
+                         Background="{DynamicResource InputBrush}" BorderBrush="{DynamicResource InputBorderBrush}" BorderThickness="1"
+                         CornerRadius="5" Padding="3" ScrollViewer.HorizontalScrollBarVisibility="Disabled">
+                    <ListBox.ItemTemplate>
+                        <DataTemplate x:DataType="local:DocumentEntry">
+                            <DockPanel>
+                                <TextBlock DockPanel.Dock="Left" Text="{Binding Position}" Width="26" VerticalAlignment="Center"
+                                           Foreground="{DynamicResource MutedTextBrush}" TextAlignment="Center" />
+                                <Border DockPanel.Dock="Left" Width="72" Height="48" Margin="4,0,10,0" CornerRadius="3"
+                                        Background="{DynamicResource GalleryThumbnailBrush}" BorderBrush="{DynamicResource GalleryThumbnailBorderBrush}" BorderThickness="1">
+                                    <!-- Screenshots are never mirrored, even right-to-left -->
+                                    <Image Source="{Binding Thumbnail}" Stretch="Uniform" Margin="1" FlowDirection="LeftToRight"
+                                           RenderOptions.BitmapInterpolationMode="HighQuality" />
+                                </Border>
+                                <StackPanel VerticalAlignment="Center">
+                                    <TextBlock Text="{Binding Name}" TextTrimming="CharacterEllipsis" ToolTip.Tip="{Binding Path}" />
+                                    <TextBlock Text="{Binding Details}" FontSize="11" Foreground="{DynamicResource MutedTextBrush}" TextTrimming="CharacterEllipsis" />
+                                </StackPanel>
+                            </DockPanel>
+                        </DataTemplate>
+                    </ListBox.ItemTemplate>
+                </ListBox>
+            </DockPanel>
+        </Grid>
+    </DockPanel>
+</Window>

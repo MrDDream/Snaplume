@@ -1,0 +1,507 @@
+<!-- Settings: navigation on the side, pages of cards with one setting per row. -->
+<Window xmlns="https://github.com/avaloniaui"
+        xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+        xmlns:l="using:Snaplume.Ui"
+        xmlns:local="using:Snaplume.Preferences"
+        x:Class="Snaplume.Preferences.SettingsWindow"
+        Title="{l:T Settings.WindowTitle}" Width="880" Height="620" MinWidth="720" MinHeight="460"
+        Icon="/Assets/app.ico" WindowStartupLocation="CenterScreen" UseLayoutRounding="True"
+        Background="{DynamicResource SidebarBrush}">
+    <Window.Styles>
+        <Style Selector="ComboBox">
+            <Setter Property="MinWidth" Value="170" />
+            <Setter Property="VerticalAlignment" Value="Center" />
+        </Style>
+        <Style Selector="local|HotkeyBox">
+            <Setter Property="Width" Value="230" />
+            <Setter Property="VerticalAlignment" Value="Center" />
+            <Setter Property="FontWeight" Value="SemiBold" />
+        </Style>
+        <!-- Buttons of the rows (Browse, Open...): outlined flat buttons -->
+        <Style Selector="Button.outlined">
+            <Setter Property="BorderBrush" Value="{DynamicResource LineBrush}" />
+            <Setter Property="Padding" Value="12,4" />
+            <Setter Property="Foreground" Value="{DynamicResource TextBrush}" />
+        </Style>
+        <Style Selector="Button.outlined:pointerover /template/ ContentPresenter#PART_ContentPresenter">
+            <Setter Property="Foreground" Value="{DynamicResource TextBrush}" />
+        </Style>
+        <!-- Rows that do not apply (webcam options while the webcam is off, features this system lacks) -->
+        <Style Selector="StackPanel.dimmable:disabled, DockPanel.dimmable:disabled">
+            <Setter Property="Opacity" Value="0.5" />
+        </Style>
+
+        <!-- Navigation entries: hover, selected (accent marker) -->
+        <Style Selector="ListBox#Nav ListBoxItem">
+            <Setter Property="Margin" Value="0,1" />
+            <Setter Property="Padding" Value="12,9" />
+            <Setter Property="CornerRadius" Value="6" />
+            <Setter Property="Background" Value="Transparent" />
+            <Setter Property="Cursor" Value="Hand" />
+        </Style>
+        <Style Selector="ListBox#Nav ListBoxItem:pointerover /template/ ContentPresenter#PART_ContentPresenter">
+            <Setter Property="Background" Value="{DynamicResource NavHoverBrush}" />
+        </Style>
+        <Style Selector="ListBox#Nav ListBoxItem:selected /template/ ContentPresenter#PART_ContentPresenter">
+            <Setter Property="Background" Value="{DynamicResource NavSelectedBrush}" />
+        </Style>
+        <Style Selector="ListBox#Nav ListBoxItem:selected Border.marker">
+            <Setter Property="IsVisible" Value="True" />
+        </Style>
+        <Style Selector="Border.marker">
+            <Setter Property="Width" Value="3" />
+            <Setter Property="Height" Value="18" />
+            <Setter Property="CornerRadius" Value="1.5" />
+            <Setter Property="HorizontalAlignment" Value="Left" />
+            <Setter Property="Margin" Value="-12,0,0,0" />
+            <Setter Property="Background" Value="{DynamicResource AccentBrush}" />
+            <Setter Property="IsVisible" Value="False" />
+        </Style>
+    </Window.Styles>
+
+    <DockPanel>
+        <!-- Footer -->
+        <Border DockPanel.Dock="Bottom" Background="{DynamicResource WindowBrush}" BorderBrush="{DynamicResource LineBrush}" BorderThickness="0,1,0,0" Padding="16,10">
+            <DockPanel>
+                <StackPanel DockPanel.Dock="Right" Orientation="Horizontal">
+                    <Button Content="{l:T Common.Cancel}" IsCancel="True" Classes="flat outlined" Padding="16,6" Margin="0,0,8,0" Click="OnCancel" />
+                    <Button Classes="accent" IsDefault="True" Padding="18,6" Click="OnOk">
+                        <TextBlock Text="{l:T Common.Save}" FontWeight="SemiBold" />
+                    </Button>
+                </StackPanel>
+                <TextBlock VerticalAlignment="Center" Foreground="{DynamicResource MutedTextBrush}" Text="{l:T Settings.FooterHint}"
+                           TextTrimming="CharacterEllipsis" />
+            </DockPanel>
+        </Border>
+
+        <!-- Navigation -->
+        <Border DockPanel.Dock="Left" Width="220" Background="{DynamicResource SidebarBrush}" Padding="12,18,12,12">
+            <StackPanel>
+                <StackPanel Orientation="Horizontal" Margin="6,0,0,18">
+                    <Image Source="{StaticResource LogoImage}" Width="26" Height="26" />
+                    <TextBlock Text="{l:T Settings.Title}" FontSize="17" FontWeight="SemiBold" Margin="10,0,0,0" VerticalAlignment="Center" />
+                </StackPanel>
+                <ListBox Name="Nav" BorderThickness="0" Background="Transparent" ScrollViewer.HorizontalScrollBarVisibility="Disabled">
+                    <ListBoxItem Tag="PageGeneral">
+                        <Panel>
+                            <Border Classes="marker" />
+                            <StackPanel Orientation="Horizontal">
+                                <Path Classes="icon" Data="{StaticResource IconFolder}" />
+                                <TextBlock Text="{l:T Settings.Nav.General}" Margin="10,0,0,0" VerticalAlignment="Center" />
+                            </StackPanel>
+                        </Panel>
+                    </ListBoxItem>
+                    <ListBoxItem Tag="PageCapture">
+                        <Panel>
+                            <Border Classes="marker" />
+                            <StackPanel Orientation="Horizontal">
+                                <Path Classes="icon" Data="{StaticResource IconRegion}" />
+                                <TextBlock Text="{l:T Settings.Nav.Capture}" Margin="10,0,0,0" VerticalAlignment="Center" />
+                            </StackPanel>
+                        </Panel>
+                    </ListBoxItem>
+                    <ListBoxItem Tag="PageVideo">
+                        <Panel>
+                            <Border Classes="marker" />
+                            <StackPanel Orientation="Horizontal">
+                                <Path Classes="icon" Data="{StaticResource IconVideo}" />
+                                <TextBlock Text="{l:T Settings.Nav.Video}" Margin="10,0,0,0" VerticalAlignment="Center" />
+                            </StackPanel>
+                        </Panel>
+                    </ListBoxItem>
+                    <ListBoxItem Tag="PageHotkeys">
+                        <Panel>
+                            <Border Classes="marker" />
+                            <StackPanel Orientation="Horizontal">
+                                <Path Classes="icon" Data="{StaticResource IconKeyboard}" />
+                                <TextBlock Text="{l:T Settings.Nav.Hotkeys}" Margin="10,0,0,0" VerticalAlignment="Center" />
+                            </StackPanel>
+                        </Panel>
+                    </ListBoxItem>
+                    <ListBoxItem Tag="PageAbout">
+                        <Panel>
+                            <Border Classes="marker" />
+                            <StackPanel Orientation="Horizontal">
+                                <Path Classes="icon" Data="{StaticResource IconInfo}" />
+                                <TextBlock Text="{l:T Settings.Nav.About}" Margin="10,0,0,0" VerticalAlignment="Center" />
+                            </StackPanel>
+                        </Panel>
+                    </ListBoxItem>
+                </ListBox>
+            </StackPanel>
+        </Border>
+
+        <!-- Pages -->
+        <ScrollViewer Name="ContentScroller" VerticalScrollBarVisibility="Auto" Background="{DynamicResource SurfaceBrush}">
+            <Panel Margin="30,22,30,20" MaxWidth="760" HorizontalAlignment="Left">
+
+                <!-- General -->
+                <StackPanel Name="PageGeneral">
+                    <TextBlock Classes="page-title" Text="{l:T Settings.Nav.General}" />
+                    <TextBlock Classes="page-subtitle" Text="{l:T Settings.General.Subtitle}" />
+
+                    <TextBlock Classes="card-header" Text="{l:T Settings.LanguageHeader}" />
+                    <Border Classes="card">
+                        <StackPanel>
+                            <Border Classes="row">
+                                <DockPanel>
+                                    <ComboBox Name="LanguageBox" DockPanel.Dock="Right" Width="190"
+                                              DisplayMemberBinding="{Binding Label, x:DataType=l:ChoiceItem}" />
+                                    <StackPanel>
+                                        <TextBlock Classes="row-title" Text="{l:T Settings.Language}" />
+                                        <TextBlock Classes="row-description" Text="{l:T Settings.LanguageDescription}" />
+                                    </StackPanel>
+                                </DockPanel>
+                            </Border>
+                            <Border Classes="row last">
+                                <DockPanel>
+                                    <ComboBox Name="ThemeBox" DockPanel.Dock="Right" Width="190"
+                                              DisplayMemberBinding="{Binding Label, x:DataType=l:ChoiceItem}" />
+                                    <StackPanel>
+                                        <TextBlock Classes="row-title" Text="{l:T Settings.Theme}" />
+                                        <TextBlock Classes="row-description" Text="{l:T Settings.ThemeDescriptionSystem}" />
+                                    </StackPanel>
+                                </DockPanel>
+                            </Border>
+                        </StackPanel>
+                    </Border>
+
+                    <TextBlock Classes="card-header" Text="{l:T Settings.General.SavingHeader}" />
+                    <Border Classes="card">
+                        <StackPanel>
+                            <Border Classes="row">
+                                <StackPanel>
+                                    <TextBlock Classes="row-title" Text="{l:T Settings.General.Folder}" />
+                                    <TextBlock Classes="row-description" Text="{l:T Settings.General.FolderDescription}" />
+                                    <DockPanel Margin="0,8,0,0">
+                                        <Button DockPanel.Dock="Right" Content="{l:T Common.Open}" Classes="flat outlined" Margin="6,0,0,0" Click="OnOpenFolder" />
+                                        <Button DockPanel.Dock="Right" Content="{l:T Common.Browse}" Classes="flat outlined" Margin="6,0,0,0" Click="OnBrowse" />
+                                        <TextBox Name="FolderBox" VerticalContentAlignment="Center" />
+                                    </DockPanel>
+                                </StackPanel>
+                            </Border>
+                            <Border Classes="row">
+                                <DockPanel>
+                                    <TextBox Name="PrefixBox" DockPanel.Dock="Right" Width="170" VerticalAlignment="Center" />
+                                    <StackPanel>
+                                        <TextBlock Classes="row-title" Text="{l:T Settings.General.FileNamePrefix}" />
+                                        <TextBlock Name="PrefixExample" Classes="row-description" />
+                                    </StackPanel>
+                                </DockPanel>
+                            </Border>
+                            <Border Classes="row last">
+                                <DockPanel>
+                                    <ComboBox Name="FormatBox" DockPanel.Dock="Right"
+                                              DisplayMemberBinding="{Binding Label, x:DataType=l:ChoiceItem}" />
+                                    <StackPanel>
+                                        <TextBlock Classes="row-title" Text="{l:T Settings.General.ImageFormat}" />
+                                        <TextBlock Classes="row-description" Text="{l:T Settings.General.ImageFormatDescription}" />
+                                    </StackPanel>
+                                </DockPanel>
+                            </Border>
+                        </StackPanel>
+                    </Border>
+
+                    <TextBlock Classes="card-header" Text="{l:T Settings.General.AfterCaptureHeader}" />
+                    <Border Classes="card">
+                        <StackPanel>
+                            <Border Classes="row">
+                                <DockPanel>
+                                    <ToggleSwitch Name="EditorCheck" DockPanel.Dock="Right" />
+                                    <StackPanel>
+                                        <TextBlock Classes="row-title" Text="{l:T Settings.General.OpenEditor}" />
+                                        <TextBlock Classes="row-description" Text="{l:T Settings.General.OpenEditorDescription}" />
+                                    </StackPanel>
+                                </DockPanel>
+                            </Border>
+                            <Border Classes="row">
+                                <DockPanel>
+                                    <ToggleSwitch Name="ClipboardCheck" DockPanel.Dock="Right" />
+                                    <StackPanel>
+                                        <TextBlock Classes="row-title" Text="{l:T Settings.General.CopyToClipboard}" />
+                                        <TextBlock Classes="row-description" Text="{l:T Settings.General.CopyToClipboardDescription}" />
+                                    </StackPanel>
+                                </DockPanel>
+                            </Border>
+                            <Border Classes="row last">
+                                <DockPanel>
+                                    <ToggleSwitch Name="WorkspaceCheck" DockPanel.Dock="Right" />
+                                    <StackPanel>
+                                        <TextBlock Classes="row-title" Text="{l:T Settings.General.ShowPanel}" />
+                                        <TextBlock Classes="row-description" Text="{l:T Settings.General.ShowPanelDescription}" />
+                                    </StackPanel>
+                                </DockPanel>
+                            </Border>
+                        </StackPanel>
+                    </Border>
+
+                    <StackPanel Name="SystemSection">
+                        <TextBlock Classes="card-header" Text="{l:T Settings.General.SystemHeader}" />
+                        <Border Classes="card">
+                            <Border Classes="row last">
+                                <DockPanel>
+                                    <ToggleSwitch Name="StartupCheck" DockPanel.Dock="Right" />
+                                    <StackPanel>
+                                        <TextBlock Classes="row-title" Text="{l:T Settings.General.StartWithSession}" />
+                                        <TextBlock Classes="row-description" Text="{l:T Settings.General.StartWithWindowsDescription}" />
+                                    </StackPanel>
+                                </DockPanel>
+                            </Border>
+                        </Border>
+                    </StackPanel>
+                </StackPanel>
+
+                <!-- Capture -->
+                <StackPanel Name="PageCapture" IsVisible="False">
+                    <TextBlock Classes="page-title" Text="{l:T Settings.Nav.Capture}" />
+                    <TextBlock Classes="page-subtitle" Text="{l:T Settings.Capture.Subtitle}" />
+                    <Border Classes="card">
+                        <StackPanel>
+                            <Border Classes="row">
+                                <DockPanel>
+                                    <ToggleSwitch Name="CursorCheck" DockPanel.Dock="Right" />
+                                    <StackPanel>
+                                        <TextBlock Classes="row-title" Text="{l:T Settings.Capture.IncludeCursor}" />
+                                        <TextBlock Classes="row-description" Text="{l:T Settings.Capture.IncludeCursorDescription}" />
+                                    </StackPanel>
+                                </DockPanel>
+                            </Border>
+                            <Border Classes="row last">
+                                <DockPanel>
+                                    <ComboBox Name="DelayBox" DockPanel.Dock="Right"
+                                              DisplayMemberBinding="{Binding Label, x:DataType=l:ChoiceItem}" />
+                                    <StackPanel>
+                                        <TextBlock Classes="row-title" Text="{l:T Settings.Capture.Delay}" />
+                                        <TextBlock Classes="row-description" Text="{l:T Settings.Capture.DelayDescription}" />
+                                    </StackPanel>
+                                </DockPanel>
+                            </Border>
+                        </StackPanel>
+                    </Border>
+                    <Border Classes="card" Background="{DynamicResource SurfaceBrush}">
+                        <StackPanel Margin="18,13">
+                            <TextBlock Classes="row-title" Text="{l:T Settings.Capture.SelectionHelpTitle}" FontWeight="SemiBold" />
+                            <TextBlock Name="SelectionHelpText" Classes="row-description" Margin="0,6,0,0" Text="{l:T Settings.Capture.SelectionHelp}" />
+                        </StackPanel>
+                    </Border>
+                </StackPanel>
+
+                <!-- Video -->
+                <StackPanel Name="PageVideo" IsVisible="False">
+                    <TextBlock Classes="page-title" Text="{l:T Settings.Nav.Video}" />
+                    <TextBlock Classes="page-subtitle" Text="{l:T Settings.Video.Subtitle}" />
+                    <TextBlock Classes="card-header" Text="{l:T Settings.Video.SoundHeader}" />
+                    <Border Classes="card">
+                        <StackPanel>
+                            <Border Classes="row">
+                                <DockPanel>
+                                    <ToggleSwitch Name="SystemAudioCheck" DockPanel.Dock="Right" />
+                                    <StackPanel>
+                                        <TextBlock Classes="row-title" Text="{l:T Settings.Video.SystemAudio}" />
+                                        <TextBlock Classes="row-description" Text="{l:T Settings.Video.SystemAudioDescription}" />
+                                    </StackPanel>
+                                </DockPanel>
+                            </Border>
+                            <Border Classes="row last">
+                                <DockPanel>
+                                    <ToggleSwitch Name="MicrophoneCheck" DockPanel.Dock="Right" />
+                                    <StackPanel>
+                                        <TextBlock Classes="row-title" Text="{l:T Settings.Video.Microphone}" />
+                                        <TextBlock Classes="row-description" Text="{l:T Settings.Video.MicrophoneDescription}" />
+                                    </StackPanel>
+                                </DockPanel>
+                            </Border>
+                        </StackPanel>
+                    </Border>
+                    <TextBlock Classes="card-header" Text="{l:T Settings.Video.ImageHeader}" />
+                    <Border Classes="card">
+                        <StackPanel>
+                            <Border Classes="row">
+                                <DockPanel Name="ClicksRow" Classes="dimmable">
+                                    <ToggleSwitch Name="ClicksCheck" DockPanel.Dock="Right" />
+                                    <StackPanel>
+                                        <TextBlock Classes="row-title" Text="{l:T Settings.Video.ShowClicks}" />
+                                        <TextBlock Name="ClicksDescription" Classes="row-description" Text="{l:T Settings.Video.ShowClicksDescription}" />
+                                    </StackPanel>
+                                </DockPanel>
+                            </Border>
+                            <Border Classes="row last">
+                                <DockPanel>
+                                    <ComboBox Name="FramerateBox" DockPanel.Dock="Right"
+                                              DisplayMemberBinding="{Binding Label, x:DataType=l:ChoiceItem}" />
+                                    <StackPanel>
+                                        <TextBlock Classes="row-title" Text="{l:T Settings.Video.Framerate}" />
+                                        <TextBlock Classes="row-description" Text="{l:T Settings.Video.FramerateDescription}" />
+                                    </StackPanel>
+                                </DockPanel>
+                            </Border>
+                        </StackPanel>
+                    </Border>
+                    <TextBlock Classes="card-header" Text="{l:T Settings.Video.WebcamHeader}" />
+                    <Border Classes="card">
+                        <StackPanel>
+                            <Border Classes="row">
+                                <DockPanel>
+                                    <ToggleSwitch Name="WebcamCheck" DockPanel.Dock="Right" />
+                                    <StackPanel>
+                                        <TextBlock Classes="row-title" Text="{l:T Settings.Video.Webcam}" />
+                                        <TextBlock Classes="row-description" Text="{l:T Settings.Video.WebcamDescription}" />
+                                    </StackPanel>
+                                </DockPanel>
+                            </Border>
+                            <!-- Webcam options: only meaningful when the webcam is inlaid -->
+                            <StackPanel Name="WebcamOptions" Classes="dimmable">
+                                <Border Classes="row">
+                                    <DockPanel>
+                                        <ComboBox Name="WebcamDeviceBox" DockPanel.Dock="Right" Width="230"
+                                                  DisplayMemberBinding="{Binding Label, x:DataType=l:ChoiceItem}" />
+                                        <StackPanel>
+                                            <TextBlock Classes="row-title" Text="{l:T Settings.Video.WebcamDevice}" />
+                                            <TextBlock Classes="row-description" Text="{l:T Settings.Video.WebcamDeviceDescription}" />
+                                        </StackPanel>
+                                    </DockPanel>
+                                </Border>
+                                <Border Classes="row">
+                                    <DockPanel>
+                                        <ComboBox Name="WebcamCornerBox" DockPanel.Dock="Right"
+                                                  DisplayMemberBinding="{Binding Label, x:DataType=l:ChoiceItem}" />
+                                        <TextBlock Classes="row-title" Text="{l:T Settings.Video.WebcamCorner}" VerticalAlignment="Center" />
+                                    </DockPanel>
+                                </Border>
+                                <Border Classes="row last">
+                                    <DockPanel>
+                                        <ComboBox Name="WebcamSizeBox" DockPanel.Dock="Right"
+                                                  DisplayMemberBinding="{Binding Label, x:DataType=l:ChoiceItem}" />
+                                        <StackPanel>
+                                            <TextBlock Classes="row-title" Text="{l:T Settings.Video.WebcamSize}" />
+                                            <TextBlock Classes="row-description" Text="{l:T Settings.Video.WebcamSizeDescription}" />
+                                        </StackPanel>
+                                    </DockPanel>
+                                </Border>
+                            </StackPanel>
+                        </StackPanel>
+                    </Border>
+                </StackPanel>
+
+                <!-- Hotkeys -->
+                <StackPanel Name="PageHotkeys" IsVisible="False">
+                    <TextBlock Classes="page-title" Text="{l:T Settings.Nav.Hotkeys}" />
+                    <TextBlock Classes="page-subtitle" Text="{l:T Settings.Hotkeys.SubtitleSystem}" />
+                    <!-- No global shortcuts on this desktop (some Wayland compositors): bind a system shortcut instead -->
+                    <Border Name="HotkeysUnsupported" IsVisible="False" Background="{DynamicResource WarningBrush}" BorderBrush="{DynamicResource WarningBorderBrush}"
+                            BorderThickness="1" CornerRadius="8" Padding="16,12" Margin="0,0,0,14">
+                        <StackPanel>
+                            <TextBlock FontWeight="SemiBold" Text="{l:T Settings.Hotkeys.UnsupportedTitle}" TextWrapping="Wrap" />
+                            <TextBlock TextWrapping="Wrap" Margin="0,4,0,0" Text="{l:T Settings.Hotkeys.UnsupportedText}" />
+                            <SelectableTextBlock Margin="0,8,0,0" FontFamily="monospace" TextWrapping="Wrap" FlowDirection="LeftToRight"
+                                                 Text="snaplume --capture region&#10;snaplume --capture screen&#10;snaplume --record region" />
+                        </StackPanel>
+                    </Border>
+                    <Border Name="SnippingWarning" IsVisible="False" Background="{DynamicResource WarningBrush}" BorderBrush="{DynamicResource WarningBorderBrush}"
+                            BorderThickness="1" CornerRadius="8" Padding="16,12" Margin="0,0,0,14">
+                        <StackPanel>
+                            <TextBlock FontWeight="SemiBold" Text="{l:T Settings.Hotkeys.PrintScreenWarningTitle}" TextWrapping="Wrap" />
+                            <TextBlock TextWrapping="Wrap" Margin="0,4,0,0" Text="{l:T Settings.Hotkeys.PrintScreenWarningText}" />
+                            <Button Name="KeyboardSettingsButton" Content="{l:T Settings.Hotkeys.OpenKeyboardSettings}" HorizontalAlignment="Left" Margin="0,8,0,0"
+                                    Classes="flat outlined" BorderBrush="{DynamicResource WarningBorderBrush}" Click="OnOpenKeyboardSettings" />
+                        </StackPanel>
+                    </Border>
+                    <Border Name="HotkeysCard" Classes="card">
+                        <StackPanel>
+                            <Border Classes="row">
+                                <DockPanel>
+                                    <local:HotkeyBox Name="RegionHotkey" DockPanel.Dock="Right" />
+                                    <TextBlock Name="RegionHotkeyLabel" Classes="row-title" Text="{l:T Settings.Hotkeys.Region}" VerticalAlignment="Center" />
+                                </DockPanel>
+                            </Border>
+                            <Border Classes="row">
+                                <DockPanel>
+                                    <local:HotkeyBox Name="ScreenHotkey" DockPanel.Dock="Right" />
+                                    <TextBlock Classes="row-title" Text="{l:T Settings.Hotkeys.Screen}" VerticalAlignment="Center" />
+                                </DockPanel>
+                            </Border>
+                            <Border Name="WindowHotkeyRow" Classes="row">
+                                <DockPanel>
+                                    <local:HotkeyBox Name="WindowHotkey" DockPanel.Dock="Right" />
+                                    <TextBlock Classes="row-title" Text="{l:T Settings.Hotkeys.Window}" VerticalAlignment="Center" />
+                                </DockPanel>
+                            </Border>
+                            <Border Classes="row">
+                                <DockPanel>
+                                    <local:HotkeyBox Name="RepeatHotkey" DockPanel.Dock="Right" />
+                                    <TextBlock Classes="row-title" Text="{l:T Settings.Hotkeys.Repeat}" VerticalAlignment="Center" />
+                                </DockPanel>
+                            </Border>
+                            <Border Classes="row">
+                                <DockPanel>
+                                    <local:HotkeyBox Name="DelayedHotkey" DockPanel.Dock="Right" />
+                                    <TextBlock Classes="row-title" Text="{l:T Settings.Hotkeys.Delayed}" VerticalAlignment="Center" />
+                                </DockPanel>
+                            </Border>
+                            <Border Classes="row">
+                                <DockPanel>
+                                    <local:HotkeyBox Name="VideoHotkey" DockPanel.Dock="Right" />
+                                    <TextBlock Classes="row-title" Text="{l:T Settings.Hotkeys.Video}" VerticalAlignment="Center" />
+                                </DockPanel>
+                            </Border>
+                            <Border Classes="row last">
+                                <DockPanel>
+                                    <local:HotkeyBox Name="TextHotkey" DockPanel.Dock="Right" />
+                                    <TextBlock Classes="row-title" Text="{l:T Ocr.CaptureText}" VerticalAlignment="Center" />
+                                </DockPanel>
+                            </Border>
+                        </StackPanel>
+                    </Border>
+                </StackPanel>
+
+                <!-- About -->
+                <StackPanel Name="PageAbout" IsVisible="False">
+                    <TextBlock Classes="page-title" Text="{l:T Settings.Nav.About}" />
+                    <Border Classes="card" Margin="0,10,0,14">
+                        <StackPanel Margin="18,16">
+                            <StackPanel Orientation="Horizontal">
+                                <Image Source="{StaticResource LogoImage}" Width="56" Height="56" />
+                                <StackPanel Margin="14,0,0,0" VerticalAlignment="Center">
+                                    <TextBlock Text="Snaplume" FontSize="18" FontWeight="SemiBold" />
+                                    <TextBlock Name="VersionText" Foreground="{DynamicResource MutedTextBrush}" />
+                                </StackPanel>
+                            </StackPanel>
+                            <TextBlock TextWrapping="Wrap" Margin="0,14,0,0" Text="{l:T Settings.About.Description}" />
+                            <WrapPanel Margin="0,14,0,0">
+                                <Button Content="{l:T Settings.About.SettingsFolder}" Classes="flat outlined" Margin="0,0,8,0" Click="OnOpenSettingsFolder" />
+                                <Button Content="{l:T Settings.About.ErrorLog}" Classes="flat outlined" Click="OnOpenErrorLog" />
+                            </WrapPanel>
+                        </StackPanel>
+                    </Border>
+
+                    <TextBlock Classes="card-header" Text="{l:T Update.Header}" />
+                    <Border Classes="card">
+                        <StackPanel>
+                            <Border Classes="row">
+                                <DockPanel>
+                                    <Button Name="CheckUpdateButton" DockPanel.Dock="Right" VerticalAlignment="Center" Content="{l:T Update.CheckNow}"
+                                            Classes="flat outlined" Click="OnCheckUpdates" />
+                                    <StackPanel>
+                                        <TextBlock Classes="row-title" Text="{l:T Update.Title}" />
+                                        <TextBlock Name="UpdateStatus" Classes="row-description" Text="{l:T Update.NotChecked}" />
+                                        <Button Name="OpenUpdateButton" IsVisible="False" HorizontalAlignment="Left" Margin="0,8,0,0"
+                                                Content="{l:T Update.Open}" Classes="accent" Padding="12,4" Click="OnOpenUpdate" />
+                                    </StackPanel>
+                                </DockPanel>
+                            </Border>
+                            <Border Classes="row last">
+                                <DockPanel>
+                                    <ToggleSwitch Name="AutoUpdateCheck" DockPanel.Dock="Right" />
+                                    <StackPanel>
+                                        <TextBlock Classes="row-title" Text="{l:T Update.Auto}" />
+                                        <TextBlock Classes="row-description" Text="{l:T Update.AutoDescription}" />
+                                    </StackPanel>
+                                </DockPanel>
+                            </Border>
+                        </StackPanel>
+                    </Border>
+                </StackPanel>
+            </Panel>
+        </ScrollViewer>
+    </DockPanel>
+</Window>

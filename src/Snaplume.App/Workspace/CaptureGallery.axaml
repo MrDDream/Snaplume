@@ -1,0 +1,95 @@
+<!-- Colors come from the "Gallery*" theme brushes; sizes from the "Gallery*" resources, smaller in the quick panel. -->
+<UserControl xmlns="https://github.com/avaloniaui"
+             xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+             xmlns:l="using:Snaplume.Ui"
+             xmlns:local="using:Snaplume.Workspace"
+             x:Class="Snaplume.Workspace.CaptureGallery">
+    <UserControl.Styles>
+        <Style Selector="ListBox#CaptureList ListBoxItem">
+            <Setter Property="Margin" Value="4" />
+            <Setter Property="Padding" Value="0" />
+            <Setter Property="CornerRadius" Value="8" />
+            <Setter Property="Background" Value="Transparent" />
+            <Setter Property="BorderBrush" Value="Transparent" />
+            <Setter Property="BorderThickness" Value="2" />
+        </Style>
+        <Style Selector="ListBox#CaptureList ListBoxItem:pointerover /template/ ContentPresenter#PART_ContentPresenter">
+            <Setter Property="Background" Value="{DynamicResource GalleryHoverBrush}" />
+            <Setter Property="BorderBrush" Value="Transparent" />
+        </Style>
+        <Style Selector="ListBox#CaptureList ListBoxItem:selected /template/ ContentPresenter#PART_ContentPresenter">
+            <Setter Property="Background" Value="{DynamicResource GallerySelectedBrush}" />
+            <Setter Property="BorderBrush" Value="{DynamicResource GallerySelectedBorderBrush}" />
+        </Style>
+    </UserControl.Styles>
+
+    <Grid>
+        <ListBox Name="CaptureList" SelectionMode="Multiple" BorderThickness="0" Padding="6"
+                 Background="{DynamicResource GalleryBackgroundBrush}"
+                 ScrollViewer.HorizontalScrollBarVisibility="Disabled"
+                 DragDrop.AllowDrop="True">
+            <ListBox.ItemsPanel>
+                <ItemsPanelTemplate>
+                    <WrapPanel />
+                </ItemsPanelTemplate>
+            </ListBox.ItemsPanel>
+            <ListBox.ItemTemplate>
+                <DataTemplate x:DataType="local:CaptureItem">
+                    <StackPanel Width="{DynamicResource GalleryItemWidth}" Margin="8">
+                        <Border Height="{DynamicResource GalleryThumbnailHeight}" Background="{DynamicResource GalleryThumbnailBrush}"
+                                BorderBrush="{DynamicResource GalleryThumbnailBorderBrush}" BorderThickness="1" CornerRadius="4">
+                            <!-- Screenshots are never mirrored, even right-to-left -->
+                            <Grid FlowDirection="LeftToRight">
+                                <Image Source="{Binding Thumbnail}" Stretch="Uniform" Margin="2" RenderOptions.BitmapInterpolationMode="HighQuality" />
+                                <!-- Play badge on videos -->
+                                <Border IsVisible="{Binding IsVideo}" Width="34" Height="34" CornerRadius="17"
+                                        Background="{DynamicResource GalleryBadgeBrush}"
+                                        HorizontalAlignment="Center" VerticalAlignment="Center">
+                                    <Path Data="M13,10 L25,17 L13,24 Z" Fill="{DynamicResource GalleryBadgeIconBrush}" Width="34" Height="34" Stretch="None" />
+                                </Border>
+                            </Grid>
+                        </Border>
+                        <TextBlock Text="{Binding Name}" TextTrimming="CharacterEllipsis" Margin="0,6,0,0" FontWeight="SemiBold"
+                                   TextAlignment="{DynamicResource GalleryTextAlignment}"
+                                   Foreground="{DynamicResource GalleryTextBrush}" ToolTip.Tip="{Binding Path}" />
+                        <TextBlock Text="{Binding Details}" FontSize="11" TextTrimming="CharacterEllipsis"
+                                   TextAlignment="{DynamicResource GalleryTextAlignment}"
+                                   Foreground="{DynamicResource GalleryMutedTextBrush}" />
+                    </StackPanel>
+                </DataTemplate>
+            </ListBox.ItemTemplate>
+            <ListBox.ContextMenu>
+                <ContextMenu Name="ItemMenu">
+                    <MenuItem Classes="bold" Header="{l:T Gallery.Menu.Edit}" Click="OnEdit" InputGesture="Enter" />
+                    <MenuItem Header="{l:T Gallery.Menu.Copy}" Click="OnCopy" InputGesture="Ctrl+C" />
+                    <MenuItem Header="{l:T Gallery.Menu.CopyPath}" Click="OnCopyPath" />
+                    <MenuItem Name="ReadTextMenu" Header="{l:T Ocr.ReadText}" Click="OnReadText" />
+                    <MenuItem Name="ReadQrMenu" Header="{l:T Gallery.Menu.ReadQr}" Click="OnReadQr" />
+                    <Separator />
+                    <!-- Sharing: images only for documents and printing, videos too for e-mail -->
+                    <MenuItem Name="CreateDocumentMenu" Header="{l:T Gallery.Menu.CreateDocument}" Click="OnCreateDocument" />
+                    <MenuItem Name="PrintMenu" Header="{l:T Gallery.Menu.Print}" Click="OnPrint" InputGesture="Ctrl+P" />
+                    <MenuItem Name="EmailMenu" Header="{l:T Gallery.Menu.Email}" Click="OnEmail" />
+                    <Separator />
+                    <MenuItem Header="{l:T Gallery.Menu.OpenDefault}" Click="OnOpenDefault" />
+                    <MenuItem Header="{l:T Gallery.Menu.ShowInFolder}" Click="OnShowInFolder" />
+                    <Separator />
+                    <!-- Filled with the other workspaces when the menu opens -->
+                    <MenuItem Name="MoveToMenu" Header="{l:T Gallery.Menu.MoveTo}" />
+                    <MenuItem Header="{l:T Gallery.Menu.Rename}" Click="OnRename" InputGesture="F2" />
+                    <MenuItem Header="{l:T Gallery.Menu.Delete}" Click="OnDelete" InputGesture="Delete" />
+                </ContextMenu>
+            </ListBox.ContextMenu>
+        </ListBox>
+
+        <StackPanel Name="EmptyHint" VerticalAlignment="Center" HorizontalAlignment="Center" IsHitTestVisible="False" Margin="16"
+                    IsVisible="False">
+            <Path Classes="icon" Data="{StaticResource IconRegion}" Stroke="{DynamicResource GalleryMutedTextBrush}" HorizontalAlignment="Center"
+                  Width="60" Height="60" RenderTransform="scale(2.5)" />
+            <TextBlock Name="EmptyTitle" Text="{l:T Gallery.Empty}" FontSize="16" FontWeight="SemiBold" Foreground="{DynamicResource GalleryTextBrush}"
+                       HorizontalAlignment="Center" TextAlignment="Center" Margin="0,10,0,4" />
+            <TextBlock Name="EmptyHintText" Foreground="{DynamicResource GalleryMutedTextBrush}" HorizontalAlignment="Center"
+                       TextAlignment="Center" TextWrapping="Wrap" />
+        </StackPanel>
+    </Grid>
+</UserControl>

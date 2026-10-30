@@ -1,0 +1,65 @@
+<!-- QR codes and barcodes read in an image. -->
+<Window xmlns="https://github.com/avaloniaui"
+        xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+        xmlns:l="using:Snaplume.Ui"
+        xmlns:local="using:Snaplume.Qr"
+        x:Class="Snaplume.Qr.QrWindow"
+        Title="{l:T Qr.Title}" Width="560" Height="420" MinWidth="360" MinHeight="240"
+        Icon="/Assets/app.ico"
+        WindowStartupLocation="CenterScreen" UseLayoutRounding="True">
+    <DockPanel>
+        <Border DockPanel.Dock="Top" Classes="toolbar" Padding="12,8">
+            <DockPanel>
+                <Path Classes="icon" Data="{StaticResource IconQr}" />
+                <TextBlock Name="StatusText" Margin="8,0,0,0" VerticalAlignment="Center" Foreground="{DynamicResource MutedTextBrush}"
+                           TextTrimming="CharacterEllipsis" />
+            </DockPanel>
+        </Border>
+
+        <Border DockPanel.Dock="Bottom" BorderBrush="{DynamicResource LineBrush}" BorderThickness="0,1,0,0" Padding="12,10">
+            <Button Classes="flat" Click="OnClose" HorizontalAlignment="Right" IsCancel="True">
+                <TextBlock Classes="button-label" Text="{l:T Qr.Close}" Foreground="{DynamicResource TextBrush}" />
+            </Button>
+        </Border>
+
+        <Grid>
+            <ScrollViewer VerticalScrollBarVisibility="Auto" HorizontalScrollBarVisibility="Disabled" Padding="12,10">
+                <ItemsControl Name="CodeList">
+                    <ItemsControl.ItemTemplate>
+                        <DataTemplate x:DataType="local:QrItem">
+                            <Border Background="{DynamicResource CardBrush}" BorderBrush="{DynamicResource CardBorderBrush}" BorderThickness="1"
+                                    CornerRadius="8" Padding="12,10" Margin="0,0,0,10">
+                                <DockPanel>
+                                    <DockPanel DockPanel.Dock="Top" Margin="0,0,0,6">
+                                        <StackPanel DockPanel.Dock="Right" Orientation="Horizontal">
+                                            <Button Classes="flat" Click="OnOpenLink" IsVisible="{Binding HasLink}"
+                                                    ToolTip.Tip="{l:T Qr.OpenLinkTip}">
+                                                <StackPanel Orientation="Horizontal">
+                                                    <Path Classes="icon" Data="{StaticResource IconExport}" />
+                                                    <TextBlock Classes="button-label" Text="{l:T Qr.OpenLink}" />
+                                                </StackPanel>
+                                            </Button>
+                                            <Button Classes="flat" Click="OnCopy" ToolTip.Tip="{l:T Qr.CopyTip}">
+                                                <StackPanel Orientation="Horizontal">
+                                                    <Path Classes="icon" Data="{StaticResource IconCopy}" />
+                                                    <TextBlock Classes="button-label" Text="{l:T Qr.Copy}" />
+                                                </StackPanel>
+                                            </Button>
+                                        </StackPanel>
+                                        <TextBlock Text="{Binding Format}" FontWeight="SemiBold" Foreground="{DynamicResource MutedTextBrush}"
+                                                   VerticalAlignment="Center" />
+                                    </DockPanel>
+                                    <!-- The decoded data: read-only but selectable; left to right even in Arabic (URLs, numbers) -->
+                                    <TextBox Text="{Binding Text, Mode=OneWay}" IsReadOnly="True" TextWrapping="Wrap" MaxHeight="160"
+                                             FontSize="13.5" FlowDirection="LeftToRight" />
+                                </DockPanel>
+                            </Border>
+                        </DataTemplate>
+                    </ItemsControl.ItemTemplate>
+                </ItemsControl>
+            </ScrollViewer>
+            <TextBlock Name="MessageText" Margin="24" TextWrapping="Wrap" VerticalAlignment="Center" HorizontalAlignment="Center"
+                       TextAlignment="Center" Foreground="{DynamicResource MutedTextBrush}" FontSize="13.5" IsHitTestVisible="False" />
+        </Grid>
+    </DockPanel>
+</Window>

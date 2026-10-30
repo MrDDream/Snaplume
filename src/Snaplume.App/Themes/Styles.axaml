@@ -1,0 +1,318 @@
+<!--
+  Snaplume styles, applied over the Fluent theme. Colors come from Colors.axaml (DynamicResource, light / dark).
+
+  Style classes shared by every window (former WPF style keys in parentheses):
+    Button.flat (FlatButton)            Button.accent (AccentButton)        Path.icon (Icon)
+    TextBlock.button-label (ButtonLabel) Border.toolbar (Toolbar)           Rectangle.toolbar-separator (ToolbarSeparator)
+    RadioButton.rail (RailToggle)       Rectangle.rail-separator (RailSeparator)
+    Button.swatch (SwatchButton)        ToggleButton.tool (ToolToggle)      Border.status-bar (StatusBar)
+    TextBlock.property-label (PropertyLabel)
+    Border.card (Card)                  Border.row / Border.row.last (Row / LastRow)
+    TextBlock.row-title, .row-description, .page-title, .page-subtitle, .card-header
+  The WPF "Switch" check box is a ToggleSwitch: every ToggleSwitch is drawn as a bare switch (no On / Off text).
+
+  States are styled on the Fluent template parts (/template/ ContentPresenter#PART_ContentPresenter): styles take
+  precedence over the control themes, so these win over Fluent's own pointer-over and pressed colors.
+-->
+<Styles xmlns="https://github.com/avaloniaui"
+        xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml">
+
+    <!-- Windows: theme colors, and the 12 px text the layouts were designed for (as in the WPF version) -->
+    <Style Selector=":is(Window)">
+        <Setter Property="Background" Value="{DynamicResource WindowBrush}" />
+        <Setter Property="Foreground" Value="{DynamicResource TextBrush}" />
+        <Setter Property="FontSize" Value="12" />
+    </Style>
+
+    <!-- ===== Icons: line icons drawn on a 24x24 grid (Icons.axaml), shown at 80 % ===== -->
+    <Style Selector="Path.icon">
+        <Setter Property="Width" Value="19.2" />
+        <Setter Property="Height" Value="19.2" />
+        <Setter Property="Stretch" Value="None" />
+        <Setter Property="Stroke" Value="{DynamicResource IconBrush}" />
+        <Setter Property="StrokeThickness" Value="1.7" />
+        <Setter Property="StrokeJoin" Value="Round" />
+        <Setter Property="StrokeLineCap" Value="Round" />
+        <Setter Property="VerticalAlignment" Value="Center" />
+        <!-- Scaled from the top-left corner so that the 24x24 grid fills the 19.2x19.2 box (WPF LayoutTransform) -->
+        <Setter Property="RenderTransformOrigin" Value="0%,0%" />
+        <Setter Property="RenderTransform" Value="scale(0.8)" />
+    </Style>
+
+    <Style Selector="TextBlock.button-label">
+        <Setter Property="Margin" Value="5,0,2,0" />
+        <Setter Property="VerticalAlignment" Value="Center" />
+    </Style>
+
+    <Style Selector="TextBlock.property-label">
+        <Setter Property="VerticalAlignment" Value="Center" />
+        <Setter Property="Margin" Value="0,0,6,0" />
+        <Setter Property="Foreground" Value="{DynamicResource MutedTextBrush}" />
+    </Style>
+
+    <!-- ===== Flat button: transparent, highlighted under the mouse (toolbars) ===== -->
+    <Style Selector=":is(Button).flat">
+        <Setter Property="Background" Value="Transparent" />
+        <Setter Property="BorderBrush" Value="Transparent" />
+        <Setter Property="BorderThickness" Value="1" />
+        <Setter Property="Padding" Value="6,4" />
+        <Setter Property="Margin" Value="1" />
+        <Setter Property="MinHeight" Value="0" />
+        <Setter Property="CornerRadius" Value="5" />
+        <Setter Property="Focusable" Value="False" />
+        <Setter Property="Foreground" Value="{DynamicResource IconBrush}" />
+        <Setter Property="HorizontalContentAlignment" Value="Center" />
+        <Setter Property="VerticalContentAlignment" Value="Center" />
+    </Style>
+    <Style Selector=":is(Button).flat:pointerover /template/ ContentPresenter#PART_ContentPresenter">
+        <Setter Property="Background" Value="{DynamicResource HoverBrush}" />
+        <Setter Property="BorderBrush" Value="{Binding $parent[Button].BorderBrush}" />
+        <Setter Property="Foreground" Value="{DynamicResource IconBrush}" />
+    </Style>
+    <Style Selector=":is(Button).flat:pressed /template/ ContentPresenter#PART_ContentPresenter">
+        <Setter Property="Background" Value="{DynamicResource PressedBrush}" />
+    </Style>
+    <Style Selector=":is(Button).flat:disabled">
+        <Setter Property="Opacity" Value="0.4" />
+    </Style>
+    <Style Selector=":is(Button).flat:disabled /template/ ContentPresenter#PART_ContentPresenter">
+        <Setter Property="Background" Value="Transparent" />
+        <Setter Property="BorderBrush" Value="{Binding $parent[Button].BorderBrush}" />
+        <Setter Property="Foreground" Value="{DynamicResource IconBrush}" />
+    </Style>
+
+    <!-- ===== Accent button: the primary action (Save...). Fluent's "accent" class, in the Snaplume violet ===== -->
+    <Style Selector="Button.accent">
+        <Setter Property="Padding" Value="10,5" />
+        <Setter Property="CornerRadius" Value="5" />
+    </Style>
+
+    <!-- ===== Tool toggle: editor tools, checked with the accent outline ===== -->
+    <Style Selector="ToggleButton.tool">
+        <Setter Property="Background" Value="Transparent" />
+        <Setter Property="BorderBrush" Value="Transparent" />
+        <Setter Property="BorderThickness" Value="1" />
+        <Setter Property="Padding" Value="5,4" />
+        <Setter Property="Margin" Value="1" />
+        <Setter Property="MinHeight" Value="0" />
+        <Setter Property="CornerRadius" Value="5" />
+        <Setter Property="Focusable" Value="False" />
+        <Setter Property="Foreground" Value="{DynamicResource IconBrush}" />
+        <Setter Property="HorizontalContentAlignment" Value="Center" />
+        <Setter Property="VerticalContentAlignment" Value="Center" />
+    </Style>
+    <Style Selector="ToggleButton.tool:pointerover /template/ ContentPresenter#PART_ContentPresenter">
+        <Setter Property="Background" Value="{DynamicResource HoverBrush}" />
+        <Setter Property="BorderBrush" Value="Transparent" />
+        <Setter Property="Foreground" Value="{DynamicResource IconBrush}" />
+    </Style>
+    <Style Selector="ToggleButton.tool:pressed /template/ ContentPresenter#PART_ContentPresenter">
+        <Setter Property="Background" Value="{DynamicResource PressedBrush}" />
+    </Style>
+    <Style Selector="ToggleButton.tool:checked /template/ ContentPresenter#PART_ContentPresenter">
+        <Setter Property="Background" Value="{DynamicResource CheckedBrush}" />
+        <Setter Property="BorderBrush" Value="{DynamicResource AccentBrush}" />
+        <Setter Property="Foreground" Value="{DynamicResource IconBrush}" />
+    </Style>
+    <Style Selector="ToggleButton.tool:disabled">
+        <Setter Property="Opacity" Value="0.4" />
+    </Style>
+    <Style Selector="ToggleButton.tool:disabled /template/ ContentPresenter#PART_ContentPresenter">
+        <Setter Property="Background" Value="Transparent" />
+        <Setter Property="Foreground" Value="{DynamicResource IconBrush}" />
+    </Style>
+
+    <!-- ===== Rail toggle: vertical tool rail of the editor (radio buttons drawn as tool toggles) ===== -->
+    <Style Selector="RadioButton.rail">
+        <Setter Property="Width" Value="42" />
+        <Setter Property="Height" Value="40" />
+        <Setter Property="Margin" Value="0,1" />
+        <Setter Property="Padding" Value="0" />
+        <Setter Property="Background" Value="Transparent" />
+        <Setter Property="BorderBrush" Value="Transparent" />
+        <Setter Property="BorderThickness" Value="1" />
+        <Setter Property="CornerRadius" Value="5" />
+        <Setter Property="Focusable" Value="False" />
+        <Setter Property="Foreground" Value="{DynamicResource IconBrush}" />
+        <Setter Property="HorizontalContentAlignment" Value="Center" />
+        <Setter Property="VerticalContentAlignment" Value="Center" />
+        <Setter Property="Template">
+            <ControlTemplate>
+                <ContentPresenter Name="PART_ContentPresenter"
+                                  Background="{TemplateBinding Background}"
+                                  BorderBrush="{TemplateBinding BorderBrush}"
+                                  BorderThickness="{TemplateBinding BorderThickness}"
+                                  CornerRadius="{TemplateBinding CornerRadius}"
+                                  Padding="{TemplateBinding Padding}"
+                                  Content="{TemplateBinding Content}"
+                                  ContentTemplate="{TemplateBinding ContentTemplate}"
+                                  Foreground="{TemplateBinding Foreground}"
+                                  HorizontalContentAlignment="{TemplateBinding HorizontalContentAlignment}"
+                                  VerticalContentAlignment="{TemplateBinding VerticalContentAlignment}" />
+            </ControlTemplate>
+        </Setter>
+    </Style>
+    <Style Selector="RadioButton.rail:pointerover /template/ ContentPresenter#PART_ContentPresenter">
+        <Setter Property="Background" Value="{DynamicResource HoverBrush}" />
+    </Style>
+    <Style Selector="RadioButton.rail:checked /template/ ContentPresenter#PART_ContentPresenter">
+        <Setter Property="Background" Value="{DynamicResource CheckedBrush}" />
+        <Setter Property="BorderBrush" Value="{DynamicResource AccentBrush}" />
+    </Style>
+    <Style Selector="RadioButton.rail:disabled">
+        <Setter Property="Opacity" Value="0.4" />
+    </Style>
+
+    <Style Selector="Rectangle.rail-separator">
+        <Setter Property="Height" Value="1" />
+        <Setter Property="Margin" Value="8,5" />
+        <Setter Property="Fill" Value="{DynamicResource LineBrush}" />
+    </Style>
+
+    <!-- ===== Color swatch: the Background is the color; outlined, thicker under the mouse ===== -->
+    <Style Selector="Button.swatch">
+        <Setter Property="Width" Value="20" />
+        <Setter Property="Height" Value="20" />
+        <Setter Property="MinWidth" Value="0" />
+        <Setter Property="MinHeight" Value="0" />
+        <Setter Property="Margin" Value="2,0" />
+        <Setter Property="Padding" Value="0" />
+        <Setter Property="Focusable" Value="False" />
+        <Setter Property="BorderBrush" Value="{DynamicResource SwatchOutlineBrush}" />
+        <Setter Property="BorderThickness" Value="1" />
+        <Setter Property="CornerRadius" Value="4" />
+        <Setter Property="Template">
+            <ControlTemplate>
+                <Border Name="Bd" Background="{TemplateBinding Background}" BorderBrush="{TemplateBinding BorderBrush}"
+                        BorderThickness="{TemplateBinding BorderThickness}" CornerRadius="{TemplateBinding CornerRadius}" />
+            </ControlTemplate>
+        </Setter>
+    </Style>
+    <Style Selector="Button.swatch:pointerover /template/ Border#Bd">
+        <Setter Property="BorderBrush" Value="{DynamicResource TextBrush}" />
+        <Setter Property="BorderThickness" Value="2" />
+    </Style>
+
+    <!-- ===== Toolbars and status bars ===== -->
+    <Style Selector="Rectangle.toolbar-separator">
+        <Setter Property="Width" Value="1" />
+        <Setter Property="Margin" Value="6,4" />
+        <Setter Property="Fill" Value="{DynamicResource LineBrush}" />
+    </Style>
+
+    <Style Selector="Border.toolbar">
+        <Setter Property="Background" Value="{DynamicResource ToolbarBrush}" />
+        <Setter Property="BorderBrush" Value="{DynamicResource LineBrush}" />
+        <Setter Property="BorderThickness" Value="0,0,0,1" />
+        <Setter Property="Padding" Value="6,4" />
+    </Style>
+
+    <Style Selector="Border.status-bar">
+        <Setter Property="Background" Value="{DynamicResource ToolbarBrush}" />
+        <Setter Property="BorderBrush" Value="{DynamicResource LineBrush}" />
+        <Setter Property="BorderThickness" Value="0,1,0,0" />
+        <Setter Property="Padding" Value="10,4" />
+        <Setter Property="TextElement.Foreground" Value="{DynamicResource MutedTextBrush}" />
+    </Style>
+
+    <!-- ===== Settings-like pages: cards of rows (title + description on one side, control on the other) ===== -->
+    <Style Selector="Border.card">
+        <Setter Property="Background" Value="{DynamicResource CardBrush}" />
+        <Setter Property="BorderBrush" Value="{DynamicResource CardBorderBrush}" />
+        <Setter Property="BorderThickness" Value="1" />
+        <Setter Property="CornerRadius" Value="8" />
+        <Setter Property="Margin" Value="0,0,0,14" />
+    </Style>
+    <Style Selector="Border.row">
+        <Setter Property="Padding" Value="18,13" />
+        <Setter Property="BorderBrush" Value="{DynamicResource RowLineBrush}" />
+        <Setter Property="BorderThickness" Value="0,0,0,1" />
+    </Style>
+    <Style Selector="Border.row.last">
+        <Setter Property="BorderThickness" Value="0" />
+    </Style>
+    <Style Selector="TextBlock.row-title">
+        <Setter Property="FontSize" Value="13.5" />
+        <Setter Property="Foreground" Value="{DynamicResource TextBrush}" />
+        <Setter Property="TextWrapping" Value="Wrap" />
+    </Style>
+    <Style Selector="TextBlock.row-description">
+        <Setter Property="FontSize" Value="12" />
+        <Setter Property="Foreground" Value="{DynamicResource MutedTextBrush}" />
+        <Setter Property="TextWrapping" Value="Wrap" />
+        <Setter Property="Margin" Value="0,2,16,0" />
+    </Style>
+    <Style Selector="TextBlock.page-title">
+        <Setter Property="FontSize" Value="24" />
+        <Setter Property="FontWeight" Value="SemiBold" />
+        <Setter Property="Margin" Value="0,0,0,4" />
+    </Style>
+    <Style Selector="TextBlock.page-subtitle">
+        <Setter Property="Foreground" Value="{DynamicResource MutedTextBrush}" />
+        <Setter Property="Margin" Value="0,0,0,18" />
+        <Setter Property="TextWrapping" Value="Wrap" />
+    </Style>
+    <Style Selector="TextBlock.card-header">
+        <Setter Property="FontWeight" Value="SemiBold" />
+        <Setter Property="Margin" Value="2,4,0,8" />
+    </Style>
+
+    <!-- ===== Standard controls ===== -->
+
+    <!-- Switches (the WPF "Switch" check box): no On / Off text next to them -->
+    <Style Selector="ToggleSwitch">
+        <Setter Property="OnContent" Value="{x:Null}" />
+        <Setter Property="OffContent" Value="{x:Null}" />
+        <Setter Property="MinWidth" Value="0" />
+        <Setter Property="VerticalAlignment" Value="Center" />
+        <Setter Property="Cursor" Value="Hand" />
+    </Style>
+
+    <Style Selector="ComboBox">
+        <Setter Property="MinHeight" Value="28" />
+        <Setter Property="FontSize" Value="12" />
+    </Style>
+    <Style Selector="ComboBoxItem">
+        <Setter Property="FontSize" Value="12" />
+        <Setter Property="CornerRadius" Value="4" />
+    </Style>
+
+    <Style Selector="TextBox">
+        <Setter Property="FontSize" Value="12" />
+        <Setter Property="MinHeight" Value="28" />
+        <Setter Property="SelectionBrush" Value="{DynamicResource AccentBrush}" />
+        <Setter Property="SelectionForegroundBrush" Value="{DynamicResource OnAccentBrush}" />
+    </Style>
+
+    <!-- Standard push buttons (dialogs) -->
+    <Style Selector="Button">
+        <Setter Property="FontSize" Value="12" />
+        <Setter Property="CornerRadius" Value="5" />
+    </Style>
+
+    <!-- Context menus and drop-down menus: rounded popup, theme colors (Colors.axaml) -->
+    <Style Selector="ContextMenu">
+        <Setter Property="CornerRadius" Value="8" />
+        <Setter Property="Padding" Value="4" />
+        <Setter Property="FontSize" Value="12" />
+    </Style>
+    <Style Selector="MenuFlyoutPresenter">
+        <Setter Property="CornerRadius" Value="8" />
+        <Setter Property="Padding" Value="4" />
+        <Setter Property="FontSize" Value="12" />
+    </Style>
+    <Style Selector="MenuItem">
+        <Setter Property="FontSize" Value="12" />
+        <Setter Property="Padding" Value="10,6" />
+    </Style>
+    <Style Selector="MenuItem.bold">
+        <Setter Property="FontWeight" Value="SemiBold" />
+    </Style>
+
+    <Style Selector="ToolTip">
+        <Setter Property="MaxWidth" Value="420" />
+        <Setter Property="CornerRadius" Value="5" />
+        <Setter Property="Padding" Value="8,5" />
+        <Setter Property="FontSize" Value="12" />
+    </Style>
+</Styles>
