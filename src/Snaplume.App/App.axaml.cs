@@ -137,7 +137,7 @@ public partial class App : Application
         if (unavailableFolder != null)
         {
             Tray?.ShowWarning(Loc.T("App.FolderUnavailableTitle"),
-                Loc.T("App.FolderUnavailableText", unavailableFolder, Settings.WorkspaceFolder), ShowSettings);
+                Loc.T("App.FolderUnavailableText", unavailableFolder, Settings.WorkspaceFolder), OnUi(ShowSettings));
         }
 
         instance.Listen(received => Dispatcher.UIThread.Post(() => HandleArgs(CommandLine.Parse(received), startup: false)));
@@ -189,7 +189,7 @@ public partial class App : Application
             {
                 Settings.UpdateNotifiedVersion = release.DisplayVersion;
                 Tray?.ShowInfo(Loc.T("Update.AvailableTitle"), Loc.T("Update.AvailableText", release.DisplayVersion),
-                    () => FileOps.OpenWithDefaultApp(release.Page));
+                    OnUi(() => FileOps.OpenWithDefaultApp(release.Page)));
             }
             Settings.Save();
         }
@@ -381,11 +381,11 @@ public partial class App : Application
         {
             Tray?.ShowWarning(Loc.T("App.HotkeysUnavailableTitle"),
                 Loc.T("App.HotkeysUnavailableText", string.Join(", ", failed)),
-                ShowSettings);
+                OnUi(ShowSettings));
         }
         else if (PrintScreenTakenBySystem() && Settings.HotkeyRegion.Contains("PrintScreen", StringComparison.OrdinalIgnoreCase))
         {
-            Tray?.ShowWarning(Loc.T("App.PrintScreenTakenTitle"), Loc.T("App.PrintScreenTakenText"), ShowSettings);
+            Tray?.ShowWarning(Loc.T("App.PrintScreenTakenTitle"), Loc.T("App.PrintScreenTakenText"), OnUi(ShowSettings));
         }
     }
 

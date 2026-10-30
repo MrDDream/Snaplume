@@ -15,6 +15,11 @@ public partial class App
     /// <summary>Status shown instead of the workspace name (e.g. the timer countdown), or null.</summary>
     private string? _trayStatus;
 
+    /// <summary>
+    /// The action, run on the UI thread: the platform may call tray menu items and notification clicks from its own thread.
+    /// </summary>
+    public static Action OnUi(Action action) => () => Dispatcher.UIThread.Post(action);
+
     private void CreateTray()
     {
         try
@@ -70,41 +75,40 @@ public partial class App
     /// </summary>
     private IReadOnlyList<TrayMenuItem> BuildTrayMenu()
     {
-        static Action Ui(Action action) => () => Dispatcher.UIThread.Post(action);
         void Capture(CaptureKind mode, int delay = 0) => _ = Captures.CaptureAsync(mode, delay, settleMs: 200);
         bool recording = Videos.IsBusy;
 
         var items = new List<TrayMenuItem>
         {
-            new(Loc.T("Tray.MyCaptures"), Ui(ShowQuickPanel), Bold: true),
-            new(Loc.T("Tray.Workspace"), Ui(ShowWorkspace)),
+            new(Loc.T("Tray.MyCaptures"), OnUi(ShowQuickPanel), Bold: true),
+            new(Loc.T("Tray.Workspace"), OnUi(ShowWorkspace)),
             new(Loc.T("Tray.Workspaces"), Children: BuildWorkspacesMenu()),
             TrayMenuItem.Separator,
             new(Loc.T(Platform.Has(PlatformFeatures.WindowDetection) ? "Tray.CaptureRegion" : "Tray.CaptureArea"),
-                Ui(() => Capture(CaptureKind.Region))),
-            new(Loc.T("Tray.CaptureScreen"), Ui(() => Capture(CaptureKind.Screen))),
-            new(Loc.T("Tray.CaptureAllScreens"), Ui(() => Capture(CaptureKind.AllScreens))),
-            new(Loc.T("Tray.RepeatLast"), Ui(() => Capture(CaptureKind.RepeatLast))),
+                OnUi(() => Capture(CaptureKind.Region))),
+            new(Loc.T("Tray.CaptureScreen"), OnUi(() => Capture(CaptureKind.Screen))),
+            new(Loc.T("Tray.CaptureAllScreens"), OnUi(() => Capture(CaptureKind.AllScreens))),
+            new(Loc.T("Tray.RepeatLast"), OnUi(() => Capture(CaptureKind.RepeatLast))),
         };
         if (Platform.Has(PlatformFeatures.ScrollingCapture))
-            items.Add(new(Loc.T("Tray.CaptureScrolling"), Ui(() => Capture(CaptureKind.Scrolling))));
+            items.Add(new(Loc.T("Tray.CaptureScrolling"), OnUi(() => Capture(CaptureKind.Scrolling))));
         items.Add(new(Loc.T("Tray.CaptureDelayed"), Children: new[] { 3, 5, 10 }
-            .Select(seconds => new TrayMenuItem(Loc.T("Common.Seconds", seconds), Ui(() => Capture(CaptureKind.Region, seconds))))
+            .Select(seconds => new TrayMenuItem(Loc.T("Common.Seconds", seconds), OnUi(() => Capture(CaptureKind.Region, seconds))))
             .ToList()));
-        items.Add(new(Loc.T("Ocr.CaptureText"), Ui(() => _ = Captures.CaptureTextAsync(settleMs: 200))));
-        items.Add(new(Loc.T("Tray.ReadQr"), Ui(() => _ = Captures.CaptureQrAsync(settleMs: 200))));
+        items.Add(new(Loc.T("Ocr.CaptureText"), OnUi(() => _ = Captures.CaptureTextAsync(settleMs: 200))));
+        items.Add(new(Loc.T("Tray.ReadQr"), OnUi(() => _ = Captures.CaptureQrAsync(settleMs: 200))));
 
         items.Add(TrayMenuItem.Separator);
         // During a recording the first entry stops it.
-        items.Add(new(Loc.T(recording ? "Tray.StopVideo" : "Tray.RecordVideo"), Ui(() => _ = Videos.ToggleAsync(settleMs: 200))));
+        items.Add(new(Loc.T(recording ? "Tray.StopVideo" : "Tray.RecordVideo"), OnUi(() => _ = Videos.ToggleAsync(settleMs: 200))));
         if (!recording)
-            items.Add(new(Loc.T("Tray.RecordScreenVideo"), Ui(() => _ = Videos.ToggleAsync(fullScreen: true, settleMs: 200))));
+            items.Add(new(Loc.T("Tray.RecordScreenVideo"), OnUi(() => _ = Videos.ToggleAsync(fullScreen: true, settleMs: 200))));
 
         items.Add(TrayMenuItem.Separator);
-        items.Add(new(Loc.T("Tray.OpenFolder"), Ui(OpenActiveFolder)));
-        items.Add(new(Loc.T("Tray.Settings"), Ui(ShowSettings)));
+        items.Add(new(Loc.T("Tray.OpenFolder"), OnUi(OpenActiveFolder)));
+        items.Add(new(Loc.T("Tray.Settings"), OnUi(ShowSettings)));
         items.Add(TrayMenuItem.Separator);
-        items.Add(new(Loc.T("Tray.Quit"), Ui(ExitApp)));
+        items.Add(new(Loc.T("Tray.Quit"), OnUi(ExitApp)));
         return items;
     }
 
