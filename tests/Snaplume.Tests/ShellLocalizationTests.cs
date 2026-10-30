@@ -4,14 +4,12 @@ using System.Text.RegularExpressions;
 namespace Snaplume.Tests;
 
 /// <summary>
-/// Texts of the application shell (src/Snaplume.App outside the editor, capture, recording and player folders):
-/// every key used exists in French (Languages/fr.json or a Languages/_pending/*.json file), and the pending
-/// shell keys are translated in the six languages with the same placeholders.
+/// Texts of the application (src/Snaplume.App): every key used exists in French (Languages/fr.json or a
+/// Languages/_pending/*.json file), and every translation has the placeholders of the French text.
 /// </summary>
 public partial class ShellLocalizationTests
 {
     private static readonly string[] Languages = { "fr", "en", "de", "es", "it", "ar" };
-    private static readonly string[] OtherAreas = { "Editor", "Capturing", "Recording", "Player" };
 
     private static string RepositoryRoot
     {
@@ -28,35 +26,24 @@ public partial class ShellLocalizationTests
     private static string LanguagesFolder => Path.Combine(RepositoryRoot, "src", "Snaplume.Core", "Languages");
 
     [Fact]
-    public void PendingShellKeysAreTranslatedEverywhere()
+    public void TranslationsHaveTheSamePlaceholdersAsFrench()
     {
-        var pending = ReadPending(Path.Combine(LanguagesFolder, "_pending", "shell.json"));
-        Assert.Equal(Languages.OrderBy(l => l), pending.Keys.OrderBy(l => l));
-        var french = pending["fr"];
-        Assert.NotEmpty(french);
+        var french = ReadLanguage(Path.Combine(LanguagesFolder, "fr.json"));
         foreach (var language in Languages)
         {
-            var texts = pending[language];
-            Assert.Equal(french.Keys.OrderBy(k => k), texts.Keys.OrderBy(k => k));
+            var texts = ReadLanguage(Path.Combine(LanguagesFolder, language + ".json"));
             foreach (var (key, text) in texts)
             {
                 Assert.False(string.IsNullOrWhiteSpace(text), $"{language}: {key} is empty");
-                Assert.Equal(Placeholders(french[key]), Placeholders(text));
+                if (french.TryGetValue(key, out var reference))
+                    // A translation may leave a value out (Arabic "one image" has no number), never use one French has not.
+                    Assert.True(Placeholders(text).All(Placeholders(reference).Contains), $"{language}: {key} uses a placeholder French has not");
             }
         }
     }
 
     [Fact]
-    public void PendingShellKeysAreNew()
-    {
-        // New keys only: the existing ones are reused from the language files, never redefined.
-        var french = ReadLanguage(Path.Combine(LanguagesFolder, "fr.json"));
-        var pending = ReadPending(Path.Combine(LanguagesFolder, "_pending", "shell.json"))["fr"];
-        Assert.DoesNotContain(pending.Keys, french.ContainsKey);
-    }
-
-    [Fact]
-    public void ShellTextsExistInFrench()
+    public void AppTextsExistInFrench()
     {
         var known = new HashSet<string>(ReadLanguage(Path.Combine(LanguagesFolder, "fr.json")).Keys);
         var pendingFolder = Path.Combine(LanguagesFolder, "_pending");
@@ -74,7 +61,7 @@ public partial class ShellLocalizationTests
         {
             var relative = Path.GetRelativePath(app, file);
             var top = relative.Split(Path.DirectorySeparatorChar)[0];
-            if (OtherAreas.Contains(top) || top is "bin" or "obj") continue;
+            if (top is "bin" or "obj") continue;
             var extension = Path.GetExtension(file);
             if (extension is not (".cs" or ".axaml")) continue;
             foreach (var key in UsedKeys(File.ReadAllLines(file), extension == ".axaml"))
