@@ -1,6 +1,4 @@
-using System.Windows;
-using System.Windows.Media;
-using System.Windows.Media.Imaging;
+using Avalonia.Media;
 
 namespace Snaplume.Editor;
 
@@ -11,13 +9,13 @@ namespace Snaplume.Editor;
 /// </summary>
 public static class AnnotationRenderer
 {
-    public static void Render(DrawingContext dc, BitmapSource baseImage, IReadOnlyList<Annotation> annotations) =>
+    public static void Render(DrawingContext dc, EditorImage baseImage, IReadOnlyList<Annotation> annotations) =>
         Render(dc, baseImage, annotations, 0, annotations.Count);
 
     /// <summary>Draws the annotations from index <paramref name="from"/> (included) to <paramref name="to"/> (excluded).</summary>
     /// <param name="skip">Annotation left out (text being edited).</param>
     /// <param name="withMagnifiers">False inside a lens: a magnifier does not show the other ones.</param>
-    public static void Render(DrawingContext dc, BitmapSource baseImage, IReadOnlyList<Annotation> annotations,
+    public static void Render(DrawingContext dc, EditorImage baseImage, IReadOnlyList<Annotation> annotations,
         int from, int to, Annotation? skip = null, bool withMagnifiers = true)
     {
         int shadeIndex = -1;
@@ -39,7 +37,7 @@ public static class AnnotationRenderer
                 if (i == shadeIndex)
                 {
                     var spotlights = annotations.OfType<SpotlightAnnotation>().Where(s => !ReferenceEquals(s, skip));
-                    SpotlightAnnotation.DrawShade(dc, new Rect(0, 0, baseImage.PixelWidth, baseImage.PixelHeight), spotlights);
+                    SpotlightAnnotation.DrawShade(dc, baseImage.Bounds, spotlights);
                 }
                 continue;
             }
@@ -52,8 +50,8 @@ public static class AnnotationRenderer
         }
     }
 
-    /// <summary>Draws one annotation of the document (the one being drawn or dragged), as <see cref="Render(DrawingContext, BitmapSource, IReadOnlyList{Annotation})"/> would.</summary>
-    public static void RenderOne(DrawingContext dc, BitmapSource baseImage, IReadOnlyList<Annotation> annotations, Annotation annotation,
+    /// <summary>Draws one annotation of the document (the one being drawn or dragged), as <see cref="Render(DrawingContext, EditorImage, IReadOnlyList{Annotation})"/> would.</summary>
+    public static void RenderOne(DrawingContext dc, EditorImage baseImage, IReadOnlyList<Annotation> annotations, Annotation annotation,
         Annotation? skip = null)
     {
         if (annotation is MagnifierAnnotation magnifier)

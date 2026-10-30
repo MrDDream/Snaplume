@@ -1,17 +1,30 @@
 using System.Globalization;
-using System.Runtime.CompilerServices;
 using System.Text;
 using System.Text.Json.Serialization;
-using System.Windows;
-using System.Windows.Media;
-using System.Windows.Media.Imaging;
-using static Snaplume.Editor.Freezables;
+using Avalonia;
+using Avalonia.Media;
+using Avalonia.Media.Immutable;
+using Snaplume.Imaging;
 
 namespace Snaplume.Editor;
+
+public enum EditorTool
+{
+    // New tools go at the end: older presets.json files may store tools as numbers.
+    Select, Arrow, Line, Rectangle, Ellipse, Text, Highlight, Pixelate, Spotlight, Step, Stamp, Pen, Crop, Magnifier,
+}
+
+/// <summary>Fonts of the texts drawn on images: the interface font of the system, with fallbacks for Linux.</summary>
+public static class EditorFonts
+{
+    /// <summary>"Segoe UI" on Windows (as in older versions), else the first free font found.</summary>
+    public static readonly FontFamily Family = new(string.Join(", ", TextOutline.FontFamilies));
+}
 
 /// <summary>
 /// Vector annotation drawn over the base image. Coordinates are image pixels.
 /// Annotations stay editable: they are saved next to the capture (see <see cref="EditorDocument"/>).
+/// The public properties are the sidecar file format: renaming or adding one changes the files.
 /// </summary>
 [JsonPolymorphic(TypeDiscriminatorPropertyName = "type")]
 [JsonDerivedType(typeof(ArrowAnnotation), "arrow")]
@@ -33,9 +46,9 @@ public abstract class Annotation
     public const double MinThickness = 1;
     public const double MaxThickness = 500;
 
-    // Frozen brush and pen reused while the color and thickness do not change.
-    private SolidColorBrush? _brush;
-    private Pen? _pen;
+    // Immutable brush and pen reused while the color and thickness do not change.
+    private ImmutableSolidColorBrush? _brush;
+    private ImmutablePen? _pen;
 
     public Color Color { get; set; } = Colors.Red;
     public double Thickness { get; set; } = 4;
@@ -43,11 +56,11 @@ public abstract class Annotation
     /// <summary>Tool that draws this kind of annotation (not stored, see <see cref="AnnotationJson"/>).</summary>
     public abstract EditorTool Kind { get; }
 
-    public abstract void Render(DrawingContext dc, BitmapSource baseImage);
+    public abstract void Render(DrawingContext dc, EditorImage baseImage);
 
     public abstract Rect GetBounds();
 
-    public virtual bool HitTest(Point p, double tolerance) => Inflate(GetBounds(), tolerance).Contains(p);
+    public virtual bool HitTest(Point p, double tolerance) => Rects.Grow(GetBounds(), tolerance).Contains(p);
 
     public abstract void Translate(Vector offset);
 
@@ -94,43 +107,32 @@ public abstract class Annotation
 
     public virtual Annotation Clone() => (Annotation)MemberwiseClone();
 
-    protected SolidColorBrush MakeBrush(byte? alpha = null)
+    protected IImmutableSolidColorBrush MakeBrush(byte? alpha = null)
     {
         var color = alpha is byte a ? Color.FromArgb(a, Color.R, Color.G, Color.B) : Color;
-        if (_brush == null || _brush.Color != color) _brush = Frozen(new SolidColorBrush(color));
+        if (_brush is null || _brush.Color != color) _brush = new ImmutableSolidColorBrush(color);
         return _brush;
     }
 
-    protected Pen MakePen(double? thickness = null)
+    protected IPen MakePen(double? thickness = null)
     {
         double t = thickness ?? Thickness;
-        if (_pen == null || _pen.Thickness != t || ((SolidColorBrush)_pen.Brush).Color != Color)
-        {
-            _pen = Frozen(new Pen(MakeBrush(), t)
-            {
-                StartLineCap = PenLineCap.Round,
-                EndLineCap = PenLineCap.Round,
-                LineJoin = PenLineJoin.Round,
-            });
-        }
+        if (_pen == null || _pen.Thickness != t || ((ISolidColorBrush)_pen.Brush!).Color != Color)
+            _pen = new ImmutablePen((IImmutableBrush)MakeBrush(), t, null, PenLineCap.Round, PenLineJoin.Round);
         return _pen;
     }
 
     protected static bool IsLight(Color c) => 0.299 * c.R + 0.587 * c.G + 0.114 * c.B > 160;
 
-    protected static Rect Inflate(Rect r, double amount)
-    {
-        r.Inflate(amount, amount);
-        return r;
-    }
+    protected static Rect Inflate(Rect r, double amount) => Rects.Grow(r, amount);
 
     protected static double DistanceToSegment(Point p, Point a, Point b)
     {
-        var ab = b - a;
-        double lengthSquared = ab.LengthSquared;
-        if (lengthSquared < 1e-9) return (p - a).Length;
-        double t = Math.Clamp(Vector.Multiply(p - a, ab) / lengthSquared, 0, 1);
-        return (p - (a + t * ab)).Length;
+        Vector ab = b - a;
+        double lengthSquared = ab.SquaredLength;
+        if (lengthSquared < 1e-9) return ((Vector)(p - a)).Length;
+        double t = Math.Clamp(Vector.Dot(p - a, ab) / lengthSquared, 0, 1);
+        return ((Vector)(p - (a + t * ab))).Length;
     }
 }
 
@@ -140,7 +142,7 @@ public abstract class TwoPointAnnotation : Annotation
     public Point Start { get; set; }
     public Point End { get; set; }
 
-    public Rect GetRect() => new(Start, End);
+    public Rect GetRect() => Rects.Between(Start, End);
 
     public override Rect GetBounds() => GetRect();
 
@@ -164,7 +166,7 @@ public class LineAnnotation : TwoPointAnnotation
 {
     public override EditorTool Kind => EditorTool.Line;
 
-    public override void Render(DrawingContext dc, BitmapSource baseImage) => dc.DrawLine(MakePen(), Start, End);
+    public override void Render(DrawingContext dc, EditorImage baseImage) => dc.DrawLine(MakePen(), Start, End);
 
     public override Rect GetBounds() => Inflate(GetRect(), Thickness / 2);
 
@@ -184,7 +186,8 @@ public enum ArrowHeads { End, Both, None }
 
 public sealed class ArrowAnnotation : LineAnnotation
 {
-    private Pen? _headPen;
+    private IPen? _headPen;
+    private IBrush? _headPenBrush;
 
     public ArrowHeads Heads { get; set; }
 
@@ -192,14 +195,14 @@ public sealed class ArrowAnnotation : LineAnnotation
 
     public override bool IsValid() => base.IsValid() && Enum.IsDefined(Heads);
 
-    public override void Render(DrawingContext dc, BitmapSource baseImage)
+    public override void Render(DrawingContext dc, EditorImage baseImage)
     {
         if (Heads == ArrowHeads.None)
         {
             base.Render(dc, baseImage);
             return;
         }
-        var v = End - Start;
+        Vector v = End - Start;
         double length = v.Length;
         if (length < 1) return;
         v /= length;
@@ -221,14 +224,18 @@ public sealed class ArrowAnnotation : LineAnnotation
         var head = new StreamGeometry();
         using (var ctx = head.Open())
         {
-            ctx.BeginFigure(tip, isFilled: true, isClosed: true);
-            ctx.LineTo(headBase + normal * headHalfWidth, true, true);
-            ctx.LineTo(headBase - normal * headHalfWidth, true, true);
+            ctx.BeginFigure(tip, true);
+            ctx.LineTo(headBase + normal * headHalfWidth);
+            ctx.LineTo(headBase - normal * headHalfWidth);
+            ctx.EndFigure(true);
         }
-        head.Freeze();
         var brush = MakeBrush();
         // Thin outline with round joins softens the tips.
-        if (_headPen == null || _headPen.Brush != brush) _headPen = Frozen(new Pen(brush, 1) { LineJoin = PenLineJoin.Round });
+        if (_headPen == null || !ReferenceEquals(_headPenBrush, brush))
+        {
+            _headPen = new ImmutablePen((IImmutableBrush)brush, 1, null, PenLineCap.Flat, PenLineJoin.Round);
+            _headPenBrush = brush;
+        }
         dc.DrawGeometry(brush, _headPen, head);
     }
 
@@ -276,7 +283,7 @@ public sealed class RectangleAnnotation : BoxAnnotation
 
     public override EditorTool Kind => EditorTool.Rectangle;
 
-    public override void Render(DrawingContext dc, BitmapSource baseImage)
+    public override void Render(DrawingContext dc, EditorImage baseImage)
     {
         var r = GetRect();
         if (Filled)
@@ -285,7 +292,7 @@ public sealed class RectangleAnnotation : BoxAnnotation
         }
         else
         {
-            if (r.Width > Thickness && r.Height > Thickness) r.Inflate(-Thickness / 2, -Thickness / 2);
+            if (r.Width > Thickness && r.Height > Thickness) r = Rects.Grow(r, -Thickness / 2);
             dc.DrawRectangle(null, MakePen(), r);
         }
     }
@@ -295,8 +302,8 @@ public sealed class RectangleAnnotation : BoxAnnotation
         var r = GetRect();
         if (!Inflate(r, tolerance).Contains(p)) return false;
         if (Filled) return true;
-        var inner = Inflate(r, -(Thickness + tolerance));
-        return inner.IsEmpty || !inner.Contains(p);
+        var inner = Rects.Inflate(r, -(Thickness + tolerance));
+        return inner is not Rect i || !i.Contains(p);
     }
 }
 
@@ -306,12 +313,12 @@ public sealed class EllipseAnnotation : BoxAnnotation
 
     public override EditorTool Kind => EditorTool.Ellipse;
 
-    public override void Render(DrawingContext dc, BitmapSource baseImage)
+    public override void Render(DrawingContext dc, EditorImage baseImage)
     {
         var r = GetRect();
         double rx = r.Width / 2, ry = r.Height / 2;
-        if (Filled) dc.DrawEllipse(MakeBrush(), null, Center(r), rx, ry);
-        else dc.DrawEllipse(null, MakePen(), Center(r), Math.Max(0, rx - Thickness / 2), Math.Max(0, ry - Thickness / 2));
+        if (Filled) dc.DrawEllipse(MakeBrush(), null, r.Center, rx, ry);
+        else dc.DrawEllipse(null, MakePen(), r.Center, Math.Max(0, rx - Thickness / 2), Math.Max(0, ry - Thickness / 2));
     }
 
     public override bool HitTest(Point p, double tolerance)
@@ -320,13 +327,11 @@ public sealed class EllipseAnnotation : BoxAnnotation
         // The slack below is relative to the smaller radius: a flat ellipse would otherwise catch far clicks.
         if (!Inflate(r, Thickness + tolerance).Contains(p)) return false;
         double rx = Math.Max(r.Width / 2, 1), ry = Math.Max(r.Height / 2, 1);
-        var c = Center(r);
+        var c = r.Center;
         double d = Math.Sqrt(Math.Pow((p.X - c.X) / rx, 2) + Math.Pow((p.Y - c.Y) / ry, 2));
         double slack = (Thickness + tolerance) / Math.Min(rx, ry);
         return Filled ? d <= 1 + slack : Math.Abs(d - 1) <= slack;
     }
-
-    private static Point Center(Rect r) => new(r.X + r.Width / 2, r.Y + r.Height / 2);
 }
 
 /// <summary>Translucent marker over an area.</summary>
@@ -334,107 +339,44 @@ public sealed class HighlightAnnotation : BoxAnnotation
 {
     public override EditorTool Kind => EditorTool.Highlight;
 
-    public override void Render(DrawingContext dc, BitmapSource baseImage) =>
+    public override void Render(DrawingContext dc, EditorImage baseImage) =>
         dc.DrawRectangle(MakeBrush(0x66), null, GetRect());
 }
 
 /// <summary>Hides confidential information by pixelating the base image.</summary>
 public sealed class PixelateAnnotation : BoxAnnotation
 {
-    /// <summary>Whole base images pixelated, per block size (see <see cref="PixelatedImage"/>).</summary>
-    private static readonly ConditionalWeakTable<BitmapSource, Dictionary<int, BitmapSource>> Pixelated = new();
-
-    /// <summary>Big enough blocks: small ones leave text guessable.</summary>
+    /// <summary>Big enough blocks: small ones leave text guessable. (Also written to the sidecar file, as by older versions.)</summary>
     public int BlockSize => Math.Max(8, (int)Math.Round(Thickness * 2.5));
 
     public override EditorTool Kind => EditorTool.Pixelate;
 
     /// <summary>Area covered, in whole pixels of the image.</summary>
-    public Int32Rect GetPixelArea(BitmapSource baseImage)
+    public PixelRect GetPixelArea(EditorImage baseImage) => GetPixelArea(baseImage.Width, baseImage.Height);
+
+    public PixelRect GetPixelArea(int width, int height)
     {
         var r = GetRect();
-        int x0 = Math.Clamp((int)Math.Floor(r.X), 0, baseImage.PixelWidth);
-        int y0 = Math.Clamp((int)Math.Floor(r.Y), 0, baseImage.PixelHeight);
-        int x1 = Math.Clamp((int)Math.Ceiling(r.Right), 0, baseImage.PixelWidth);
-        int y1 = Math.Clamp((int)Math.Ceiling(r.Bottom), 0, baseImage.PixelHeight);
-        return new Int32Rect(x0, y0, Math.Max(0, x1 - x0), Math.Max(0, y1 - y0));
+        int x0 = Math.Clamp((int)Math.Floor(r.X), 0, width);
+        int y0 = Math.Clamp((int)Math.Floor(r.Y), 0, height);
+        int x1 = Math.Clamp((int)Math.Ceiling(r.Right), 0, width);
+        int y1 = Math.Clamp((int)Math.Ceiling(r.Bottom), 0, height);
+        return new PixelRect(x0, y0, Math.Max(0, x1 - x0), Math.Max(0, y1 - y0));
     }
 
-    public override void Render(DrawingContext dc, BitmapSource baseImage)
+    public override void Render(DrawingContext dc, EditorImage baseImage)
     {
         var area = GetPixelArea(baseImage);
         if (area.Width < 1 || area.Height < 1) return;
-        dc.PushClip(new RectangleGeometry(new Rect(area.X, area.Y, area.Width, area.Height)));
-        dc.DrawImage(PixelatedImage(baseImage, BlockSize), new Rect(0, 0, baseImage.PixelWidth, baseImage.PixelHeight));
-        dc.Pop();
-    }
-
-    /// <summary>
-    /// The whole image pixelated on a grid anchored at its corner, computed once per image and block size:
-    /// moving or resizing the area only changes the clip, so the blocks never shimmer, and pixelating
-    /// an already pixelated area gives the same pixels.
-    /// </summary>
-    internal static BitmapSource PixelatedImage(BitmapSource image, int block)
-    {
-        var sizes = Pixelated.GetValue(image, _ => new Dictionary<int, BitmapSource>());
-        if (!sizes.TryGetValue(block, out var result))
-        {
-            result = Pixelate(image, new Int32Rect(0, 0, image.PixelWidth, image.PixelHeight), block);
-            sizes[block] = result;
-        }
-        return result;
-    }
-
-    /// <param name="source">Bgra32 image.</param>
-    private static BitmapSource Pixelate(BitmapSource source, Int32Rect area, int block)
-    {
-        int stride = area.Width * 4;
-        var buffer = new byte[(long)stride * area.Height];
-        source.CopyPixels(area, buffer, stride, 0);
-
-        for (int by = 0; by < area.Height; by += block)
-        {
-            int bh = Math.Min(block, area.Height - by);
-            for (int bx = 0; bx < area.Width; bx += block)
-            {
-                int bw = Math.Min(block, area.Width - bx);
-                long b = 0, g = 0, r = 0;
-                for (int y = by; y < by + bh; y++)
-                {
-                    for (int x = bx; x < bx + bw; x++)
-                    {
-                        long i = (long)y * stride + x * 4;
-                        b += buffer[i];
-                        g += buffer[i + 1];
-                        r += buffer[i + 2];
-                    }
-                }
-                int n = bw * bh;
-                byte bb = (byte)(b / n), gg = (byte)(g / n), rr = (byte)(r / n);
-                for (int y = by; y < by + bh; y++)
-                {
-                    for (int x = bx; x < bx + bw; x++)
-                    {
-                        long i = (long)y * stride + x * 4;
-                        buffer[i] = bb;
-                        buffer[i + 1] = gg;
-                        buffer[i + 2] = rr;
-                        buffer[i + 3] = 255;
-                    }
-                }
-            }
-        }
-
-        var result = BitmapSource.Create(area.Width, area.Height, 96, 96, PixelFormats.Bgra32, null, buffer, stride);
-        result.Freeze();
-        return result;
+        using (dc.PushClip(new Rect(area.X, area.Y, area.Width, area.Height)))
+            dc.DrawImage(baseImage.PixelatedBitmap(BlockSize), baseImage.Bounds);
     }
 }
 
 /// <summary>Darkens everything except the area, to draw attention to it.</summary>
 public sealed class SpotlightAnnotation : BoxAnnotation
 {
-    private static readonly Brush Shade = Frozen(new SolidColorBrush(Color.FromArgb(0x99, 0, 0, 0)));
+    private static readonly IImmutableSolidColorBrush Shade = new ImmutableSolidColorBrush(Color.FromArgb(0x99, 0, 0, 0));
 
     public override EditorTool Kind => EditorTool.Spotlight;
 
@@ -442,16 +384,15 @@ public sealed class SpotlightAnnotation : BoxAnnotation
     /// Alone; with others, <see cref="AnnotationRenderer"/> draws them together with <see cref="DrawShade"/>
     /// so that overlapping shades do not darken twice.
     /// </summary>
-    public override void Render(DrawingContext dc, BitmapSource baseImage) =>
-        DrawShade(dc, new Rect(0, 0, baseImage.PixelWidth, baseImage.PixelHeight), new[] { this });
+    public override void Render(DrawingContext dc, EditorImage baseImage) =>
+        DrawShade(dc, baseImage.Bounds, new[] { this });
 
     /// <summary>One shade over the image minus the union of the spotlight areas.</summary>
     public static void DrawShade(DrawingContext dc, Rect image, IEnumerable<SpotlightAnnotation> spotlights)
     {
-        var holes = new GeometryGroup { FillRule = FillRule.Nonzero };
+        var holes = new GeometryGroup { FillRule = FillRule.NonZero };
         foreach (var spotlight in spotlights) holes.Children.Add(new RectangleGeometry(spotlight.GetRect(), 6, 6));
         var shade = new CombinedGeometry(GeometryCombineMode.Exclude, new RectangleGeometry(image), holes);
-        shade.Freeze();
         dc.DrawGeometry(Shade, null, shade);
     }
 }
@@ -461,7 +402,7 @@ public sealed class TextAnnotation : Annotation
     public const double Pad = 6;
     public const double MinFontSize = 6;
     public const double MaxFontSize = 2000;
-    public static readonly FontFamily Font = new("Segoe UI");
+    public static FontFamily Font => EditorFonts.Family;
 
     // Layout cache, rebuilt when the text, its size or its color change.
     private FormattedText? _format;
@@ -469,7 +410,7 @@ public sealed class TextAnnotation : Annotation
     private double _formatSize;
     private Color _formatColor;
     private Geometry? _geometry;
-    private Pen? _halo;
+    private IPen? _halo;
 
     public Point Position { get; set; }
     public string Text { get; set; } = "";
@@ -488,8 +429,7 @@ public sealed class TextAnnotation : Annotation
         if (_format == null || _formatText != Text || _formatSize != FontSize || _formatColor != Color)
         {
             _format = new FormattedText(Text.Length == 0 ? " " : Text, CultureInfo.CurrentUICulture, DirectionOf(Text),
-                new Typeface(Font, FontStyles.Normal, FontWeights.SemiBold, FontStretches.Normal),
-                FontSize, MakeBrush(), 1.0);
+                new Typeface(Font, FontStyle.Normal, FontWeight.SemiBold), FontSize, MakeBrush());
             _formatText = Text;
             _formatSize = FontSize;
             _formatColor = Color;
@@ -519,11 +459,8 @@ public sealed class TextAnnotation : Annotation
         (c >= 0x0590 && c <= 0x08FF) || (c >= 0xFB1D && c <= 0xFDFF) || (c >= 0xFE70 && c <= 0xFEFF)
         || (c >= 0x10800 && c <= 0x10FFF) || (c >= 0x1E800 && c <= 0x1EFFF);
 
-    /// <summary>Where the text is drawn in the box: a right-to-left text starts at its right edge.</summary>
-    private Point TextOrigin(FormattedText text) =>
-        text.FlowDirection == FlowDirection.RightToLeft
-            ? new Point(Pad + text.WidthIncludingTrailingWhitespace, Pad)
-            : new Point(Pad, Pad);
+    /// <summary>Where the text is drawn in its box (Avalonia lays out a right-to-left text inside the same box).</summary>
+    private static Point TextOrigin => new(Pad, Pad);
 
     public override Rect GetBounds()
     {
@@ -531,23 +468,26 @@ public sealed class TextAnnotation : Annotation
         return new Rect(Position.X, Position.Y, text.WidthIncludingTrailingWhitespace + 2 * Pad, text.Height + 2 * Pad);
     }
 
-    public override void Render(DrawingContext dc, BitmapSource baseImage)
+    public override void Render(DrawingContext dc, EditorImage baseImage)
     {
         var text = Format();
         if (HasBackground)
         {
-            dc.DrawRoundedRectangle(Brushes.White, MakePen(Math.Max(1.5, Thickness / 2)), GetBounds(), 4, 4);
-            dc.DrawText(text, Position + (Vector)TextOrigin(text));
+            dc.DrawRectangle(Brushes.White, MakePen(Math.Max(1.5, Thickness / 2)), GetBounds(), 4, 4);
+            dc.DrawText(text, Position + (Vector)TextOrigin);
         }
         else
         {
             // Contrasting halo keeps the text readable on any screenshot.
-            _geometry ??= Frozen(text.BuildGeometry(TextOrigin(text)));
-            _halo ??= Frozen(new Pen(IsLight(Color) ? Brushes.Black : Brushes.White, Math.Max(2, FontSize / 7)) { LineJoin = PenLineJoin.Round });
-            dc.PushTransform(new TranslateTransform(Position.X, Position.Y));
-            dc.DrawGeometry(null, _halo, _geometry);
-            dc.DrawGeometry(MakeBrush(), null, _geometry);
-            dc.Pop();
+            _geometry ??= text.BuildGeometry(TextOrigin);
+            _halo ??= new ImmutablePen(IsLight(Color) ? Brushes.Black.ToImmutable() : Brushes.White.ToImmutable(),
+                Math.Max(2, FontSize / 7), null, PenLineCap.Round, PenLineJoin.Round);
+            if (_geometry == null) return;
+            using (dc.PushTransform(Matrix.CreateTranslation(Position.X, Position.Y)))
+            {
+                dc.DrawGeometry(null, _halo, _geometry);
+                dc.DrawGeometry(MakeBrush(), null, _geometry);
+            }
         }
     }
 
@@ -580,9 +520,11 @@ public sealed class StepAnnotation : Annotation
 {
     public const int MaxNumber = 100_000;
 
-    private static readonly Brush DarkFill = Frozen(new SolidColorBrush(Color.FromArgb(0xE6, 0x26, 0x26, 0x2B)));
+    private static readonly IImmutableSolidColorBrush DarkFill = new ImmutableSolidColorBrush(Color.FromArgb(0xE6, 0x26, 0x26, 0x2B));
 
-    private Pen? _outline;
+    private IPen? _outline;
+    private bool _outlineLight;
+    private double _outlineWidth;
 
     public Point Center { get; set; }
     public int Number { get; set; } = 1;
@@ -611,7 +553,7 @@ public sealed class StepAnnotation : Annotation
         if (!HasTarget || Target != null) return;
         double distance = Radius * 2.6;
         var target = Center + new Vector(-distance, 0);
-        if (area is Rect a && !a.IsEmpty)
+        if (area is Rect a && a.Width > 0 && a.Height > 0)
         {
             if (target.X < a.Left) target = Center + new Vector(distance, 0);
             target = new Point(Math.Clamp(target.X, a.Left, a.Right), Math.Clamp(target.Y, a.Top, a.Bottom));
@@ -629,17 +571,20 @@ public sealed class StepAnnotation : Annotation
         return s;
     }
 
-    public override void Render(DrawingContext dc, BitmapSource baseImage)
+    public override void Render(DrawingContext dc, EditorImage baseImage)
     {
         double r = Radius;
         bool light = IsLight(Color);
         var contrast = light ? Brushes.Black : Brushes.White;
         double outlineWidth = Math.Max(1.5, r * 0.12);
-        if (_outline == null || _outline.Brush != contrast || _outline.Thickness != outlineWidth)
-            _outline = Frozen(new Pen(contrast, outlineWidth) { LineJoin = PenLineJoin.Round });
+        if (_outline == null || _outlineLight != light || _outlineWidth != outlineWidth)
+        {
+            _outline = new ImmutablePen(contrast.ToImmutable(), outlineWidth, null, PenLineCap.Flat, PenLineJoin.Round);
+            _outlineLight = light;
+            _outlineWidth = outlineWidth;
+        }
         var fill = MakeBrush();
-        Brush textBrush = contrast;
-        Point labelCenter = Center;
+        IBrush textBrush = contrast;
 
         switch (Shape)
         {
@@ -664,17 +609,16 @@ public sealed class StepAnnotation : Annotation
         }
 
         var label = Label;
-        var text = new FormattedText(label, CultureInfo.InvariantCulture,
-            FlowDirection.LeftToRight, new Typeface(TextAnnotation.Font, FontStyles.Normal, FontWeights.Bold, FontStretches.Normal),
-            r * (label.Length >= 2 ? 0.95 : 1.15), textBrush, 1.0);
-        dc.DrawText(text, new Point(labelCenter.X - text.Width / 2, labelCenter.Y - text.Height / 2));
+        var text = new FormattedText(label, CultureInfo.InvariantCulture, FlowDirection.LeftToRight,
+            new Typeface(TextAnnotation.Font, FontStyle.Normal, FontWeight.Bold), r * (label.Length >= 2 ? 0.95 : 1.15), textBrush);
+        dc.DrawText(text, new Point(Center.X - text.Width / 2, Center.Y - text.Height / 2));
     }
 
     /// <summary>Circle of radius r prolonged by a point at distance tip from its center.</summary>
     private static Geometry Teardrop(Point center, Vector direction, double r, double tip)
     {
         if (direction.Length < 1e-6) direction = new Vector(0, 1);
-        direction.Normalize();
+        direction = direction.Normalize();
         tip = Math.Max(tip, r * 1.3);
         var apex = center + direction * tip;
         // Tangent points of the lines from the apex to the circle.
@@ -684,11 +628,11 @@ public sealed class StepAnnotation : Annotation
         var geometry = new StreamGeometry();
         using (var ctx = geometry.Open())
         {
-            ctx.BeginFigure(apex, isFilled: true, isClosed: true);
-            ctx.LineTo(center + a, true, true);
-            ctx.ArcTo(center + b, new Size(r, r), 0, isLargeArc: true, SweepDirection.Clockwise, true, true);
+            ctx.BeginFigure(apex, true);
+            ctx.LineTo(center + a);
+            ctx.ArcTo(center + b, new Size(r, r), 0, true, SweepDirection.Clockwise);
+            ctx.EndFigure(true);
         }
-        geometry.Freeze();
         return geometry;
     }
 
@@ -699,22 +643,21 @@ public sealed class StepAnnotation : Annotation
     {
         double r = Radius;
         var bounds = new Rect(Center.X - r, Center.Y - r, 2 * r, 2 * r);
-        if (Shape == StepShape.Pin) bounds.Union(Center + new Vector(0, r * 2.1));
-        if (HasTarget && Target is Point target) bounds.Union(Shape == StepShape.Tail ? Center + Clamp(target - Center, r * 2) : target);
+        if (Shape == StepShape.Pin) bounds = Rects.Union(bounds, Center + new Vector(0, r * 2.1));
+        if (HasTarget && Target is Point target) bounds = Rects.Union(bounds, Shape == StepShape.Tail ? Center + Clamp(target - Center, r * 2) : target);
         return Inflate(bounds, r * 0.3);
     }
 
     private static Vector Clamp(Vector v, double length)
     {
         if (v.Length < 1e-6) return new Vector(0, length);
-        v.Normalize();
-        return v * length;
+        return v.Normalize() * length;
     }
 
     public override bool HitTest(Point p, double tolerance) =>
-        (p - Center).Length <= Radius + tolerance
+        ((Vector)(p - Center)).Length <= Radius + tolerance
         || (Shape == StepShape.Leader && Target is Point t && DistanceToSegment(p, t, Center) <= Radius * 0.3 + tolerance)
-        || (Shape is StepShape.Tail or StepShape.Pin && GetBounds().Contains(p) && (p - Center).Length <= Radius * 2.2 + tolerance);
+        || (Shape is StepShape.Tail or StepShape.Pin && GetBounds().Contains(p) && ((Vector)(p - Center)).Length <= Radius * 2.2 + tolerance);
 
     /// <summary>The target of a leader or a tail can be dragged.</summary>
     public override IReadOnlyList<Point> GetHandles() =>
@@ -747,24 +690,24 @@ public sealed class FreehandAnnotation : Annotation
     public override bool IsValid() =>
         base.IsValid() && Points != null && Points.Count <= MaxPoints && Points.TrueForAll(IsValidPoint);
 
-    public override void Render(DrawingContext dc, BitmapSource baseImage)
+    public override void Render(DrawingContext dc, EditorImage baseImage)
     {
         if (Points.Count < 2) return;
         var geometry = new StreamGeometry();
         using (var ctx = geometry.Open())
         {
-            ctx.BeginFigure(Points[0], isFilled: false, isClosed: false);
-            for (int i = 1; i < Points.Count; i++) ctx.LineTo(Points[i], isStroked: true, isSmoothJoin: true);
+            ctx.BeginFigure(Points[0], false);
+            for (int i = 1; i < Points.Count; i++) ctx.LineTo(Points[i]);
+            ctx.EndFigure(false);
         }
-        geometry.Freeze();
         dc.DrawGeometry(null, MakePen(), geometry);
     }
 
     public override Rect GetBounds()
     {
-        if (Points.Count == 0) return Rect.Empty;
+        if (Points.Count == 0) return default;
         var r = new Rect(Points[0], Points[0]);
-        foreach (var p in Points) r.Union(p);
+        foreach (var p in Points) r = Rects.Union(r, p);
         return Inflate(r, Thickness / 2);
     }
 
@@ -797,7 +740,7 @@ public sealed class FreehandAnnotation : Annotation
 /// <summary>Vector stamp from <see cref="StampLibrary"/>, resizable while keeping its proportions.</summary>
 public sealed class StampAnnotation : BoxAnnotation
 {
-    private static readonly Pen MissingPen = Frozen(new Pen(Brushes.Gray, 1) { DashStyle = DashStyles.Dash });
+    private static readonly IPen MissingPen = new ImmutablePen(Brushes.Gray.ToImmutable(), 1, new ImmutableDashStyle(new double[] { 2, 2 }, 0));
 
     public string StampId { get; set; } = "";
 
@@ -805,7 +748,7 @@ public sealed class StampAnnotation : BoxAnnotation
 
     public override bool IsValid() => base.IsValid() && StampId != null && StampId.Length <= 200;
 
-    public override void Render(DrawingContext dc, BitmapSource baseImage)
+    public override void Render(DrawingContext dc, EditorImage baseImage)
     {
         if (StampLibrary.Find(StampId) is { } stamp) stamp.Render(dc, GetRect());
         else dc.DrawRectangle(null, MissingPen, GetRect());
@@ -816,7 +759,7 @@ public sealed class StampAnnotation : BoxAnnotation
         var anchor = Anchor(index);
         var rect = GetRect();
         double ratio = rect.Width > 0 && rect.Height > 0 ? rect.Width / rect.Height : 1;
-        var v = position - anchor;
+        Vector v = position - anchor;
         // Keep the aspect ratio: follow the dominant axis.
         double width = Math.Max(Math.Abs(v.X), Math.Abs(v.Y) * ratio);
         width = Math.Max(width, 8);
