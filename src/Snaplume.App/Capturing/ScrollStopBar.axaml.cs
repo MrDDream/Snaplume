@@ -27,6 +27,11 @@ public partial class ScrollStopBar : Window, IScrollCaptureBar
             FloatingBar.ApplyNativeStyles(this);
             ScreenBounds = FloatingBar.PlaceNearArea(this, area);
         };
+        // The size is final after the first layout (and changes with the texts): placed again each time.
+        SizeChanged += (_, _) =>
+        {
+            if (IsVisible) ScreenBounds = FloatingBar.PlaceNearArea(this, area);
+        };
     }
 
     /// <summary>Where the bar is on the screen (physical pixels), once shown.</summary>

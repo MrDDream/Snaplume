@@ -17,6 +17,8 @@ public partial class RecordingControlBar : Window
 
     private bool _paused;
     private bool _canPause = true;
+    /// <summary>The user dragged the bar elsewhere.</summary>
+    private bool _moved;
 
     public event Action? PauseClicked;
     public event Action? StopClicked;
@@ -36,6 +38,11 @@ public partial class RecordingControlBar : Window
         {
             FloatingBar.ApplyNativeStyles(this);
             FloatingBar.PlaceNearArea(this, area);
+        };
+        // The size is final after the first layout; once the user dragged the bar, it stays where it was put.
+        SizeChanged += (_, _) =>
+        {
+            if (IsVisible && !_moved) FloatingBar.PlaceNearArea(this, area);
         };
     }
 
@@ -77,7 +84,9 @@ public partial class RecordingControlBar : Window
 
     private void OnDrag(object? sender, PointerPressedEventArgs e)
     {
-        if (e.GetCurrentPoint(this).Properties.IsLeftButtonPressed) BeginMoveDrag(e);
+        if (!e.GetCurrentPoint(this).Properties.IsLeftButtonPressed) return;
+        _moved = true;
+        BeginMoveDrag(e);
     }
 
     private void OnPause(object? sender, RoutedEventArgs e) => PauseClicked?.Invoke();
