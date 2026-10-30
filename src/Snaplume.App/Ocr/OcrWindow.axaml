@@ -1,0 +1,60 @@
+<!-- Text recognized in an image; copied to the clipboard as soon as it is read. -->
+<Window xmlns="https://github.com/avaloniaui"
+        xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+        xmlns:l="using:Snaplume.Ui"
+        xmlns:p="using:Snaplume.Platform"
+        x:Class="Snaplume.Ocr.OcrWindow"
+        Title="{l:T Ocr.Title}" Width="640" Height="480" MinWidth="380" MinHeight="260"
+        Icon="/Assets/app.ico"
+        WindowStartupLocation="CenterScreen" UseLayoutRounding="True">
+    <Window.Styles>
+        <!-- The text fills the window: no frame, even when focused -->
+        <Style Selector="TextBox#ResultBox /template/ Border#PART_BorderElement">
+            <Setter Property="BorderThickness" Value="0" />
+        </Style>
+    </Window.Styles>
+    <DockPanel>
+        <Border DockPanel.Dock="Top" Classes="toolbar" Padding="12,8">
+            <DockPanel>
+                <TextBlock Name="StatusText" DockPanel.Dock="Right" VerticalAlignment="Center" Margin="12,0,0,0" MaxWidth="300"
+                           Foreground="{DynamicResource MutedTextBrush}" TextTrimming="CharacterEllipsis" />
+                <StackPanel Orientation="Horizontal">
+                    <TextBlock Classes="property-label" Text="{l:T Ocr.Language}" Margin="0,0,8,0" />
+                    <ComboBox Name="LanguageBox" MinWidth="180" VerticalAlignment="Center">
+                        <ComboBox.ItemTemplate>
+                            <DataTemplate x:DataType="p:OcrLanguage">
+                                <TextBlock Text="{Binding DisplayName}" />
+                            </DataTemplate>
+                        </ComboBox.ItemTemplate>
+                    </ComboBox>
+                </StackPanel>
+            </DockPanel>
+        </Border>
+
+        <Border DockPanel.Dock="Bottom" BorderBrush="{DynamicResource LineBrush}" BorderThickness="0,1,0,0" Padding="12,10">
+            <DockPanel>
+                <StackPanel DockPanel.Dock="Right" Orientation="Horizontal">
+                    <Button Classes="accent" Click="OnCopy" ToolTip.Tip="{l:T Ocr.CopyTip}">
+                        <StackPanel Orientation="Horizontal">
+                            <Path Classes="icon" Data="{StaticResource IconCopy}" Stroke="{DynamicResource OnAccentBrush}" />
+                            <TextBlock Classes="button-label" Text="{l:T Ocr.Copy}" FontWeight="SemiBold" />
+                        </StackPanel>
+                    </Button>
+                    <Button Classes="flat" Click="OnClose" Margin="8,0,0,0" IsCancel="True">
+                        <TextBlock Classes="button-label" Text="{l:T Ocr.Close}" Foreground="{DynamicResource TextBrush}" />
+                    </Button>
+                </StackPanel>
+                <Button Name="LanguageSettingsButton" Classes="flat" HorizontalAlignment="Left" Click="OnLanguageSettings" IsVisible="False">
+                    <TextBlock Classes="button-label" Text="{l:T Ocr.OpenLanguageSettings}" Foreground="{DynamicResource AccentBrush}" />
+                </Button>
+            </DockPanel>
+        </Border>
+
+        <Grid>
+            <TextBox Name="ResultBox" AcceptsReturn="True" TextWrapping="Wrap" BorderThickness="0" Padding="14,12" FontSize="14"
+                     CornerRadius="0" />
+            <TextBlock Name="MessageText" Margin="24" TextWrapping="Wrap" VerticalAlignment="Center" HorizontalAlignment="Center"
+                       TextAlignment="Center" Foreground="{DynamicResource MutedTextBrush}" FontSize="13.5" IsHitTestVisible="False" />
+        </Grid>
+    </DockPanel>
+</Window>
