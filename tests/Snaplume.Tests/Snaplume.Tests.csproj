@@ -20,6 +20,8 @@
 
   <ItemGroup>
     <ProjectReference Include="..\..\src\Snaplume.Core\Snaplume.Core.csproj" />
+    <!-- Windows of the interface opened without a screen (the Linux build: no Windows-only code). -->
+    <ProjectReference Include="..\..\src\Snaplume.App\Snaplume.App.csproj" SetTargetFramework="TargetFramework=net10.0" />
   </ItemGroup>
 
   <ItemGroup>

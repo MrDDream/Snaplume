@@ -1,0 +1,194 @@
+using System.Reflection;
+using Avalonia;
+using Avalonia.Controls;
+using Avalonia.Headless;
+using Avalonia.Headless.XUnit;
+using Avalonia.Input;
+using Avalonia.Interactivity;
+using Avalonia.LogicalTree;
+using Avalonia.Media;
+using Avalonia.Threading;
+using Snaplume.Core;
+using Snaplume.Editor;
+using Snaplume.Imaging;
+using static Snaplume.Tests.TestImages;
+
+namespace Snaplume.Tests;
+
+/// <summary>
+/// The editor window opened without a screen (Avalonia headless, Skia): layout, drawing with the mouse, keyboard
+/// shortcuts, insertion and the close confirmation. The input goes to the headless window, never to the desktop.
+/// </summary>
+public class EditorWindowTests
+{
+    private static (EditorWindow Window, AnnotationCanvas Canvas, TempFolder Folder) Open(int width = 400, int height = 260)
+    {
+        var folder = new TempFolder();
+        var path = folder.File("capture.png");
+        ImageIO.Save(Solid(width, height, Color.FromRgb(0xDD, 0xE6, 0xF0)), path);
+        var window = new EditorWindow(path) { Width = 1240, Height = 820 };
+        window.Show();
+        Dispatcher.UIThread.RunJobs();
+        var canvas = window.FindControl<AnnotationCanvas>("AnnotCanvas")!;
+        return (window, canvas, folder);
+    }
+
+    /// <summary>A point of the image, in the coordinates of the window.</summary>
+    private static Point OnWindow(EditorWindow window, AnnotationCanvas canvas, double x, double y) =>
+        canvas.TranslatePoint(new Point(x, y), window) ?? throw new InvalidOperationException("Canvas not laid out");
+
+    [AvaloniaFact]
+    public void Window_lays_out_and_shows_the_capture()
+    {
+        var (window, canvas, folder) = Open();
+        using (folder)
+        {
+            Assert.Equal(400, canvas.Bounds.Width);
+            Assert.Equal(260, canvas.Bounds.Height);
+            Assert.EndsWith("capture.png", window.FilePath);
+            Assert.Contains("capture.png", window.Title);
+
+            var frame = window.CaptureRenderedFrame();
+            Assert.NotNull(frame);
+            // Kept with the test results to look at the layout; never committed.
+            frame!.Save(Path.Combine(AppContext.BaseDirectory, "editor-window.png"));
+            var pixels = AvaloniaImages.ToPixelBuffer(frame);
+            var center = OnWindow(window, canvas, 200, 130) * window.RenderScaling;
+            Assert.True(Near(At(pixels, (int)center.X, (int)center.Y), Color.FromRgb(0xDD, 0xE6, 0xF0)));
+            window.Close();
+        }
+    }
+
+    [AvaloniaFact]
+    public void Arrow_drawn_with_the_mouse_is_undone_with_ctrl_z()
+    {
+        var (window, canvas, folder) = Open();
+        using (folder)
+        {
+            window.KeyPress(Key.A, RawInputModifiers.None, PhysicalKey.A, "a");
+            Assert.Equal(EditorTool.Arrow, canvas.Tool);
+
+            window.MouseDown(OnWindow(window, canvas, 50, 60), MouseButton.Left);
+            window.MouseMove(OnWindow(window, canvas, 120, 90));
+            window.MouseMove(OnWindow(window, canvas, 200, 120));
+            window.MouseUp(OnWindow(window, canvas, 200, 120), MouseButton.Left);
+            var arrow = Assert.IsType<ArrowAnnotation>(Assert.Single(canvas.Document!.Annotations));
+            Assert.Equal(50, arrow.Start.X, 1);
+            Assert.Equal(200, arrow.End.X, 1);
+            Assert.Same(arrow, canvas.Selected);
+            Assert.True(canvas.Document.IsDirty);
+
+            // Arrow keys move the selection, as one undo step with the other moves.
+            window.KeyPress(Key.Right, RawInputModifiers.Shift, PhysicalKey.ArrowRight, null);
+            window.KeyPress(Key.Right, RawInputModifiers.None, PhysicalKey.ArrowRight, null);
+            Assert.Equal(61, arrow.Start.X, 1);
+
+            window.KeyPress(Key.Z, RawInputModifiers.Control, PhysicalKey.Z, "z");
+            Assert.Equal(50, ((ArrowAnnotation)canvas.Document.Annotations[0]).Start.X, 1);
+            window.KeyPress(Key.Z, RawInputModifiers.Control, PhysicalKey.Z, "z");
+            Assert.Empty(canvas.Document.Annotations);
+            window.KeyPress(Key.Y, RawInputModifiers.Control, PhysicalKey.Y, "y");
+            Assert.Single(canvas.Document.Annotations);
+
+            // Delete removes the selection.
+            canvas.Select(canvas.Document.Annotations[0]);
+            window.KeyPress(Key.Delete, RawInputModifiers.None, PhysicalKey.Delete, null);
+            Assert.Empty(canvas.Document.Annotations);
+            ForceClose(window);
+        }
+    }
+
+    [AvaloniaFact]
+    public void Inserted_image_floats_then_grows_the_capture_on_enter()
+    {
+        var (window, canvas, folder) = Open(200, 120);
+        using (folder)
+        {
+            var insert = typeof(EditorWindow).GetMethod("InsertImageAsync", BindingFlags.Instance | BindingFlags.NonPublic)!;
+            var task = (Task)insert.Invoke(window, new object[] { Solid(60, 40, Colors.Red) })!;
+            Dispatcher.UIThread.RunJobs();
+            Assert.True(task.IsCompletedSuccessfully);
+            Assert.True(canvas.HasFloatingImage);
+            Assert.Empty(canvas.Document!.Annotations);
+
+            // Dragged past the right edge: the capture grows when the image is placed (Enter).
+            var start = canvas.FloatingRect.Center;
+            window.MouseDown(OnWindow(window, canvas, start.X, start.Y), MouseButton.Left);
+            window.MouseMove(OnWindow(window, canvas, start.X + 150, start.Y));
+            window.MouseUp(OnWindow(window, canvas, start.X + 150, start.Y), MouseButton.Left);
+            Assert.True(canvas.FloatingRect.Right > 200);
+            window.KeyPress(Key.Enter, RawInputModifiers.None, PhysicalKey.Enter, null);
+            Assert.False(canvas.HasFloatingImage);
+            Assert.True(canvas.Document.BaseImage.Width > 200);
+            Assert.Equal(120, canvas.Document.BaseImage.Height);
+
+            // One undo step puts the capture back.
+            window.KeyPress(Key.Z, RawInputModifiers.Control, PhysicalKey.Z, "z");
+            Assert.Equal(200, canvas.Document.BaseImage.Width);
+            ForceClose(window);
+        }
+    }
+
+    [AvaloniaFact]
+    public void Closing_with_changes_asks_first_and_closes_after_the_answer()
+    {
+        var (window, canvas, folder) = Open();
+        using (folder)
+        {
+            canvas.Document!.PushUndo();
+            canvas.Document.Annotations.Add(new LineAnnotation { Start = new(1, 1), End = new(50, 50) });
+            canvas.Document.NotifyChanged();
+            bool closed = false;
+            window.Closed += (_, _) => closed = true;
+
+            window.Close();
+            Dispatcher.UIThread.RunJobs();
+            Assert.False(closed);
+            var question = Assert.Single(window.OwnedWindows);
+            // "No": the changes are dropped and the window closes.
+            var no = question.GetLogicalDescendants().OfType<Button>().Single(b => (string?)b.Content == Loc.T("Dialog.No"));
+            no.RaiseEvent(new RoutedEventArgs(Button.ClickEvent));
+            Dispatcher.UIThread.RunJobs();
+            Assert.True(closed);
+        }
+    }
+
+    [AvaloniaFact]
+    public void Tool_shortcuts_and_properties_bar_follow_the_tool()
+    {
+        var (window, canvas, folder) = Open();
+        using (folder)
+        {
+            var thickness = window.FindControl<StackPanel>("ThicknessSection")!;
+            var font = window.FindControl<StackPanel>("FontSection")!;
+            window.KeyPress(Key.T, RawInputModifiers.None, PhysicalKey.T, "t");
+            Assert.Equal(EditorTool.Text, canvas.Tool);
+            Assert.True(font.IsVisible);
+            Assert.False(thickness.IsVisible);
+            window.KeyPress(Key.B, RawInputModifiers.None, PhysicalKey.B, "b");
+            Assert.Equal(EditorTool.Pixelate, canvas.Tool);
+            Assert.True(thickness.IsVisible);
+            Assert.False(font.IsVisible);
+            window.KeyPress(Key.Escape, RawInputModifiers.None, PhysicalKey.Escape, null);
+            Assert.Equal(EditorTool.Select, canvas.Tool);
+
+            // A text typed in the editing box becomes an annotation when Escape ends the edit.
+            window.KeyPress(Key.T, RawInputModifiers.None, PhysicalKey.T, "t");
+            window.MouseDown(OnWindow(window, canvas, 40, 40), MouseButton.Left);
+            window.MouseUp(OnWindow(window, canvas, 40, 40), MouseButton.Left);
+            Dispatcher.UIThread.RunJobs();
+            window.KeyTextInput("Bonjour");
+            window.KeyPress(Key.Escape, RawInputModifiers.None, PhysicalKey.Escape, null);
+            var text = Assert.IsType<TextAnnotation>(Assert.Single(canvas.Document!.Annotations));
+            Assert.Equal("Bonjour", text.Text);
+            ForceClose(window);
+        }
+    }
+
+    /// <summary>Closes without the save question (the document is left unsaved on purpose).</summary>
+    private static void ForceClose(EditorWindow window)
+    {
+        typeof(EditorWindow).GetField("_closeConfirmed", BindingFlags.Instance | BindingFlags.NonPublic)!.SetValue(window, true);
+        window.Close();
+    }
+}

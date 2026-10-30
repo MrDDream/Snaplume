@@ -1,17 +1,27 @@
-using System.ComponentModel;
-using System.Runtime.InteropServices;
-using System.Windows;
-using System.Windows.Controls;
-using System.Windows.Input;
-using System.Windows.Media;
-using System.Windows.Media.Imaging;
-using System.Windows.Threading;
+using Avalonia;
+using Avalonia.Controls;
+using Avalonia.Input;
+using Avalonia.Interactivity;
+using Avalonia.Layout;
+using Avalonia.Markup.Xaml.MarkupExtensions;
+using Avalonia.Media;
+using Avalonia.Media.Immutable;
+using Avalonia.Media.Imaging;
+using Avalonia.Platform.Storage;
+using Avalonia.Threading;
+using Avalonia.VisualTree;
 using Snaplume.Core;
-using Snaplume.Export;
-using WinForms = System.Windows.Forms;
+using Snaplume.Imaging;
+using Snaplume.Ui;
+using IconPath = Avalonia.Controls.Shapes.Path;
+using Path = System.IO.Path;
 
 namespace Snaplume.Editor;
 
+/// <summary>
+/// The image editor: tools rail, properties bar, the capture with its annotations and effects, and the commands
+/// (save, export, copy, print, e-mail, OCR, insert an image, crop, resize). Closing asks to save the changes.
+/// </summary>
 public partial class EditorWindow : Window
 {
     private static readonly (Color Color, string Name)[] Palette =
@@ -80,18 +90,6 @@ public partial class EditorWindow : Window
         [EditorTool.Magnifier] = (Loc.T("Editor.Tool.Magnifier"), Loc.T("Editor.Hint.Magnifier")),
     };
 
-    private readonly EditorDocument _document;
-    /// <summary>Last color used with each tool (yellow highlighter, red arrows...).</summary>
-    private readonly Dictionary<EditorTool, Color> _toolColors = new() { [EditorTool.Highlight] = Palette[2].Color };
-    private bool _ready;
-    private bool _syncingUi;
-    /// <summary>Kind of annotation the properties bar currently edits (selection or next drawn).</summary>
-    private EditorTool? _contextKind;
-    /// <summary>Tool whose presets are shown in the preset popup.</summary>
-    private EditorTool _presetTool;
-    /// <summary>Tool whose choices fill the variant box (arrow heads or bullet shapes).</summary>
-    private EditorTool? _variantKind;
-
     // Same order as the ArrowHeads and StepShape enums.
     private static readonly string[] ArrowHeadNames =
     {
@@ -104,6 +102,31 @@ public partial class EditorWindow : Window
     };
     // Same order as the MagnifierShape enum.
     private static readonly string[] LensShapeNames = { Loc.T("Editor.Lens.Circle"), Loc.T("Editor.Lens.RoundedRect") };
+
+    private static readonly Dictionary<EditorTool, string> PresetTitles = new()
+    {
+        [EditorTool.Arrow] = Loc.T("Preset.Title.Arrow"),
+        [EditorTool.Line] = Loc.T("Preset.Title.Line"),
+        [EditorTool.Rectangle] = Loc.T("Preset.Title.Rectangle"),
+        [EditorTool.Ellipse] = Loc.T("Preset.Title.Ellipse"),
+        [EditorTool.Pen] = Loc.T("Preset.Title.Pen"),
+        [EditorTool.Text] = Loc.T("Preset.Title.Text"),
+        [EditorTool.Step] = Loc.T("Preset.Title.Step"),
+        [EditorTool.Highlight] = Loc.T("Preset.Title.Highlight"),
+        [EditorTool.Magnifier] = Loc.T("Preset.Title.Magnifier"),
+    };
+
+    private readonly EditorDocument _document = null!;
+    /// <summary>Last color used with each tool (yellow highlighter, red arrows...).</summary>
+    private readonly Dictionary<EditorTool, Color> _toolColors = new() { [EditorTool.Highlight] = Palette[2].Color };
+    private bool _ready;
+    private bool _syncingUi;
+    /// <summary>Kind of annotation the properties bar currently edits (selection or next drawn).</summary>
+    private EditorTool? _contextKind;
+    /// <summary>Tool whose presets are shown in the preset popup.</summary>
+    private EditorTool _presetTool;
+    /// <summary>Tool whose choices fill the variant box (arrow heads or bullet shapes).</summary>
+    private EditorTool? _variantKind;
     private double _zoom = 1;
 
     private TextBox? _textEditor;
@@ -124,58 +147,186 @@ public partial class EditorWindow : Window
     private ImageEffects? _shownEffects;
     /// <summary>Last slider move not applied yet: the moves are applied once per idle moment, not at each tick.</summary>
     private (string Slider, Func<ImageEffects, ImageEffects> Change)? _pendingSlider;
+    private readonly List<(Border Dot, bool IsBorder)> _effectColorDots = new();
 
-    public string FilePath => _document.FilePath;
+    /// <summary>Size of the capture when the image was inserted: the view is fitted again if placing it made the capture grow.</summary>
+    private (int Width, int Height) _sizeBeforeInsert;
 
+    // Closing: the question is asked after cancelling the first close, then the window closes for good.
+    private bool _closeConfirmed;
+    private bool _closeAsking;
+    /// <summary>A command waiting for a dialog (save before e-mail...): a second one waits for it to end.</summary>
+    private bool _busy;
+
+    /// <summary>For the XAML previewer only.</summary>
+    public EditorWindow() => InitializeComponent();
+
+    /// <summary>Opens the capture (and its annotations) for editing.</summary>
+    /// <exception cref="InvalidDataException">Not a readable image, or too large.</exception>
     public EditorWindow(string path)
     {
         InitializeComponent();
+        FlowDirection = Loc.IsRightToLeft ? FlowDirection.RightToLeft : FlowDirection.LeftToRight;
         _document = EditorDocument.Load(path);
         AnnotCanvas.Document = _document;
         Backdrop.Document = _document;
 
         foreach (var (color, name) in Palette)
-        {
-            var swatch = new Button { Style = (Style)FindResource("SwatchButton"), Background = new SolidColorBrush(color), ToolTip = name };
-            swatch.Click += (_, _) => SetCurrentColor(color, applyToSelection: true);
-            PalettePanel.Children.Add(swatch);
-        }
-        foreach (var t in Thicknesses) ThicknessBox.Items.Add(t);
-        foreach (var f in FontSizes) FontSizeBox.Items.Add(f);
-        foreach (var z in LensZooms) LensZoomBox.Items.Add(z.ToString("0.#", Loc.Culture) + " ×");
+            PalettePanel.Children.Add(Swatch(color, name, () => SetCurrentColor(color, applyToSelection: true)));
+        ThicknessBox.ItemsSource = Thicknesses.Select(t => Loc.T("Effects.Pixels", t)).ToArray();
+        FontSizeBox.ItemsSource = FontSizes.Select(f => f.ToString("0", Loc.Culture) + " pt").ToArray();
+        LensZoomBox.ItemsSource = LensZooms.Select(z => z.ToString("0.#", Loc.Culture) + " ×").ToArray();
         BuildEffectSwatches();
         SetCurrentColor(Palette[0].Color, applyToSelection: false);
         StampSizeText.Text = StampSizeSlider.Value.ToString("P0", Loc.Culture);
         BuildStampCatalog();
         SetCurrentStamp(AnnotCanvas.CurrentStampId);
+        WireEvents();
 
         AnnotCanvas.SelectionChanged += OnSelectionChanged;
         AnnotCanvas.TextEditRequested += BeginTextEdit;
         AnnotCanvas.FloatingImageChanged += OnFloatingImageChanged;
-        AnnotCanvas.FloatingImageFailed += ex => ShowInsertError(ex);
+        AnnotCanvas.FloatingImageFailed += ex => _ = ShowInsertErrorAsync(ex);
         _document.Changed += UpdateUi;
 
-        Loaded += (_, _) =>
+        Opened += (_, _) =>
         {
-            ZoomToFit(onlyShrink: true);
-            AnnotCanvas.Focus();
+            ApplyZoom();
+            // Once laid out: the size of the view is known.
+            Dispatcher.UIThread.Post(() =>
+            {
+                ZoomToFit(onlyShrink: true);
+                AnnotCanvas.Focus();
+            }, DispatcherPriority.Background);
         };
-        DpiChanged += (_, _) => ApplyZoom();
+        ScalingChanged += (_, _) => ApplyZoom();
         // The preset popup stays open until the user draws, so that the first click on the image is not lost.
-        AnnotCanvas.PreviewMouseDown += (_, _) => PresetPopup.IsOpen = false;
+        AnnotCanvas.AddHandler(PointerPressedEvent, (_, _) => PresetPopup.IsOpen = false, RoutingStrategies.Tunnel);
         Deactivated += (_, _) => PresetPopup.IsOpen = false;
-        LocationChanged += (_, _) => PresetPopup.IsOpen = false;
+        PositionChanged += (_, _) => PresetPopup.IsOpen = false;
 
         _ready = true;
         UpdateUi();
         UpdateContext();
     }
 
+    /// <summary>The capture being edited.</summary>
+    public string FilePath => _document.FilePath;
+
+    /// <summary>The document being edited (tests, and the windows that open the editor).</summary>
+    internal EditorDocument Document => _document;
+
+    private void WireEvents()
+    {
+        SaveButton.Click += (_, _) => Save();
+        CopyButton.Click += (_, _) => _ = CopyAsync();
+        ExportButton.Click += (_, _) => _ = ExportAsync();
+        PrintButton.Click += (_, _) => _ = PrintAsync();
+        EmailButton.Click += (_, _) => _ = EmailAsync();
+        UndoButton.Click += (_, _) => Undo();
+        RedoButton.Click += (_, _) => Redo();
+        ReadTextButton.Click += (_, _) => ReadText();
+        ResizeButton.Click += (_, _) => _ = ResizeAsync();
+        CropButton.Click += (_, _) => SelectTool(EditorTool.Crop);
+        InsertPasteItem.Click += (_, _) => _ = PasteImageAsync();
+        InsertFileItem.Click += (_, _) => _ = InsertFromFileAsync();
+        InsertCaptureItem.Click += (_, _) => _ = InsertCaptureAsync();
+        DeleteButton.Click += (_, _) => DeleteSelected();
+        CustomColorButton.Click += async (_, _) =>
+        {
+            if (await ColorPickerDialog.PickAsync(this, AnnotCanvas.CurrentStyle.Color) is Color color) SetCurrentColor(color, applyToSelection: true);
+        };
+        ThicknessBox.SelectionChanged += (_, _) => OnThicknessChanged();
+        FontSizeBox.SelectionChanged += (_, _) => OnFontSizeChanged();
+        VariantBox.SelectionChanged += (_, _) => OnVariantChanged();
+        LensZoomBox.SelectionChanged += (_, _) => OnLensZoomChanged();
+        FillBox.IsCheckedChanged += (_, _) => OnFillChanged();
+        StampSizeSlider.ValueChanged += (_, e) =>
+        {
+            if (!_ready) return;
+            AnnotCanvas.CurrentStampScale = e.NewValue;
+            StampSizeText.Text = e.NewValue.ToString("P0", Loc.Culture);
+        };
+
+        foreach (var button in ToolButtons.Children.OfType<RadioButton>())
+        {
+            button.IsCheckedChanged += OnToolChecked;
+            button.Click += OnToolClicked;
+        }
+
+        // Toggle buttons opening a popup: the popup lets them take the click that closes it.
+        StampPopup.PlacementTarget = StampPickerButton;
+        StampPopup.OverlayInputPassThroughElement = StampPickerButton;
+        StampPickerButton.IsCheckedChanged += (_, _) => StampPopup.IsOpen = StampPickerButton.IsChecked == true;
+        StampPopup.Closed += (_, _) => StampPickerButton.IsChecked = false;
+        EffectsPopup.PlacementTarget = EffectsButton;
+        EffectsPopup.OverlayInputPassThroughElement = EffectsButton;
+        EffectsButton.IsCheckedChanged += (_, _) =>
+        {
+            if (EffectsButton.IsChecked == true) OpenEffects();
+            else EffectsPopup.IsOpen = false;
+        };
+        EffectsPopup.Closed += (_, _) => OnEffectsClosed();
+        // A slider released: its last move is applied, its next move starts a new undo step.
+        EffectsPanel.AddHandler(PointerReleasedEvent, (_, _) =>
+        {
+            ApplyPendingSlider();
+            _effectsKey = null;
+        }, RoutingStrategies.Tunnel, handledEventsToo: true);
+        foreach (var slider in new[] { ShadowBlurSlider, ShadowOpacitySlider, ShadowOffsetSlider, BorderWidthSlider, CornerSlider, TornSizeSlider })
+            slider.ValueChanged += (_, e) => OnEffectsSlider(slider, e.NewValue);
+        foreach (var check in new[] { ShadowCheck, BorderCheck, TornTopCheck, TornBottomCheck, TornLeftCheck, TornRightCheck })
+            check.IsCheckedChanged += (_, _) => OnEffectsCheck();
+        TornReseedButton.Click += (_, _) => ChangeEffects(null, fx => fx with
+        {
+            TornSeed = fx.TornSeed == int.MaxValue ? 1 : fx.TornSeed + 1,
+            TornEdges = fx.TornEdges == TornEdges.None ? TornEdges.Bottom : fx.TornEdges,
+        });
+        // "None": every effect off, their settings kept for this session.
+        EffectsNoneButton.Click += (_, _) =>
+            ChangeEffects(null, fx => fx with { Shadow = false, Border = false, CornerRadius = 0, TornEdges = TornEdges.None });
+
+        PresetCloseButton.Click += (_, _) => PresetPopup.IsOpen = false;
+        PresetAddButton.Click += (_, _) => OnPresetAdd();
+        PresetResetButton.Click += (_, _) =>
+        {
+            ToolPresets.Reset(_presetTool);
+            BuildPresetPanel();
+        };
+
+        ZoomInButton.Click += (_, _) => SetZoom(_zoom * 1.25);
+        ZoomOutButton.Click += (_, _) => SetZoom(_zoom * 0.8);
+        ZoomActualButton.Click += (_, _) => SetZoom(1);
+        ZoomFitButton.Click += (_, _) => ZoomToFit(onlyShrink: false);
+        Scroller.AddHandler(PointerWheelChangedEvent, OnScrollerWheel, RoutingStrategies.Tunnel);
+        Scroller.AddHandler(DragDrop.DragOverEvent, OnImageDragOver);
+        Scroller.AddHandler(DragDrop.DropEvent, OnImageDrop);
+        AddHandler(KeyDownEvent, OnPreviewKeyDown, RoutingStrategies.Tunnel);
+    }
+
+    /// <summary>Square color button of the palettes.</summary>
+    private static Button Swatch(Color color, string name, Action click)
+    {
+        var swatch = new Button
+        {
+            Width = 20,
+            Height = 20,
+            Margin = new Thickness(2, 0),
+            Padding = default,
+            Focusable = false,
+            Background = new ImmutableSolidColorBrush(color),
+        };
+        swatch.Classes.Add("swatch");
+        ToolTip.SetTip(swatch, name);
+        swatch.Click += (_, _) => click();
+        return swatch;
+    }
+
     // ---- Tools and style ----
 
-    private void OnToolChecked(object sender, RoutedEventArgs e)
+    private void OnToolChecked(object? sender, RoutedEventArgs e)
     {
-        if (!_ready || sender is not RadioButton { Tag: string tag }) return;
+        if (!_ready || sender is not RadioButton { IsChecked: true, Tag: string tag }) return;
         EndPendingEdits();
         var tool = Enum.Parse<EditorTool>(tag);
         // A tool chosen with the keyboard: the presets of the previous one no longer apply.
@@ -184,16 +335,14 @@ public partial class EditorWindow : Window
         if (tool is not (EditorTool.Select or EditorTool.Crop or EditorTool.Stamp))
             SetCurrentColor(_toolColors.GetValueOrDefault(tool, Palette[0].Color), applyToSelection: false);
         UpdateContext();
-        if (tool == EditorTool.Stamp && IsLoaded) StampPickerButton.IsChecked = true;
+        if (tool == EditorTool.Stamp && IsVisible) StampPickerButton.IsChecked = true;
     }
 
     private void SelectTool(EditorTool tool)
     {
-        var button = ToolButtons.Children.OfType<RadioButton>().FirstOrDefault(b => (string)b.Tag == tool.ToString());
+        var button = ToolButtons.Children.OfType<RadioButton>().FirstOrDefault(b => (string?)b.Tag == tool.ToString());
         if (button != null) button.IsChecked = true;
     }
-
-    private void OnCropTool(object sender, RoutedEventArgs e) => SelectTool(EditorTool.Crop);
 
     /// <summary>Shows only the properties that apply to the current tool, or to the selection.</summary>
     private void UpdateContext()
@@ -208,17 +357,17 @@ public partial class EditorWindow : Window
         var kind = selected?.Kind ?? (tool is EditorTool.Select or EditorTool.Crop ? null : tool);
         _contextKind = kind;
 
-        Show(ColorSection, kind is not (null or EditorTool.Pixelate or EditorTool.Spotlight or EditorTool.Stamp));
-        Show(ThicknessSection, kind is not (null or EditorTool.Text or EditorTool.Spotlight or EditorTool.Highlight or EditorTool.Stamp));
+        ColorSection.IsVisible = kind is not (null or EditorTool.Pixelate or EditorTool.Spotlight or EditorTool.Stamp);
+        ThicknessSection.IsVisible = kind is not (null or EditorTool.Text or EditorTool.Spotlight or EditorTool.Highlight or EditorTool.Stamp);
         ThicknessLabel.Text = kind switch
         {
             EditorTool.Pixelate => Loc.T("Editor.PixelSize"),
             EditorTool.Step => Loc.T("Editor.Size"),
             _ => Loc.T("Editor.Thickness"),
         };
-        Show(FontSection, kind == EditorTool.Text);
-        Show(LensZoomSection, kind == EditorTool.Magnifier);
-        Show(FillSection, kind is EditorTool.Rectangle or EditorTool.Ellipse or EditorTool.Text or EditorTool.Step or EditorTool.Magnifier);
+        FontSection.IsVisible = kind == EditorTool.Text;
+        LensZoomSection.IsVisible = kind == EditorTool.Magnifier;
+        FillSection.IsVisible = kind is EditorTool.Rectangle or EditorTool.Ellipse or EditorTool.Text or EditorTool.Step or EditorTool.Magnifier;
         FillBox.Content = kind switch
         {
             EditorTool.Step => Loc.T("Editor.Letters"),
@@ -226,7 +375,7 @@ public partial class EditorWindow : Window
             EditorTool.Magnifier => Loc.T("Editor.Connector"),
             _ => Loc.T("Editor.Fill"),
         };
-        Show(VariantSection, kind is EditorTool.Arrow or EditorTool.Step or EditorTool.Magnifier);
+        VariantSection.IsVisible = kind is EditorTool.Arrow or EditorTool.Step or EditorTool.Magnifier;
         if (kind != _variantKind && kind is EditorTool.Arrow or EditorTool.Step or EditorTool.Magnifier)
         {
             _syncingUi = true;
@@ -247,8 +396,8 @@ public partial class EditorWindow : Window
             }
         }
         ShowStyle();
-        Show(StampSection, kind == EditorTool.Stamp && selected == null);
-        Show(DeleteSection, selected != null);
+        StampSection.IsVisible = kind == EditorTool.Stamp && selected == null;
+        DeleteSection.IsVisible = selected != null;
         if (AnnotCanvas.HasFloatingImage)
         {
             ToolName.Text = Loc.T("Editor.Insert.Floating");
@@ -263,9 +412,9 @@ public partial class EditorWindow : Window
         _syncingUi = true;
         try
         {
-            CurrentColorSwatch.Background = new SolidColorBrush(style.Color);
-            ThicknessBox.SelectedItem = Thicknesses.Contains(style.Thickness) ? style.Thickness : null;
-            FontSizeBox.SelectedItem = FontSizes.Contains(style.FontSize) ? style.FontSize : null;
+            CurrentColorSwatch.Background = new ImmutableSolidColorBrush(style.Color);
+            ThicknessBox.SelectedIndex = Array.IndexOf(Thicknesses, style.Thickness);
+            FontSizeBox.SelectedIndex = Array.IndexOf(FontSizes, style.FontSize);
             FillBox.IsChecked = _contextKind == EditorTool.Step ? style.Letters : style.Fill;
             if (_contextKind == EditorTool.Arrow) VariantBox.SelectedIndex = (int)style.Heads;
             else if (_contextKind == EditorTool.Step) VariantBox.SelectedIndex = (int)style.Shape;
@@ -277,9 +426,6 @@ public partial class EditorWindow : Window
             _syncingUi = false;
         }
     }
-
-    private static void Show(UIElement element, bool visible) =>
-        element.Visibility = visible ? Visibility.Visible : Visibility.Collapsed;
 
     private static string SelectionName(Annotation annotation) => annotation switch
     {
@@ -304,7 +450,7 @@ public partial class EditorWindow : Window
         {
             // Recorded with the text itself when the edit ends.
             updated.ApplyTo(_editingText);
-            _textEditor.Foreground = new SolidColorBrush(_editingText.Color);
+            _textEditor.Foreground = new ImmutableSolidColorBrush(_editingText.Color);
             _textEditor.FontSize = _editingText.FontSize;
         }
         else
@@ -318,30 +464,27 @@ public partial class EditorWindow : Window
         _toolColors[AnnotCanvas.Tool] = color;
         if (applyToSelection) ChangeStyle(s => s with { Color = color });
         else AnnotCanvas.CurrentStyle = AnnotCanvas.CurrentStyle with { Color = color };
-        CurrentColorSwatch.Background = new SolidColorBrush(color);
+        CurrentColorSwatch.Background = new ImmutableSolidColorBrush(color);
     }
 
-    private void OnCustomColor(object sender, RoutedEventArgs e)
+    private void OnThicknessChanged()
     {
-        if (PickColor(AnnotCanvas.CurrentStyle.Color) is Color color) SetCurrentColor(color, applyToSelection: true);
-    }
-
-    private void OnThicknessChanged(object sender, SelectionChangedEventArgs e)
-    {
-        if (!_ready || _syncingUi || ThicknessBox.SelectedItem is not double thickness) return;
+        if (!_ready || _syncingUi || ThicknessBox.SelectedIndex < 0) return;
+        double thickness = Thicknesses[ThicknessBox.SelectedIndex];
         ChangeStyle(s => s with { Thickness = thickness });
         AnnotCanvas.Focus();
     }
 
-    private void OnFontSizeChanged(object sender, SelectionChangedEventArgs e)
+    private void OnFontSizeChanged()
     {
-        if (!_ready || _syncingUi || FontSizeBox.SelectedItem is not double size) return;
+        if (!_ready || _syncingUi || FontSizeBox.SelectedIndex < 0) return;
+        double size = FontSizes[FontSizeBox.SelectedIndex];
         ChangeStyle(s => s with { FontSize = size });
         if (_textEditor != null) _textEditor.Focus();
         else AnnotCanvas.Focus();
     }
 
-    private void OnVariantChanged(object sender, SelectionChangedEventArgs e)
+    private void OnVariantChanged()
     {
         if (!_ready || _syncingUi || VariantBox.SelectedIndex < 0) return;
         int index = VariantBox.SelectedIndex;
@@ -351,7 +494,7 @@ public partial class EditorWindow : Window
         AnnotCanvas.Focus();
     }
 
-    private void OnLensZoomChanged(object sender, SelectionChangedEventArgs e)
+    private void OnLensZoomChanged()
     {
         if (!_ready || _syncingUi || LensZoomBox.SelectedIndex < 0) return;
         double zoom = LensZooms[LensZoomBox.SelectedIndex];
@@ -359,7 +502,7 @@ public partial class EditorWindow : Window
         AnnotCanvas.Focus();
     }
 
-    private void OnFillChanged(object sender, RoutedEventArgs e)
+    private void OnFillChanged()
     {
         if (!_ready || _syncingUi) return;
         bool fill = FillBox.IsChecked == true;
@@ -377,7 +520,7 @@ public partial class EditorWindow : Window
             StampCatalog.Children.Add(new TextBlock
             {
                 Text = StampLibrary.CategoryName(category),
-                FontWeight = FontWeights.SemiBold,
+                FontWeight = FontWeight.SemiBold,
                 FontSize = 13,
                 Margin = new Thickness(2, StampCatalog.Children.Count == 0 ? 4 : 14, 0, 6),
             });
@@ -387,12 +530,12 @@ public partial class EditorWindow : Window
                 double height = stamp.Category == StampLibrary.TextStamps ? 30 : 40;
                 var button = new Button
                 {
-                    Style = (Style)FindResource("FlatButton"),
                     Padding = new Thickness(5),
                     Margin = new Thickness(1),
-                    ToolTip = stamp.Name,
-                    Content = new Image { Source = stamp.Preview, Height = height, Stretch = Stretch.Uniform, FlowDirection = FlowDirection.LeftToRight },
+                    Content = DrawingPreview.ForStamp(stamp, height),
                 };
+                button.Classes.Add("flat");
+                ToolTip.SetTip(button, stamp.Name);
                 var id = stamp.Id;
                 button.Click += (_, _) =>
                 {
@@ -409,37 +552,13 @@ public partial class EditorWindow : Window
     private void SetCurrentStamp(string id)
     {
         AnnotCanvas.CurrentStampId = id;
-        CurrentStampImage.Source = StampLibrary.Find(id)?.Preview;
-    }
-
-    private void OnStampPickerOpen(object sender, RoutedEventArgs e) => StampPopup.IsOpen = true;
-
-    private void OnStampPickerClosed(object? sender, EventArgs e) => StampPickerButton.IsChecked = false;
-
-    private void OnStampSizeChanged(object sender, RoutedPropertyChangedEventArgs<double> e)
-    {
-        if (!_ready) return;
-        AnnotCanvas.CurrentStampScale = e.NewValue;
-        StampSizeText.Text = e.NewValue.ToString("P0", Loc.Culture);
+        CurrentStampImage.SetStamp(StampLibrary.Find(id));
     }
 
     // ---- Presets ----
 
-    private static readonly Dictionary<EditorTool, string> PresetTitles = new()
-    {
-        [EditorTool.Arrow] = Loc.T("Preset.Title.Arrow"),
-        [EditorTool.Line] = Loc.T("Preset.Title.Line"),
-        [EditorTool.Rectangle] = Loc.T("Preset.Title.Rectangle"),
-        [EditorTool.Ellipse] = Loc.T("Preset.Title.Ellipse"),
-        [EditorTool.Pen] = Loc.T("Preset.Title.Pen"),
-        [EditorTool.Text] = Loc.T("Preset.Title.Text"),
-        [EditorTool.Step] = Loc.T("Preset.Title.Step"),
-        [EditorTool.Highlight] = Loc.T("Preset.Title.Highlight"),
-        [EditorTool.Magnifier] = Loc.T("Preset.Title.Magnifier"),
-    };
-
     /// <summary>A mouse click on a tool button shows its presets (keyboard shortcuts do not).</summary>
-    private void OnToolClicked(object sender, RoutedEventArgs e)
+    private void OnToolClicked(object? sender, RoutedEventArgs e)
     {
         if (sender is not RadioButton { Tag: string tag } button) return;
         var tool = Enum.Parse<EditorTool>(tag);
@@ -449,6 +568,7 @@ public partial class EditorWindow : Window
             return;
         }
         _presetTool = tool;
+        PresetPopup.IsOpen = false;
         PresetPopup.PlacementTarget = button;
         BuildPresetPanel();
         PresetPopup.IsOpen = true;
@@ -464,64 +584,50 @@ public partial class EditorWindow : Window
         if (presets.Count == 0)
         {
             var empty = new TextBlock { Text = Loc.T("Preset.Empty"), Margin = new Thickness(2, 4, 0, 4) };
-            empty.SetResourceReference(TextBlock.ForegroundProperty, "MutedTextBrush");
+            empty.Classes.Add("muted");
             PresetPanel.Children.Add(empty);
         }
     }
 
-    private FrameworkElement CreatePresetTile(ToolPreset preset, int number)
+    private Control CreatePresetTile(ToolPreset preset, int number)
     {
         var numberText = new TextBlock
         {
-            Text = number.ToString(),
+            Text = number.ToString(Loc.Culture),
             FontSize = 10.5,
             HorizontalAlignment = HorizontalAlignment.Right,
             VerticalAlignment = VerticalAlignment.Bottom,
             Margin = new Thickness(0, 0, 6, 3),
         };
-        // Theme colors by reference: they follow a switch to the light or dark theme.
-        numberText.SetResourceReference(TextBlock.ForegroundProperty, "MutedTextBrush");
+        numberText.Classes.Add("muted");
+        var sample = new DrawingPreview { Width = 105, Height = 42 };
+        sample.SetDrawing(preset.RenderPreview, new Size(ToolPreset.PreviewWidth, ToolPreset.PreviewHeight));
         var apply = new Button
         {
-            Style = (Style)FindResource("FlatButton"),
             Width = 124,
             Height = 58,
-            Padding = new Thickness(0),
-            ToolTip = preset.Description,
-            Content = new Grid
-            {
-                Children =
-                {
-                    new Image
-                    {
-                        Source = preset.CreatePreview(), Width = 105, Height = 42, Stretch = Stretch.Uniform,
-                        FlowDirection = FlowDirection.LeftToRight,
-                    },
-                    numberText,
-                },
-            },
+            Padding = default,
+            HorizontalContentAlignment = HorizontalAlignment.Stretch,
+            VerticalContentAlignment = VerticalAlignment.Stretch,
+            Content = new Grid { Children = { sample, numberText } },
         };
-        apply.SetResourceReference(BackgroundProperty, "TileBrush");
+        apply.Classes.Add("flat");
+        apply.Classes.Add("tile");
+        apply[!BackgroundProperty] = new DynamicResourceExtension("TileBrush");
+        ToolTip.SetTip(apply, preset.Description);
         apply.Click += (_, _) => ApplyPreset(preset);
 
         var remove = new Button
         {
-            Style = (Style)FindResource("FlatButton"),
             Padding = new Thickness(3),
             HorizontalAlignment = HorizontalAlignment.Right,
             VerticalAlignment = VerticalAlignment.Top,
             Margin = new Thickness(0, 2, 2, 0),
-            ToolTip = Loc.T("Preset.RemoveTip"),
-            Content = new System.Windows.Shapes.Path
-            {
-                Style = (Style)FindResource("Icon"),
-                Data = (Geometry)FindResource("IconClose"),
-                Width = 8,
-                Height = 8,
-                Stretch = Stretch.Uniform,
-                StrokeThickness = 2,
-            },
+            Content = new IconPath { Width = 8, Height = 8, Stretch = Stretch.Uniform, StrokeThickness = 2, Classes = { "icon" } },
         };
+        ((IconPath)remove.Content)[!IconPath.DataProperty] = new DynamicResourceExtension("IconClose");
+        remove.Classes.Add("flat");
+        ToolTip.SetTip(remove, Loc.T("Preset.RemoveTip"));
         remove.Click += (_, _) =>
         {
             ToolPresets.Remove(preset);
@@ -553,21 +659,13 @@ public partial class EditorWindow : Window
         AnnotCanvas.Focus();
     }
 
-    private void OnPresetAdd(object sender, RoutedEventArgs e)
+    private void OnPresetAdd()
     {
         // Only the settings of this tool, so that identical presets compare equal.
         var preset = new ToolPreset(_presetTool, DrawingStyle.Default.Merge(_presetTool, AnnotCanvas.CurrentStyle));
         if (!ToolPresets.Add(preset)) InfoText.Text = Loc.T("Preset.AlreadyExists");
         BuildPresetPanel();
     }
-
-    private void OnPresetReset(object sender, RoutedEventArgs e)
-    {
-        ToolPresets.Reset(_presetTool);
-        BuildPresetPanel();
-    }
-
-    private void OnPresetPopupClose(object sender, RoutedEventArgs e) => PresetPopup.IsOpen = false;
 
     /// <summary>Shows the style of the selected annotation in the toolbar.</summary>
     private void OnSelectionChanged()
@@ -592,7 +690,7 @@ public partial class EditorWindow : Window
             1 => Loc.T("Editor.Info.OneAnnotation"),
             _ => Loc.T("Editor.Info.Annotations", count),
         };
-        InfoText.Text = Loc.T("Editor.Info.Size", image.PixelWidth, image.PixelHeight) + "   •   " + annotations
+        InfoText.Text = Loc.T("Editor.Info.Size", image.Width, image.Height) + "   •   " + annotations
                         + (_document.IsDirty ? "   •   " + Loc.T("Editor.Info.Modified") : "")
                         + (_document.PreviewShadowFailed ? "   •   " + Loc.T("Effects.ShadowUnavailable") : "");
         Title = (_document.IsDirty ? "• " : "") + Loc.T("Editor.WindowTitle", Path.GetFileName(_document.FilePath));
@@ -600,11 +698,9 @@ public partial class EditorWindow : Window
         var margin = Backdrop.ImageMargin;
         if (ImageLayer.Margin != margin) ImageLayer.Margin = margin;
         // The shadow of the effects replaces the decorative one of the page.
-        var page = _document.PreviewLayout?.Effects.Shadow == true ? Visibility.Collapsed : Visibility.Visible;
-        if (ImagePage.Visibility != page) ImagePage.Visibility = page;
+        ImagePage.IsVisible = _document.PreviewLayout?.Effects.Shadow != true;
         if (EffectsPopup.IsOpen) ShowEffects();
-        bool deleteShown = DeleteSection.Visibility == Visibility.Visible;
-        if (deleteShown != hasSelection) UpdateContext();
+        if (DeleteSection.IsVisible != hasSelection) UpdateContext();
     }
 
     // ---- Text editing ----
@@ -621,29 +717,26 @@ public partial class EditorWindow : Window
         {
             Text = text.Text,
             FontFamily = TextAnnotation.Font,
-            FontWeight = FontWeights.SemiBold,
+            FontWeight = FontWeight.SemiBold,
             FontSize = text.FontSize,
-            Foreground = new SolidColorBrush(text.Color),
-            Background = new SolidColorBrush(Color.FromArgb(0xE6, 0xFF, 0xFF, 0xFF)),
-            BorderThickness = new Thickness(1),
-            Padding = new Thickness(0),
+            Foreground = new ImmutableSolidColorBrush(text.Color),
             AcceptsReturn = true,
-            MinWidth = 80,
+            TextWrapping = TextWrapping.NoWrap,
             // Arabic or Hebrew text is typed right to left, as it will be drawn (see TextAnnotation.DirectionOf).
             FlowDirection = TextAnnotation.DirectionOf(text.Text),
         };
+        box.Classes.Add("annotation-text");
         box.TextChanged += (_, _) =>
         {
             var direction = TextAnnotation.DirectionOf(box.Text);
             if (box.FlowDirection != direction) box.FlowDirection = direction;
         };
-        box.SetResourceReference(BorderBrushProperty, "AccentBrush");
         Canvas.SetLeft(box, text.Position.X + TextAnnotation.Pad - 3);
         Canvas.SetTop(box, text.Position.Y + TextAnnotation.Pad - 1);
-        box.LostKeyboardFocus += (_, _) => EndTextEdit();
-        box.PreviewKeyDown += (_, e) =>
+        box.LostFocus += (_, _) => EndTextEdit();
+        box.KeyDown += (_, e) =>
         {
-            if (e.Key == Key.Escape || (e.Key == Key.Enter && Keyboard.Modifiers == ModifierKeys.Control))
+            if (e.Key == Key.Escape || (e.Key == Key.Enter && e.KeyModifiers == KeyModifiers.Control))
             {
                 e.Handled = true;
                 EndTextEdit();
@@ -652,11 +745,12 @@ public partial class EditorWindow : Window
         };
         TextLayer.Children.Add(box);
         _textEditor = box;
-        Dispatcher.BeginInvoke(DispatcherPriority.Input, () =>
+        Dispatcher.UIThread.Post(() =>
         {
+            if (_textEditor != box) return;
             box.Focus();
-            box.CaretIndex = box.Text.Length;
-        });
+            box.CaretIndex = box.Text?.Length ?? 0;
+        }, DispatcherPriority.Input);
     }
 
     private void EndTextEdit()
@@ -668,7 +762,7 @@ public partial class EditorWindow : Window
         TextLayer.Children.Remove(box);
         AnnotCanvas.SetEditingText(null);
 
-        var value = box.Text.TrimEnd();
+        var value = (box.Text ?? "").TrimEnd();
         bool exists = _document.Annotations.Contains(text);
         bool changed;
         if (string.IsNullOrWhiteSpace(value))
@@ -698,55 +792,34 @@ public partial class EditorWindow : Window
     private void BuildEffectSwatches()
     {
         foreach (var (color, name) in Palette.Append((Color.FromRgb(0x9C, 0xA3, 0xAF), Loc.T("Effects.Gray"))))
-            BorderColors.Children.Add(CreateEffectSwatch(color, name, c => e => e with { Border = true, BorderColor = c }));
-        BorderColors.Children.Add(CreateCustomColorButton(nameof(ImageEffects.BorderColor),
-            () => _document.Effects.BorderColor, c => e => e with { Border = true, BorderColor = c }));
+            BorderColors.Children.Add(Swatch(color, name, () => ChangeEffects(null, e => e with { Border = true, BorderColor = color })));
+        BorderColors.Children.Add(CreateCustomColorButton(isBorder: true));
         foreach (var (color, name) in EffectBackgrounds)
-            BackgroundColors.Children.Add(CreateEffectSwatch(color, name, c => e => e with { Background = c }));
-        BackgroundColors.Children.Add(CreateCustomColorButton(nameof(ImageEffects.Background),
-            () => _document.Effects.Background, c => e => e with { Background = c }));
+            BackgroundColors.Children.Add(Swatch(color, name, () => ChangeEffects(null, e => e with { Background = color })));
+        BackgroundColors.Children.Add(CreateCustomColorButton(isBorder: false));
     }
 
-    private Button CreateEffectSwatch(Color color, string name, Func<Color, Func<ImageEffects, ImageEffects>> change)
+    /// <summary>Round button showing the current color of the border or of the background; it opens the color dialog.</summary>
+    private Button CreateCustomColorButton(bool isBorder)
     {
-        var swatch = new Button { Style = (Style)FindResource("SwatchButton"), Background = new SolidColorBrush(color), ToolTip = name };
-        swatch.Click += (_, _) => ChangeEffects(null, change(color));
-        return swatch;
-    }
-
-    /// <summary>Round button showing the current color; it opens the color dialog.</summary>
-    private Button CreateCustomColorButton(string tag, Func<Color> current, Func<Color, Func<ImageEffects, ImageEffects>> change)
-    {
-        var dot = new Border { Width = 20, Height = 20, CornerRadius = new CornerRadius(10), BorderThickness = new Thickness(1.5), Tag = tag };
-        dot.SetResourceReference(Border.BorderBrushProperty, "MutedTextBrush");
-        var button = new Button
+        var dot = new Border { Width = 20, Height = 20, CornerRadius = new CornerRadius(10), BorderThickness = new Thickness(1.5) };
+        dot[!Border.BorderBrushProperty] = new DynamicResourceExtension("MutedTextBrush");
+        _effectColorDots.Add((dot, isBorder));
+        var button = new Button { Padding = new Thickness(2), Margin = new Thickness(4, 0, 0, 0), Focusable = false, Content = dot };
+        button.Classes.Add("flat");
+        ToolTip.SetTip(button, Loc.T("Effects.CustomColorTip"));
+        button.Click += async (_, _) =>
         {
-            Style = (Style)FindResource("FlatButton"),
-            Padding = new Thickness(2),
-            Margin = new Thickness(4, 0, 0, 0),
-            ToolTip = Loc.T("Effects.CustomColorTip"),
-            Content = dot,
-        };
-        button.Click += (_, _) =>
-        {
+            var current = isBorder ? _document.Effects.BorderColor : _document.Effects.Background;
             // The dialog closes the panel: it is shown again with the new color.
-            if (PickColor(current()) is Color color) ChangeEffects(null, change(color));
+            if (await ColorPickerDialog.PickAsync(this, current) is Color color)
+                ChangeEffects(null, e => isBorder ? e with { Border = true, BorderColor = color } : e with { Background = color });
             EffectsButton.IsChecked = true;
         };
         return button;
     }
 
-    private static Color? PickColor(Color current)
-    {
-        using var dialog = new WinForms.ColorDialog
-        {
-            FullOpen = true,
-            Color = System.Drawing.Color.FromArgb(current.R, current.G, current.B),
-        };
-        return dialog.ShowDialog() == WinForms.DialogResult.OK ? Color.FromRgb(dialog.Color.R, dialog.Color.G, dialog.Color.B) : null;
-    }
-
-    private void OnEffectsOpen(object sender, RoutedEventArgs e)
+    private void OpenEffects()
     {
         EndPendingEdits();
         AnnotCanvas.CancelOperation();
@@ -755,17 +828,10 @@ public partial class EditorWindow : Window
         EffectsPopup.IsOpen = true;
     }
 
-    private void OnEffectsClosed(object? sender, EventArgs e)
+    private void OnEffectsClosed()
     {
         ApplyPendingSlider();
         EffectsButton.IsChecked = false;
-        _effectsKey = null;
-    }
-
-    /// <summary>A slider released: its last move is applied, its next move starts a new undo step.</summary>
-    private void OnEffectsMouseUp(object sender, MouseButtonEventArgs e)
-    {
-        ApplyPendingSlider();
         _effectsKey = null;
     }
 
@@ -800,10 +866,8 @@ public partial class EditorWindow : Window
             TornSizeText.Text = Pixels(effects.TornSize);
             if (shown == null || shown.BorderColor != effects.BorderColor || shown.Background != effects.Background)
             {
-                foreach (var dot in new[] { BorderColors, BackgroundColors }.SelectMany(p => p.Children.OfType<Button>()).Select(b => b.Content).OfType<Border>())
-                {
-                    dot.Background = new SolidColorBrush((string)dot.Tag == nameof(ImageEffects.BorderColor) ? effects.BorderColor : effects.Background);
-                }
+                foreach (var (dot, isBorder) in _effectColorDots)
+                    dot.Background = new ImmutableSolidColorBrush(isBorder ? effects.BorderColor : effects.Background);
             }
         }
         finally
@@ -834,10 +898,10 @@ public partial class EditorWindow : Window
         _effectsVersion = _document.Version;
     }
 
-    private void OnEffectsSlider(object sender, RoutedPropertyChangedEventArgs<double> e)
+    private void OnEffectsSlider(Slider slider, double value)
     {
-        if (!_ready || _syncingEffects || sender is not Slider slider) return;
-        double v = Math.Round(e.NewValue);
+        if (!_ready || _syncingEffects) return;
+        double v = Math.Round(value);
         Func<ImageEffects, ImageEffects>? change = slider.Name switch
         {
             nameof(ShadowBlurSlider) => fx => fx with { Shadow = true, ShadowBlur = v },
@@ -848,12 +912,12 @@ public partial class EditorWindow : Window
             nameof(TornSizeSlider) => fx => fx with { TornSize = v },
             _ => null,
         };
-        if (change == null) return;
+        if (change == null || slider.Name == null) return;
         // A drag sends many ticks: only the last one waiting is applied, once the window has drawn the previous one.
         if (_pendingSlider is { } pending && pending.Slider != slider.Name) ApplyPendingSlider();
         bool scheduled = _pendingSlider != null;
         _pendingSlider = (slider.Name, change);
-        if (!scheduled) Dispatcher.BeginInvoke(DispatcherPriority.Background, ApplyPendingSlider);
+        if (!scheduled) Dispatcher.UIThread.Post(ApplyPendingSlider, DispatcherPriority.Background);
     }
 
     private void ApplyPendingSlider()
@@ -863,7 +927,7 @@ public partial class EditorWindow : Window
         ChangeEffects(pending.Slider, pending.Change);
     }
 
-    private void OnEffectsCheck(object sender, RoutedEventArgs e)
+    private void OnEffectsCheck()
     {
         if (!_ready || _syncingEffects) return;
         var torn = (TornTopCheck.IsChecked == true ? TornEdges.Top : TornEdges.None)
@@ -873,18 +937,6 @@ public partial class EditorWindow : Window
         bool shadow = ShadowCheck.IsChecked == true, border = BorderCheck.IsChecked == true;
         ChangeEffects(null, fx => fx with { Shadow = shadow, Border = border, TornEdges = torn });
     }
-
-    /// <summary>Draws other teeth for the torn edges.</summary>
-    private void OnTornReseed(object sender, RoutedEventArgs e) =>
-        ChangeEffects(null, fx => fx with
-        {
-            TornSeed = fx.TornSeed == int.MaxValue ? 1 : fx.TornSeed + 1,
-            TornEdges = fx.TornEdges == TornEdges.None ? TornEdges.Bottom : fx.TornEdges,
-        });
-
-    /// <summary>"None": every effect off, their settings kept for this session.</summary>
-    private void OnEffectsNone(object sender, RoutedEventArgs e) =>
-        ChangeEffects(null, fx => fx with { Shadow = false, Border = false, CornerRadius = 0, TornEdges = TornEdges.None });
 
     // ---- Inserting an image ----
 
@@ -899,61 +951,53 @@ public partial class EditorWindow : Window
         return !AnnotCanvas.HasFloatingImage;
     }
 
-    private void OnInsertMenu(object sender, RoutedEventArgs e)
+    private async Task InsertFromFileAsync()
     {
-        var menu = InsertButton.ContextMenu;
-        menu.PlacementTarget = InsertButton;
-        menu.Placement = System.Windows.Controls.Primitives.PlacementMode.Bottom;
-        menu.IsOpen = true;
-    }
-
-    private void OnInsertPaste(object sender, RoutedEventArgs e) => PasteImage();
-
-    private void OnInsertFile(object sender, RoutedEventArgs e)
-    {
-        var patterns = string.Join(";", ImageIO.Extensions.Select(x => "*" + x));
-        var dialog = new Microsoft.Win32.OpenFileDialog
+        var folder = await StorageProvider.TryGetFolderFromPathAsync(new Uri(Path.GetDirectoryName(Path.GetFullPath(_document.FilePath))!));
+        var files = await StorageProvider.OpenFilePickerAsync(new FilePickerOpenOptions
         {
             Title = Loc.T("Editor.Insert.FileTitle"),
-            Filter = $"{Loc.T("Editor.Insert.FileFilter")}|{patterns}",
-            InitialDirectory = Path.GetDirectoryName(_document.FilePath),
-        };
-        if (dialog.ShowDialog(this) == true) InsertFile(dialog.FileName);
+            AllowMultiple = false,
+            SuggestedStartLocation = folder,
+            FileTypeFilter = new[]
+            {
+                new FilePickerFileType(Loc.T("Editor.Insert.FileFilter")) { Patterns = ImageIO.Extensions.Select(x => "*" + x).ToArray() },
+            },
+        });
+        if (files.Count > 0 && files[0].TryGetLocalPath() is { } path) await InsertFileAsync(path);
     }
 
     /// <summary>A new capture of an area of the screen, this window hidden meanwhile.</summary>
-    private async void OnInsertCapture(object sender, RoutedEventArgs e)
+    private async Task InsertCaptureAsync()
     {
         if (!EndPendingEdits()) return;
         AnnotCanvas.CancelOperation();
         var image = await App.Instance.Captures.PickImageAsync(this);
         Activate();
-        if (image != null) InsertImage(image);
+        if (image != null) await InsertImageAsync(image);
     }
 
-    private void OnImageDragOver(object sender, DragEventArgs e)
+    private void OnImageDragOver(object? sender, DragEventArgs e)
     {
-        e.Effects = DroppedImage(e.Data) != null ? DragDropEffects.Copy : DragDropEffects.None;
+        e.DragEffects = DroppedImage(e) != null ? DragDropEffects.Copy : DragDropEffects.None;
         e.Handled = true;
     }
 
-    private void OnImageDrop(object sender, DragEventArgs e)
+    private void OnImageDrop(object? sender, DragEventArgs e)
     {
-        if (DroppedImage(e.Data) is not { } file) return;
+        if (DroppedImage(e) is not { } file) return;
         e.Handled = true;
         Activate();
-        InsertFile(file);
+        _ = InsertFileAsync(file);
     }
 
-    /// <summary>First image file dragged from Explorer or from the workspace, if any.</summary>
-    private static string? DroppedImage(IDataObject data) =>
-        data.GetDataPresent(DataFormats.FileDrop) && data.GetData(DataFormats.FileDrop) is string[] files
-            ? files.FirstOrDefault(ImageIO.IsImage)
-            : null;
+    /// <summary>First image file dragged from the file manager or from the workspace, if any.</summary>
+    private static string? DroppedImage(DragEventArgs e) =>
+        e.DataTransfer.TryGetFiles()?.Select(f => f.TryGetLocalPath()).FirstOrDefault(p => p != null && ImageIO.IsImage(p));
 
-    private void InsertFile(string path)
+    private async Task InsertFileAsync(string path)
     {
-        BitmapSource image;
+        PixelBuffer image;
         try
         {
             image = ImageIO.Load(path);
@@ -961,25 +1005,25 @@ public partial class EditorWindow : Window
         catch (Exception ex)
         {
             ErrorLog.Write("Lecture de l'image à insérer", ex);
-            MessageBox.Show(this, Loc.T("Editor.Insert.ReadError", ex.Message), Loc.T("Editor.Insert.Title"), MessageBoxButton.OK, MessageBoxImage.Error);
+            await Dialogs.ShowAsync(this, Loc.T("Editor.Insert.ReadError", ex.Message), Loc.T("Editor.Insert.Title"), DialogButtons.Ok, DialogIcon.Error);
             return;
         }
-        InsertImage(image);
+        await InsertImageAsync(image);
     }
 
-    /// <summary>Ctrl+V: the image of the clipboard, or the first image file copied in Explorer.</summary>
-    private void PasteImage()
+    /// <summary>Ctrl+V: the image of the clipboard, or the first image file copied in the file manager.</summary>
+    private async Task PasteImageAsync()
     {
-        BitmapSource? image;
+        PixelBuffer? image;
         try
         {
-            image = ClipboardImage();
+            image = await App.Instance.Platform.Clipboard.GetImageAsync();
         }
         catch (Exception ex)
         {
             // Clipboard held by another application, unreadable or too big image...
             ErrorLog.Write("Collage d'une image", ex);
-            MessageBox.Show(this, Loc.T("Editor.Insert.ReadError", ex.Message), Loc.T("Editor.Insert.Title"), MessageBoxButton.OK, MessageBoxImage.Error);
+            await Dialogs.ShowAsync(this, Loc.T("Editor.Insert.ReadError", ex.Message), Loc.T("Editor.Insert.Title"), DialogButtons.Ok, DialogIcon.Error);
             return;
         }
         if (image == null)
@@ -987,25 +1031,7 @@ public partial class EditorWindow : Window
             InfoText.Text = Loc.T("Editor.Insert.NoImage");
             return;
         }
-        InsertImage(image);
-    }
-
-    /// <summary>The PNG flavour first: unlike the bitmap one, it keeps the transparency.</summary>
-    private static BitmapSource? ClipboardImage()
-    {
-        var data = Clipboard.GetDataObject();
-        if (data == null) return null;
-        if (data.GetDataPresent("PNG") && data.GetData("PNG") is MemoryStream png)
-        {
-            using (png)
-            {
-                var decoder = BitmapDecoder.Create(png, BitmapCreateOptions.PreservePixelFormat | BitmapCreateOptions.IgnoreColorProfile,
-                    BitmapCacheOption.None);
-                return ImageIO.Normalize(decoder.Frames[0]);
-            }
-        }
-        if (DroppedImage(data) is { } file) return ImageIO.Load(file);
-        return data.GetDataPresent(DataFormats.Bitmap) && Clipboard.GetImage() is { } bitmap ? ImageIO.Normalize(bitmap) : null;
+        await InsertImageAsync(image);
     }
 
     /// <summary>
@@ -1014,181 +1040,230 @@ public partial class EditorWindow : Window
     /// image is placed past its edges. An image bigger than the capture is kept whole at its top left corner (the
     /// capture grows) or shrunk to fit, as the user chooses.
     /// </summary>
-    private void InsertImage(BitmapSource image)
+    internal async Task InsertImageAsync(PixelBuffer image)
     {
         if (!EndPendingEdits()) return;
         AnnotCanvas.CancelOperation();
         var area = AnnotCanvas.ImageArea;
-        double width = image.PixelWidth, height = image.PixelHeight;
+        double width = image.Width, height = image.Height;
         if (width > area.Width || height > area.Height)
         {
-            var answer = MessageBox.Show(this, Loc.T("Editor.Insert.Larger", image.PixelWidth, image.PixelHeight, (int)area.Width, (int)area.Height),
-                Loc.T("Editor.Insert.Title"), MessageBoxButton.YesNoCancel, MessageBoxImage.Question);
-            if (answer == MessageBoxResult.Cancel) return;
-            if (answer == MessageBoxResult.No)
+            var answer = await Dialogs.ShowAsync(this, Loc.T("Editor.Insert.Larger", image.Width, image.Height, (int)area.Width, (int)area.Height),
+                Loc.T("Editor.Insert.Title"), DialogButtons.YesNoCancel, DialogIcon.Question, DialogResult.Yes);
+            if (answer == DialogResult.Cancel) return;
+            if (answer == DialogResult.No)
             {
                 double scale = Math.Min(area.Width / width, area.Height / height);
                 width = Math.Max(1, width * scale);
                 height = Math.Max(1, height * scale);
             }
+            // The document may have changed while the question was asked (a second paste...).
+            if (!EndPendingEdits()) return;
+            area = AnnotCanvas.ImageArea;
         }
 
-        _sizeBeforeInsert = (_document.BaseImage.PixelWidth, _document.BaseImage.PixelHeight);
+        _sizeBeforeInsert = (_document.BaseImage.Width, _document.BaseImage.Height);
         UpdateLayout();
-        var center = Scroller.TranslatePoint(new Point(Scroller.ViewportWidth / 2, Scroller.ViewportHeight / 2), AnnotCanvas);
+        var viewport = Scroller.Viewport;
+        var center = Scroller.TranslatePoint(new Point(viewport.Width / 2, viewport.Height / 2), AnnotCanvas) ?? area.Center;
         double x = Math.Clamp(center.X - width / 2, 0, Math.Max(0, area.Width - width));
         double y = Math.Clamp(center.Y - height / 2, 0, Math.Max(0, area.Height - height));
         AnnotCanvas.FloatImage(image, new Rect(Math.Round(x), Math.Round(y), width, height));
         AnnotCanvas.Focus();
     }
 
-    /// <summary>Size of the capture when the image was inserted: the view is fitted again if placing it made the capture grow.</summary>
-    private (int Width, int Height) _sizeBeforeInsert;
-
     private void OnFloatingImageChanged()
     {
         UpdateContext();
-        if (!AnnotCanvas.HasFloatingImage && _sizeBeforeInsert != (_document.BaseImage.PixelWidth, _document.BaseImage.PixelHeight))
+        if (!AnnotCanvas.HasFloatingImage && _sizeBeforeInsert != (_document.BaseImage.Width, _document.BaseImage.Height))
             ZoomToFit(onlyShrink: true);
     }
 
-    private void ShowInsertError(Exception ex)
+    private Task ShowInsertErrorAsync(Exception ex)
     {
         ErrorLog.Write("Insertion d'une image", ex);
-        MessageBox.Show(this, Loc.T("Editor.Insert.Error", ex.Message), Loc.T("Editor.Insert.Title"), MessageBoxButton.OK, MessageBoxImage.Error);
+        return Dialogs.ShowAsync(this, Loc.T("Editor.Insert.Error", ex.Message), Loc.T("Editor.Insert.Title"), DialogButtons.Ok, DialogIcon.Error);
     }
 
     // ---- Commands ----
 
-    private void OnSave(object sender, RoutedEventArgs e) => Save();
-
+    /// <summary>Saves the capture and its annotations; the error, if any, is shown without waiting.</summary>
     private bool Save()
     {
         ApplyPendingSlider();
         if (!EndPendingEdits()) return false;
         try
         {
-            _document.Save(App.Instance.Settings.JpegQuality);
+            _document.Save(AppServices.Settings.JpegQuality);
             InfoText.Text = Loc.T("Editor.Saved");
             return true;
         }
         catch (Exception ex)
         {
             ErrorLog.Write("Enregistrement", ex);
-            MessageBox.Show(this, Loc.T("Editor.SaveError", ex.Message), "Snaplume", MessageBoxButton.OK, MessageBoxImage.Error);
+            _ = Dialogs.ShowAsync(this, Loc.T("Editor.SaveError", ex.Message), "Snaplume", DialogButtons.Ok, DialogIcon.Error);
             return false;
         }
     }
 
-    private void OnCopy(object sender, RoutedEventArgs e) => Copy();
-
-    private void Copy()
+    private async Task CopyAsync()
     {
         if (!EndPendingEdits()) return;
         try
         {
-            ClipboardHelper.SetImage(_document.Flatten());
+            var image = _document.Flatten();
+            if (!await App.Instance.Platform.Clipboard.SetImageAsync(image, ImageIO.EncodePng(image)))
+            {
+                // The clipboard stayed locked by another application.
+                ErrorLog.Write("Copie dans le presse-papiers", "Presse-papiers occupé");
+                await Dialogs.ShowAsync(this, Loc.T("Editor.CopyError"), "Snaplume", DialogButtons.Ok, DialogIcon.Warning);
+                return;
+            }
             InfoText.Text = Loc.T("Editor.Copied");
-        }
-        catch (ExternalException ex)
-        {
-            // The clipboard stayed locked by another application.
-            ErrorLog.Write("Copie dans le presse-papiers", ex);
-            MessageBox.Show(this, Loc.T("Editor.CopyError"), "Snaplume", MessageBoxButton.OK, MessageBoxImage.Warning);
         }
         catch (Exception ex)
         {
             // Image too big with its margins, not enough memory...
             ErrorLog.Write("Copie dans le presse-papiers", ex);
-            MessageBox.Show(this, Loc.T("Editor.CopyFailed", ex.Message), "Snaplume", MessageBoxButton.OK, MessageBoxImage.Error);
+            await Dialogs.ShowAsync(this, Loc.T("Editor.CopyFailed", ex.Message), "Snaplume", DialogButtons.Ok, DialogIcon.Error);
         }
     }
 
-    private void OnExport(object sender, RoutedEventArgs e) => Export();
-
-    private void Export()
+    private async Task ExportAsync()
     {
         if (!EndPendingEdits()) return;
-        var dialog = new Microsoft.Win32.SaveFileDialog
+        var choices = new[]
+        {
+            new FilePickerFileType(Loc.T("Editor.ImageFormat", "PNG")) { Patterns = new[] { "*.png" } },
+            new FilePickerFileType(Loc.T("Editor.ImageFormat", "JPEG")) { Patterns = new[] { "*.jpg", "*.jpeg" } },
+            new FilePickerFileType(Loc.T("Editor.ImageFormat", "BMP")) { Patterns = new[] { "*.bmp" } },
+        };
+        var result = await StorageProvider.SaveFilePickerWithResultAsync(new FilePickerSaveOptions
         {
             Title = Loc.T("Editor.ExportTitle"),
-            Filter = $"{Loc.T("Editor.ImageFormat", "PNG")}|*.png|{Loc.T("Editor.ImageFormat", "JPEG")}|*.jpg|{Loc.T("Editor.ImageFormat", "BMP")}|*.bmp",
-            FileName = Path.GetFileNameWithoutExtension(_document.FilePath),
-        };
-        if (dialog.ShowDialog(this) != true) return;
+            SuggestedFileName = Path.GetFileNameWithoutExtension(_document.FilePath),
+            FileTypeChoices = choices,
+            DefaultExtension = "png",
+            ShowOverwritePrompt = true,
+        });
+        if (result.File?.TryGetLocalPath() is not { } path) return;
 
-        var path = dialog.FileName;
         var extension = Path.GetExtension(path).ToLowerInvariant();
         if (!ExportExtensions.Contains(extension) && extension != ".jpeg")
         {
             // Unsupported extension typed by hand: the format chosen in the list is added.
-            path += ExportExtensions[Math.Clamp(dialog.FilterIndex - 1, 0, ExportExtensions.Length - 1)];
-            if (File.Exists(path) && MessageBox.Show(this, Loc.T("Editor.ExportOverwrite", Path.GetFileName(path)), "Snaplume",
-                    MessageBoxButton.YesNo, MessageBoxImage.Warning) != MessageBoxResult.Yes)
+            int index = Math.Max(0, Array.FindIndex(choices, c => c.Name == result.SelectedFileType?.Name));
+            path += ExportExtensions[Math.Clamp(index, 0, ExportExtensions.Length - 1)];
+            if (File.Exists(path) && await Dialogs.ShowAsync(this, Loc.T("Editor.ExportOverwrite", Path.GetFileName(path)), "Snaplume",
+                    DialogButtons.YesNo, DialogIcon.Warning, DialogResult.No) != DialogResult.Yes)
                 return;
         }
-        if (string.Equals(Path.GetFullPath(path), Path.GetFullPath(_document.FilePath), StringComparison.OrdinalIgnoreCase))
+        if (string.Equals(Path.GetFullPath(path), Path.GetFullPath(_document.FilePath), OperatingSystem.IsWindows() ? StringComparison.OrdinalIgnoreCase : StringComparison.Ordinal))
         {
             // Overwriting the capture would bypass its editable annotations: that is what Save is for.
-            MessageBox.Show(this, Loc.T("Editor.ExportSameFile"), "Snaplume", MessageBoxButton.OK, MessageBoxImage.Warning);
+            await Dialogs.ShowAsync(this, Loc.T("Editor.ExportSameFile"), "Snaplume", DialogButtons.Ok, DialogIcon.Warning);
             return;
         }
         try
         {
-            ImageIO.Save(_document.Flatten(), path, App.Instance.Settings.JpegQuality);
+            ImageIO.Save(_document.Flatten(), path, AppServices.Settings.JpegQuality);
             InfoText.Text = Loc.T("Editor.Exported", Path.GetFileName(path));
         }
         catch (Exception ex)
         {
             ErrorLog.Write("Export", ex);
-            MessageBox.Show(this, Loc.T("Editor.ExportError", ex.Message), "Snaplume", MessageBoxButton.OK, MessageBoxImage.Error);
+            await Dialogs.ShowAsync(this, Loc.T("Editor.ExportError", ex.Message), "Snaplume", DialogButtons.Ok, DialogIcon.Error);
         }
     }
 
-    private void OnPrint(object sender, RoutedEventArgs e) => Print();
-
-    /// <summary>Prints the image as it is now, annotations and effects included.</summary>
-    private void Print()
+    /// <summary>Prints the image as it is now, annotations and effects included (a temporary PNG handed to the system).</summary>
+    private async Task PrintAsync()
     {
-        if (!EndPendingEdits()) return;
+        if (_busy || !EndPendingEdits()) return;
         AnnotCanvas.CancelOperation();
+        var folder = Path.Combine(Path.GetTempPath(), "Snaplume");
+        var temp = Path.Combine(folder, $"print-{Guid.NewGuid():N}.png");
+        _busy = true;
         try
         {
-            // Rendered before the print dialog, even if it is cancelled: the orientation of the page comes from
-            // the size of the image (ShareService.Print takes the image itself).
-            ShareService.Print(this, _document.Flatten(), Path.GetFileName(_document.FilePath));
+            Directory.CreateDirectory(folder);
+            // Rendered before the print dialog, even if it is cancelled: the orientation of the page comes from the image.
+            ImageIO.Save(_document.Flatten(), temp);
+            var handle = TryGetPlatformHandle()?.Handle ?? IntPtr.Zero;
+            await App.Instance.Platform.Shell.PrintImagesAsync(new[] { temp }, Path.GetFileName(_document.FilePath), handle);
         }
         catch (Exception ex)
         {
             ErrorLog.Write("Impression", ex);
-            MessageBox.Show(this, Loc.T("Editor.PrintError", ex.Message), "Snaplume", MessageBoxButton.OK, MessageBoxImage.Error);
+            await Dialogs.ShowAsync(this, Loc.T("Editor.PrintError", ex.Message), "Snaplume", DialogButtons.Ok, DialogIcon.Error);
+        }
+        finally
+        {
+            _busy = false;
+            try { File.Delete(temp); }
+            catch (Exception ex) { ErrorLog.Write("Suppression de l'image imprimée", ex); }
         }
     }
 
     /// <summary>Sends the capture file by e-mail, saved first if the user wants the changes in it.</summary>
-    private void OnEmail(object sender, RoutedEventArgs e)
+    private async Task EmailAsync()
     {
-        if (!EndPendingEdits()) return;
+        if (_busy || !EndPendingEdits()) return;
         AnnotCanvas.CancelOperation();
-        if (_document.IsDirty)
-        {
-            var answer = MessageBox.Show(this, Loc.T("Editor.SaveBeforeEmailQuestion"), "Snaplume",
-                MessageBoxButton.YesNoCancel, MessageBoxImage.Question);
-            if (answer == MessageBoxResult.Cancel || (answer == MessageBoxResult.Yes && !Save())) return;
-        }
+        _busy = true;
         try
         {
-            ShareService.Email(this, new[] { _document.FilePath });
+            if (_document.IsDirty)
+            {
+                var answer = await Dialogs.ShowAsync(this, Loc.T("Editor.SaveBeforeEmailQuestion"), "Snaplume",
+                    DialogButtons.YesNoCancel, DialogIcon.Question, DialogResult.Yes);
+                if (answer == DialogResult.Cancel || (answer == DialogResult.Yes && !Save())) return;
+            }
+            var shell = App.Instance.Platform.Shell;
+            var file = Path.GetFullPath(_document.FilePath);
+            if (!shell.CanEmail)
+            {
+                await ShowFilesForWebmailAsync(file, Loc.T("Share.Email.NoClient"));
+                return;
+            }
+            try
+            {
+                shell.Email(new[] { file }, Path.GetFileName(file));
+            }
+            catch (InvalidOperationException ex)
+            {
+                // No mail application after all: the message says what to do.
+                ErrorLog.Write("Envoi par e-mail", ex);
+                await ShowFilesForWebmailAsync(file, ex.Message);
+            }
         }
         catch (Exception ex)
         {
             ErrorLog.Write("Envoi par e-mail", ex);
-            MessageBox.Show(this, Loc.T("Editor.EmailError", ex.Message), "Snaplume", MessageBoxButton.OK, MessageBoxImage.Error);
+            await Dialogs.ShowAsync(this, Loc.T("Editor.EmailError", ex.Message), "Snaplume", DialogButtons.Ok, DialogIcon.Error);
+        }
+        finally
+        {
+            _busy = false;
+        }
+    }
+
+    /// <summary>Without a mail application: explains how to attach the file to a webmail and shows it in the file manager.</summary>
+    private async Task ShowFilesForWebmailAsync(string file, string message)
+    {
+        await Dialogs.ShowAsync(this, message, Loc.T("Share.Email.Title"), DialogButtons.Ok, DialogIcon.Information);
+        try
+        {
+            App.Instance.Platform.Shell.Reveal(file);
+        }
+        catch (Exception ex)
+        {
+            ErrorLog.Write("Affichage de la capture à envoyer", ex);
         }
     }
 
     /// <summary>Text of the image as it is now, annotations included.</summary>
-    private void OnReadText(object sender, RoutedEventArgs e)
+    private void ReadText()
     {
         if (!EndPendingEdits()) return;
         try
@@ -1198,18 +1273,26 @@ public partial class EditorWindow : Window
         catch (Exception ex)
         {
             ErrorLog.Write("OCR de l'image modifiée", ex);
-            MessageBox.Show(this, Loc.T("Editor.ReadTextError", ex.Message), "Snaplume", MessageBoxButton.OK, MessageBoxImage.Error);
+            _ = Dialogs.ShowAsync(this, Loc.T("Editor.ReadTextError", ex.Message), "Snaplume", DialogButtons.Ok, DialogIcon.Error);
         }
     }
 
-    private void OnResize(object sender, RoutedEventArgs e) => Resize();
-
-    private void Resize()
+    private async Task ResizeAsync()
     {
-        if (!EndPendingEdits()) return;
+        if (_busy || !EndPendingEdits()) return;
         AnnotCanvas.CancelOperation();
-        var dialog = new ResizeDialog(this, _document);
-        if (dialog.ShowDialog() != true) return;
+        var dialog = new ResizeDialog(_document);
+        _busy = true;
+        bool accepted;
+        try
+        {
+            accepted = await dialog.ShowAsync(this);
+        }
+        finally
+        {
+            _busy = false;
+        }
+        if (!accepted) return;
         try
         {
             _document.Resize(dialog.NewWidth, dialog.NewHeight);
@@ -1218,16 +1301,12 @@ public partial class EditorWindow : Window
         {
             // Mostly not enough memory for a huge image; the document is left as it was.
             ErrorLog.Write("Redimensionnement", ex);
-            MessageBox.Show(this, Loc.T("Editor.ResizeError", ex.Message), "Snaplume", MessageBoxButton.OK, MessageBoxImage.Error);
+            await Dialogs.ShowAsync(this, Loc.T("Editor.ResizeError", ex.Message), "Snaplume", DialogButtons.Ok, DialogIcon.Error);
             return;
         }
         ZoomToFit(onlyShrink: true);
         InfoText.Text = Loc.T("Editor.Resized", dialog.NewWidth, dialog.NewHeight);
     }
-
-    private void OnUndo(object sender, RoutedEventArgs e) => Undo();
-
-    private void OnRedo(object sender, RoutedEventArgs e) => Redo();
 
     private void Undo()
     {
@@ -1252,8 +1331,6 @@ public partial class EditorWindow : Window
         if (AnnotCanvas.HasFloatingImage) return;
         _document.Redo();
     }
-
-    private void OnDeleteSelected(object sender, RoutedEventArgs e) => DeleteSelected();
 
     private void DeleteSelected()
     {
@@ -1287,36 +1364,35 @@ public partial class EditorWindow : Window
         _nudgeVersion = _document.Version;
     }
 
-    protected override void OnPreviewKeyDown(KeyEventArgs e)
+    /// <summary>The keyboard shortcuts of the editor, seen before the focused control (tunnel).</summary>
+    private void OnPreviewKeyDown(object? sender, KeyEventArgs e)
     {
-        base.OnPreviewKeyDown(e);
         if (e.Handled) return;
-
-        var key = e.Key == Key.System ? e.SystemKey : e.Key;
-        var modifiers = Keyboard.Modifiers;
+        var key = e.Key;
+        var modifiers = e.KeyModifiers & ~KeyModifiers.Meta;
 
         // Saving works even while a text is being typed (the edit is validated first).
-        if (key == Key.S && (modifiers == ModifierKeys.Control || modifiers == (ModifierKeys.Control | ModifierKeys.Shift)))
+        if (key == Key.S && (modifiers == KeyModifiers.Control || modifiers == (KeyModifiers.Control | KeyModifiers.Shift)))
         {
             e.Handled = true;
             bool typing = _textEditor != null;
-            if (modifiers == ModifierKeys.Control) Save();
-            else Export();
+            if (modifiers == KeyModifiers.Control) Save();
+            else _ = ExportAsync();
             if (typing) AnnotCanvas.Focus();
             return;
         }
-        if (_textEditor != null || e.OriginalSource is TextBox) return;
+        if (_textEditor != null || e.Source is TextBox) return;
 
-        if (modifiers == ModifierKeys.Control)
+        if (modifiers == KeyModifiers.Control)
         {
             switch (key)
             {
                 case Key.Z: Undo(); break;
                 case Key.Y: Redo(); break;
-                case Key.C: Copy(); break;
-                case Key.V: PasteImage(); break;
-                case Key.R: Resize(); break;
-                case Key.P: Print(); break;
+                case Key.C: _ = CopyAsync(); break;
+                case Key.V: _ = PasteImageAsync(); break;
+                case Key.R: _ = ResizeAsync(); break;
+                case Key.P: _ = PrintAsync(); break;
                 case Key.D0 or Key.NumPad0: SetZoom(1); break;
                 case Key.OemPlus or Key.Add: SetZoom(_zoom * 1.25); break;
                 case Key.OemMinus or Key.Subtract: SetZoom(_zoom / 1.25); break;
@@ -1325,17 +1401,17 @@ public partial class EditorWindow : Window
             e.Handled = true;
             return;
         }
-        if (modifiers == (ModifierKeys.Control | ModifierKeys.Shift))
+        if (modifiers == (KeyModifiers.Control | KeyModifiers.Shift))
         {
             if (key != Key.Z) return;
             Redo();
             e.Handled = true;
             return;
         }
-        if (modifiers != ModifierKeys.None && modifiers != ModifierKeys.Shift) return;
+        if (modifiers != KeyModifiers.None && modifiers != KeyModifiers.Shift) return;
 
-        double step = modifiers == ModifierKeys.Shift ? 10 : 1;
-        bool inCombo = e.OriginalSource is ComboBox or ComboBoxItem;
+        double step = modifiers == KeyModifiers.Shift ? 10 : 1;
+        bool inCombo = e.Source is ComboBox or ComboBoxItem || (e.Source as Visual)?.FindAncestorOfType<ComboBox>() != null;
         bool canNudge = !inCombo && (AnnotCanvas.Selected != null || AnnotCanvas.HasFloatingImage);
         switch (key)
         {
@@ -1362,7 +1438,7 @@ public partial class EditorWindow : Window
             case Key.Up when canNudge: Nudge(new Vector(0, -step)); break;
             case Key.Down when canNudge: Nudge(new Vector(0, step)); break;
             default:
-                if (modifiers != ModifierKeys.None || inCombo || !ToolKeys.TryGetValue(key, out var tool)) return;
+                if (modifiers != KeyModifiers.None || inCombo || !ToolKeys.TryGetValue(key, out var tool)) return;
                 SelectTool(tool);
                 break;
         }
@@ -1373,11 +1449,11 @@ public partial class EditorWindow : Window
 
     private void ApplyZoom()
     {
-        double dpi = VisualTreeHelper.GetDpi(this).DpiScaleX;
+        double dpi = RenderScaling > 0 ? RenderScaling : 1;
         double scale = _zoom / dpi; // 100 % = one image pixel per physical pixel
-        ZoomTransform.ScaleX = ZoomTransform.ScaleY = scale;
+        ZoomHost.LayoutTransform = new ScaleTransform(scale, scale);
         AnnotCanvas.ViewScale = scale;
-        RenderOptions.SetBitmapScalingMode(AnnotCanvas, _zoom >= 2 ? BitmapScalingMode.NearestNeighbor : BitmapScalingMode.HighQuality);
+        AnnotCanvas.Interpolation = _zoom >= 2 ? BitmapInterpolationMode.None : BitmapInterpolationMode.HighQuality;
         ZoomText.Text = _zoom.ToString("P0", Loc.Culture);
     }
 
@@ -1389,47 +1465,64 @@ public partial class EditorWindow : Window
 
     private void ZoomToFit(bool onlyShrink)
     {
-        double dpi = VisualTreeHelper.GetDpi(this).DpiScaleX;
+        double dpi = RenderScaling > 0 ? RenderScaling : 1;
         // The whole result, margins of the effects included.
         var size = _document.OutputSize;
-        double availableWidth = Math.Max(50, Scroller.ActualWidth - 72);
-        double availableHeight = Math.Max(50, Scroller.ActualHeight - 72);
+        double availableWidth = Math.Max(50, Scroller.Bounds.Width - 72);
+        double availableHeight = Math.Max(50, Scroller.Bounds.Height - 72);
         double fit = Math.Min(availableWidth * dpi / size.Width, availableHeight * dpi / size.Height);
         SetZoom(onlyShrink ? Math.Min(1, fit) : fit);
     }
 
-    private void OnScrollerWheel(object sender, MouseWheelEventArgs e)
+    private void OnScrollerWheel(object? sender, PointerWheelEventArgs e)
     {
-        if (Keyboard.Modifiers != ModifierKeys.Control) return;
-        SetZoom(_zoom * (e.Delta > 0 ? 1.25 : 0.8));
+        if ((e.KeyModifiers & ~KeyModifiers.Meta) != KeyModifiers.Control || e.Delta.Y == 0) return;
+        SetZoom(_zoom * (e.Delta.Y > 0 ? 1.25 : 0.8));
         e.Handled = true;
     }
 
-    private void OnZoomIn(object sender, RoutedEventArgs e) => SetZoom(_zoom * 1.25);
-    private void OnZoomOut(object sender, RoutedEventArgs e) => SetZoom(_zoom * 0.8);
-    private void OnZoomActual(object sender, RoutedEventArgs e) => SetZoom(1);
-    private void OnZoomFit(object sender, RoutedEventArgs e) => ZoomToFit(onlyShrink: false);
-
     // ---- Closing ----
 
-    protected override void OnClosing(CancelEventArgs e)
+    /// <summary>
+    /// Message boxes cannot block here as in WPF: when there are unsaved changes, the close is cancelled, the question
+    /// asked, then the window closed again (or left open).
+    /// </summary>
+    protected override void OnClosing(WindowClosingEventArgs e)
     {
+        if (_closeConfirmed)
+        {
+            base.OnClosing(e);
+            return;
+        }
         // An image still being placed becomes a change to save (or to discard) like the others.
-        if (!EndPendingEdits())
+        if (_closeAsking || !EndPendingEdits())
         {
             e.Cancel = true;
             return;
         }
-        if (_document.IsDirty)
+        if (!_document.IsDirty)
         {
-            var answer = MessageBox.Show(this, Loc.T("Editor.SaveChangesQuestion"), "Snaplume",
-                MessageBoxButton.YesNoCancel, MessageBoxImage.Question);
-            if (answer == MessageBoxResult.Cancel || (answer == MessageBoxResult.Yes && !Save()))
-            {
-                e.Cancel = true;
-                return;
-            }
+            base.OnClosing(e);
+            return;
         }
-        base.OnClosing(e);
+        e.Cancel = true;
+        _ = AskThenCloseAsync();
+    }
+
+    private async Task AskThenCloseAsync()
+    {
+        _closeAsking = true;
+        try
+        {
+            var answer = await Dialogs.ShowAsync(this, Loc.T("Editor.SaveChangesQuestion"), "Snaplume",
+                DialogButtons.YesNoCancel, DialogIcon.Question, DialogResult.Yes);
+            if (answer == DialogResult.Cancel || (answer == DialogResult.Yes && !Save())) return;
+        }
+        finally
+        {
+            _closeAsking = false;
+        }
+        _closeConfirmed = true;
+        Close();
     }
 }

@@ -1,22 +1,20 @@
-using System.Windows;
-using System.Windows.Input;
-using System.Windows.Media;
-using System.Windows.Media.Imaging;
-using static Snaplume.Editor.Freezables;
+using Avalonia;
+using Avalonia.Controls;
+using Avalonia.Input;
+using Avalonia.Media;
+using Avalonia.Media.Immutable;
+using Avalonia.Media.Imaging;
+using Snaplume.Imaging;
 
 namespace Snaplume.Editor;
 
-public enum EditorTool
-{
-    // New tools go at the end: older presets.json files may store tools as numbers.
-    Select, Arrow, Line, Rectangle, Ellipse, Text, Highlight, Pixelate, Spotlight, Step, Stamp, Pen, Crop, Magnifier,
-}
-
 /// <summary>
-/// Displays the document and handles mouse interaction. Its coordinate space is
-/// the image pixel space; zooming is done by a LayoutTransform on a parent.
+/// Displays the document and handles mouse interaction. Its coordinate space is the image pixel space;
+/// zooming is done by a layout transform on a parent. The drawing is split in layers (image, annotations
+/// below, the one being drawn or dragged, annotations above, then the frames and handles): while the mouse
+/// changes one annotation, only its layer is drawn again.
 /// </summary>
-public sealed class AnnotationCanvas : FrameworkElement
+public sealed class AnnotationCanvas : Control
 {
     private enum DragMode { None, Create, Move, Handle, Crop, FloatMove, FloatHandle }
 
@@ -26,14 +24,28 @@ public sealed class AnnotationCanvas : FrameworkElement
     /// <summary>Smallest drag, in screen pixels, that draws a shape (a plain click does not).</summary>
     private const double MinDragOnScreen = 3;
 
-    private static readonly Brush AccentBrush = Frozen(new SolidColorBrush(Color.FromRgb(0x25, 0x63, 0xEB)));
-    private static readonly Brush CropShade = Frozen(new SolidColorBrush(Color.FromArgb(0x88, 0, 0, 0)));
+    /// <summary>Distance, in screen pixels, under which a moved image sticks to an edge of the capture.</summary>
+    private const double SnapOnScreen = 8;
+
+    private static readonly IImmutableSolidColorBrush AccentBrush = new ImmutableSolidColorBrush(Color.FromRgb(0x25, 0x63, 0xEB));
+    private static readonly IImmutableSolidColorBrush CropShade = new ImmutableSolidColorBrush(Color.FromArgb(0x88, 0, 0, 0));
+    private static readonly ImmutableDashStyle Dash = new(new double[] { 4, 3 }, 0);
+    private static readonly ImmutableDashStyle Dot = new(new double[] { 1, 2 }, 0);
+
+    private static readonly Cursor ArrowCursor = new(StandardCursorType.Arrow);
+    private static readonly Cursor CrossCursor = new(StandardCursorType.Cross);
+    private static readonly Cursor TextCursor = new(StandardCursorType.Ibeam);
+    private static readonly Cursor HandCursor = new(StandardCursorType.Hand);
+    private static readonly Cursor MoveCursor = new(StandardCursorType.SizeAll);
+
+    private readonly Layer _imageLayer, _belowLayer, _activeLayer, _aboveLayer, _overlayLayer;
 
     private EditorDocument? _document;
     private EditorTool _tool;
     private Annotation? _selected;
     private TextAnnotation? _editingText;
     private double _viewScale = 1;
+    private BitmapInterpolationMode _interpolation = BitmapInterpolationMode.HighQuality;
 
     private DragMode _mode;
     private Annotation? _creating;
@@ -42,21 +54,18 @@ public sealed class AnnotationCanvas : FrameworkElement
     /// <summary>State before the drag in progress: committed as one undo step, or restored by Escape.</summary>
     private EditorDocument.Snapshot? _checkpoint;
     private Rect? _cropRect;
+    private IPointer? _capturedPointer;
 
     // Image being inserted (pasted, opened or captured), like a paste in Paint: it floats over the image, can be
     // moved and resized, and is only burnt into the document by CommitFloatingImage.
-    private BitmapSource? _floatingImage;
+    private PixelBuffer? _floatingImage;
+    private Bitmap? _floatingBitmap;
     private Rect _floatingRect;
     /// <summary>Place of the inserted image before the drag in progress.</summary>
     private Rect _floatingStart;
 
-    // Annotations below and above the one being drawn or dragged, recorded once instead of at each mouse move.
-    private DrawingGroup? _layerBelow, _layerAbove;
-    private Annotation? _layerActive;
-    private bool _layersValid;
-
     // Pens one screen pixel wide, rebuilt when the zoom changes.
-    private Pen? _selectionPen, _selectionDashPen, _cropPen, _floatingOutlinePen;
+    private IPen? _selectionPen, _selectionDashPen, _cropPen, _floatingOutlinePen;
 
     public event Action? SelectionChanged;
     /// <summary>An image started or stopped floating (see <see cref="FloatImage"/>).</summary>
@@ -75,11 +84,23 @@ public sealed class AnnotationCanvas : FrameworkElement
     public AnnotationCanvas()
     {
         Focusable = true;
-        FocusVisualStyle = null;
         // The image and its annotations are clipped while rendering; the selection handles may stick out
         // into the margins of the effects, so that the handles at the edges of the image stay usable.
         ClipToBounds = false;
-        Cursor = Cursors.Arrow;
+        Cursor = ArrowCursor;
+        _imageLayer = AddLayer(DrawImageLayer);
+        _belowLayer = AddLayer(dc => DrawAnnotations(dc, Part.Below));
+        _activeLayer = AddLayer(dc => DrawAnnotations(dc, Part.Active));
+        _aboveLayer = AddLayer(dc => DrawAnnotations(dc, Part.Above));
+        _overlayLayer = AddLayer(DrawOverlay);
+    }
+
+    private Layer AddLayer(Action<DrawingContext> draw)
+    {
+        var layer = new Layer(draw);
+        VisualChildren.Add(layer);
+        LogicalChildren.Add(layer);
+        return layer;
     }
 
     public EditorDocument? Document
@@ -105,15 +126,15 @@ public sealed class AnnotationCanvas : FrameworkElement
             _tool = value;
             Cursor = value switch
             {
-                EditorTool.Select => Cursors.Arrow,
-                EditorTool.Text => Cursors.IBeam,
-                _ => Cursors.Cross,
+                EditorTool.Select => ArrowCursor,
+                EditorTool.Text => TextCursor,
+                _ => CrossCursor,
             };
             if (value == EditorTool.Crop) SetSelected(null);
         }
     }
 
-    /// <summary>Screen DIPs per image pixel; keeps handles a constant size on screen.</summary>
+    /// <summary>Screen units per image pixel; keeps handles a constant size on screen.</summary>
     public double ViewScale
     {
         get => _viewScale;
@@ -122,6 +143,19 @@ public sealed class AnnotationCanvas : FrameworkElement
             _viewScale = value;
             _selectionPen = _selectionDashPen = _cropPen = _floatingOutlinePen = null;
             InvalidateVisual();
+            _overlayLayer.InvalidateVisual();
+        }
+    }
+
+    /// <summary>Smooth when the image is shown smaller, sharp pixels when it is enlarged.</summary>
+    public BitmapInterpolationMode Interpolation
+    {
+        get => _interpolation;
+        set
+        {
+            if (_interpolation == value) return;
+            _interpolation = value;
+            InvalidateLayers();
         }
     }
 
@@ -131,7 +165,7 @@ public sealed class AnnotationCanvas : FrameworkElement
     public bool IsDragging => _mode != DragMode.None;
 
     /// <summary>Bounds of the image, in image pixels.</summary>
-    public Rect ImageArea => _document == null ? Rect.Empty : new Rect(0, 0, _document.BaseImage.PixelWidth, _document.BaseImage.PixelHeight);
+    public Rect ImageArea => _document == null ? default : _document.BaseImage.Bounds;
 
     /// <summary>Hides the text annotation while its text box is shown (null to show it again).</summary>
     public void SetEditingText(TextAnnotation? text)
@@ -145,14 +179,18 @@ public sealed class AnnotationCanvas : FrameworkElement
     /// <summary>True while an inserted image waits to be placed.</summary>
     public bool HasFloatingImage => _floatingImage != null;
 
+    /// <summary>Where the inserted image is, in image pixels.</summary>
+    public Rect FloatingRect => _floatingRect;
+
     /// <summary>Shows <paramref name="image"/> over the document at <paramref name="area"/>, to be moved and resized.</summary>
-    public void FloatImage(BitmapSource image, Rect area)
+    public void FloatImage(PixelBuffer image, Rect area)
     {
         CancelOperation();
         SetSelected(null);
         _floatingImage = image;
+        _floatingBitmap = AvaloniaImages.ToBitmap(image);
         _floatingRect = area;
-        InvalidateVisual();
+        InvalidateFloating();
         FloatingImageChanged?.Invoke();
     }
 
@@ -162,7 +200,9 @@ public sealed class AnnotationCanvas : FrameworkElement
         if (_floatingImage is not { } image || _document == null) return false;
         CancelOperation();
         // Not drawn floating any more once the document shows it.
+        var bitmap = _floatingBitmap;
         _floatingImage = null;
+        _floatingBitmap = null;
         try
         {
             _document.InsertImage(image, _floatingRect, Colors.White);
@@ -171,10 +211,12 @@ public sealed class AnnotationCanvas : FrameworkElement
         {
             // Mostly not enough memory for a huge image: it keeps floating, nothing is lost.
             _floatingImage = image;
-            InvalidateVisual();
+            _floatingBitmap = bitmap;
+            InvalidateFloating();
             FloatingImageFailed?.Invoke(ex);
             return false;
         }
+        bitmap?.Dispose();
         InvalidateLayers();
         FloatingImageChanged?.Invoke();
         return true;
@@ -186,15 +228,17 @@ public sealed class AnnotationCanvas : FrameworkElement
         if (_floatingImage == null) return;
         CancelOperation();
         _floatingImage = null;
-        InvalidateVisual();
+        _floatingBitmap?.Dispose();
+        _floatingBitmap = null;
+        InvalidateFloating();
         FloatingImageChanged?.Invoke();
     }
 
     public void NudgeFloatingImage(Vector offset)
     {
         if (_floatingImage == null || IsDragging) return;
-        _floatingRect.Offset(offset);
-        InvalidateVisual();
+        _floatingRect = Rects.Offset(_floatingRect, offset);
+        InvalidateFloating();
     }
 
     private Point[] FloatingHandles() =>
@@ -236,64 +280,134 @@ public sealed class AnnotationCanvas : FrameworkElement
         _creating = null;
         _checkpoint = null;
         _cropRect = null;
-        ReleaseMouseCapture();
+        ReleaseCapture();
         InvalidateLayers();
         return true;
     }
 
-    protected override Size MeasureOverride(Size availableSize) =>
-        _document == null ? new Size() : new Size(_document.BaseImage.PixelWidth, _document.BaseImage.PixelHeight);
+    protected override Size MeasureOverride(Size availableSize)
+    {
+        foreach (var layer in VisualChildren.OfType<Layer>()) layer.Measure(availableSize);
+        return _document == null ? default : new Size(_document.BaseImage.Width, _document.BaseImage.Height);
+    }
 
-    protected override void OnRender(DrawingContext dc)
+    protected override Size ArrangeOverride(Size finalSize)
+    {
+        foreach (var layer in VisualChildren.OfType<Layer>()) layer.Arrange(new Rect(finalSize));
+        return finalSize;
+    }
+
+    // ---- Drawing ----
+
+    /// <summary>
+    /// Nothing visible: a transparent area where the canvas takes the mouse, the image with a margin for the
+    /// handles at its edges, and the inserted image wherever it is (it may be placed beside the capture).
+    /// </summary>
+    public override void Render(DrawingContext context)
     {
         if (_document == null) return;
-        var image = _document.BaseImage;
-        var bounds = new Rect(0, 0, image.PixelWidth, image.PixelHeight);
-        // Rounded corners and torn edges cut the image and its annotations, as in the saved image;
-        // the margins and the shadow are drawn around the canvas by EffectsBackdrop. The layout is
-        // built by the document when it changes, not here.
-        var effects = _document.PreviewLayout;
-        dc.PushClip(new RectangleGeometry(bounds));
-        effects?.PushOutline(dc);
-        dc.DrawImage(image, bounds);
-        // Where it will be once burnt in: over the image, under the annotations.
-        if (_floatingImage != null) dc.DrawImage(_floatingImage, _floatingRect);
+        var area = Rects.Grow(_document.BaseImage.Bounds, 8 / _viewScale);
+        if (_floatingImage != null) area = Rects.Union(area, Rects.Grow(_floatingRect, 8 / _viewScale));
+        context.FillRectangle(Brushes.Transparent, area);
+    }
 
+    private enum Part { Below, Active, Above }
+
+    /// <summary>Clips to the image and to the outline of the effects (rounded corners, torn edges), as in the saved image.</summary>
+    private IDisposable[] PushImageClip(DrawingContext dc)
+    {
+        var effects = _document!.PreviewLayout;
+        return new[]
+        {
+            (IDisposable)dc.PushRenderOptions(new RenderOptions { BitmapInterpolationMode = _interpolation }),
+            dc.PushClip(_document.BaseImage.Bounds),
+            effects?.PushOutline(dc) ?? NoState,
+        };
+    }
+
+    private static readonly IDisposable NoState = new EmptyState();
+
+    private sealed class EmptyState : IDisposable
+    {
+        public void Dispose()
+        {
+        }
+    }
+
+    private static void Pop(IDisposable[] states)
+    {
+        for (int i = states.Length - 1; i >= 0; i--) states[i].Dispose();
+    }
+
+    /// <summary>The base image, and the inserted image where it will be once burnt in: over the image, under the annotations.</summary>
+    private void DrawImageLayer(DrawingContext dc)
+    {
+        if (_document == null) return;
+        var states = PushImageClip(dc);
+        dc.DrawImage(_document.BaseImage.Bitmap, _document.BaseImage.Bounds);
+        if (_floatingBitmap != null) dc.DrawImage(_floatingBitmap, _floatingRect);
+        Pop(states);
+    }
+
+    private void DrawAnnotations(DrawingContext dc, Part part)
+    {
+        if (_document == null) return;
         var annotations = _document.Annotations;
+        var image = _document.BaseImage;
         var active = ActiveAnnotation();
-        if (NeedsLiveRendering(active))
+        bool live = NeedsLiveRendering(active);
+        int split = active == null ? -1 : annotations.IndexOf(active);
+        if (split < 0)
         {
-            AnnotationRenderer.Render(dc, image, annotations, 0, annotations.Count, _editingText);
+            active = null;
+            split = annotations.Count;
         }
-        else
+        var states = PushImageClip(dc);
+        switch (part)
         {
-            var (below, above) = UpdateLayers(active);
-            dc.DrawDrawing(below);
-            if (active != null) AnnotationRenderer.RenderOne(dc, image, annotations, active, _editingText);
-            dc.DrawDrawing(above);
+            case Part.Below when live:
+                AnnotationRenderer.Render(dc, image, annotations, 0, annotations.Count, _editingText);
+                break;
+            case Part.Below:
+                AnnotationRenderer.Render(dc, image, annotations, 0, split, _editingText);
+                break;
+            case Part.Active when !live && active != null:
+                AnnotationRenderer.RenderOne(dc, image, annotations, active, _editingText);
+                break;
+            case Part.Above when !live:
+                AnnotationRenderer.Render(dc, image, annotations, Math.Min(split + 1, annotations.Count), annotations.Count, _editingText);
+                break;
         }
-        effects?.PopOutline(dc);
-        effects?.DrawBorder(dc);
+        Pop(states);
+    }
 
-        if (_mode == DragMode.Crop && _cropRect is Rect crop)
+    /// <summary>The border of the effects, the crop shade, then the selection frame and the inserted image's frame.</summary>
+    private void DrawOverlay(DrawingContext dc)
+    {
+        if (_document == null) return;
+        var bounds = _document.BaseImage.Bounds;
+        using (dc.PushClip(bounds))
         {
-            var shade = new GeometryGroup { FillRule = FillRule.EvenOdd };
-            shade.Children.Add(new RectangleGeometry(bounds));
-            shade.Children.Add(new RectangleGeometry(crop));
-            dc.DrawGeometry(CropShade, null, shade);
-            _cropPen ??= Frozen(new Pen(Brushes.White, 1 / _viewScale) { DashStyle = DashStyles.Dash });
-            dc.DrawRectangle(null, _cropPen, crop);
+            _document.PreviewLayout?.DrawBorder(dc);
+            if (_mode == DragMode.Crop && _cropRect is Rect crop)
+            {
+                var shade = new GeometryGroup { FillRule = FillRule.EvenOdd };
+                shade.Children.Add(new RectangleGeometry(bounds));
+                shade.Children.Add(new RectangleGeometry(crop));
+                dc.DrawGeometry(CropShade, null, shade);
+                _cropPen ??= new ImmutablePen(Brushes.White.ToImmutable(), 1 / _viewScale, Dash);
+                dc.DrawRectangle(null, _cropPen, crop);
+            }
         }
-        dc.Pop();
 
-        if (_selected != null && !ReferenceEquals(_selected, _editingText) && annotations.Contains(_selected))
-            DrawSelection(dc, _selected);
-        if (_floatingImage != null) DrawFloatingOutside(dc, bounds);
+        if (_selected != null && !ReferenceEquals(_selected, _editingText) && _document.Annotations.Contains(_selected))
+            DrawFrame(dc, _selected is LineAnnotation ? null : _selected.GetBounds(), _selected.GetHandles());
+        if (_floatingBitmap != null) DrawFloatingOutside(dc, bounds);
     }
 
     /// <summary>
     /// The inserted image where it goes past the edges, on the white the image will grow by once it is placed
-    /// (see <see cref="EditorDocument.InsertImage"/>), the new outline dashed; then its frame and handles.
+    /// (see <see cref="EditorDocument.InsertImage"/>), the new outline dotted; then its frame and handles.
     /// </summary>
     private void DrawFloatingOutside(DrawingContext dc, Rect bounds)
     {
@@ -302,20 +416,33 @@ public sealed class AnnotationCanvas : FrameworkElement
         if (future != bounds)
         {
             var outside = new CombinedGeometry(GeometryCombineMode.Exclude, new RectangleGeometry(future), new RectangleGeometry(bounds));
-            dc.PushClip(outside);
-            dc.DrawRectangle(Brushes.White, null, future);
-            dc.DrawImage(_floatingImage, _floatingRect);
-            dc.Pop();
-            _floatingOutlinePen ??= Frozen(new Pen(Brushes.Gray, 1 / _viewScale) { DashStyle = DashStyles.Dot });
+            using (dc.PushGeometryClip(outside))
+            using (dc.PushRenderOptions(new RenderOptions { BitmapInterpolationMode = _interpolation }))
+            {
+                dc.DrawRectangle(Brushes.White, null, future);
+                dc.DrawImage(_floatingBitmap!, _floatingRect);
+            }
+            _floatingOutlinePen ??= new ImmutablePen(Brushes.Gray.ToImmutable(), 1 / _viewScale, Dot);
             dc.DrawRectangle(null, _floatingOutlinePen, future);
         }
         DrawFrame(dc, _floatingRect, FloatingHandles());
     }
 
+    /// <summary>Dashed frame around <paramref name="bounds"/> (none if null) and square handles, one screen pixel thin.</summary>
+    private void DrawFrame(DrawingContext dc, Rect? bounds, IReadOnlyList<Point> handles)
+    {
+        double unit = 1 / _viewScale;
+        _selectionPen ??= new ImmutablePen(AccentBrush, unit);
+        _selectionDashPen ??= new ImmutablePen(AccentBrush, unit, Dash);
+        if (bounds is Rect frame) dc.DrawRectangle(null, _selectionDashPen, Rects.Grow(frame, 3 * unit));
+        double size = 9 * unit;
+        foreach (var h in handles)
+            dc.DrawRectangle(Brushes.White, _selectionPen, new Rect(h.X - size / 2, h.Y - size / 2, size, size));
+    }
+
     /// <summary>
-    /// The annotation being drawn or dragged changes others, so everything is drawn live instead of from the
-    /// recorded layers: the shared shade follows a spotlight, and a lens shows the pixelated areas and the
-    /// annotations below it.
+    /// The annotation being drawn or dragged changes others, so everything is drawn live in one layer: the shared
+    /// shade follows a spotlight, and a lens shows the pixelated areas and the annotations below it.
     /// </summary>
     private bool NeedsLiveRendering(Annotation? active)
     {
@@ -331,7 +458,7 @@ public sealed class AnnotationCanvas : FrameworkElement
         return false;
     }
 
-    /// <summary>Annotation drawn live because the mouse changes it.</summary>
+    /// <summary>Annotation drawn on its own layer because the mouse changes it.</summary>
     private Annotation? ActiveAnnotation() => _mode switch
     {
         DragMode.Create => _creating,
@@ -341,61 +468,35 @@ public sealed class AnnotationCanvas : FrameworkElement
 
     private void InvalidateLayers()
     {
-        _layersValid = false;
         InvalidateVisual();
+        _imageLayer.InvalidateVisual();
+        _belowLayer.InvalidateVisual();
+        _activeLayer.InvalidateVisual();
+        _aboveLayer.InvalidateVisual();
+        _overlayLayer.InvalidateVisual();
     }
 
-    /// <summary>Records the annotations around the active one, when the document or the active annotation changed.</summary>
-    private (DrawingGroup Below, DrawingGroup Above) UpdateLayers(Annotation? active)
+    /// <summary>Only what the mouse is changing is drawn again.</summary>
+    private void InvalidateActive()
     {
-        var annotations = _document!.Annotations;
-        int split = active == null ? -1 : annotations.IndexOf(active);
-        if (split < 0)
-        {
-            active = null;
-            split = annotations.Count;
-        }
-        if (_layersValid && ReferenceEquals(active, _layerActive) && _layerBelow != null && _layerAbove != null)
-            return (_layerBelow, _layerAbove);
-
-        var image = _document.BaseImage;
-        _layerBelow = Record(dc => AnnotationRenderer.Render(dc, image, annotations, 0, split, _editingText));
-        _layerAbove = Record(dc => AnnotationRenderer.Render(dc, image, annotations, Math.Min(split + 1, annotations.Count), annotations.Count, _editingText));
-        _layerActive = active;
-        _layersValid = true;
-        return (_layerBelow, _layerAbove);
+        if (NeedsLiveRendering(ActiveAnnotation())) _belowLayer.InvalidateVisual();
+        else _activeLayer.InvalidateVisual();
+        _overlayLayer.InvalidateVisual();
     }
 
-    private static DrawingGroup Record(Action<DrawingContext> draw)
+    private void InvalidateFloating()
     {
-        var group = new DrawingGroup();
-        using (var dc = group.Open()) draw(dc);
-        if (group.CanFreeze) group.Freeze();
-        return group;
+        InvalidateVisual();
+        _imageLayer.InvalidateVisual();
+        _overlayLayer.InvalidateVisual();
     }
 
-    private void DrawSelection(DrawingContext dc, Annotation annotation) =>
-        DrawFrame(dc, annotation is LineAnnotation ? null : annotation.GetBounds(), annotation.GetHandles());
+    // ---- Mouse ----
 
-    /// <summary>Dashed frame around <paramref name="bounds"/> (none if null) and square handles, one screen pixel thin.</summary>
-    private void DrawFrame(DrawingContext dc, Rect? bounds, IReadOnlyList<Point> handles)
+    protected override void OnPointerPressed(PointerPressedEventArgs e)
     {
-        double unit = 1 / _viewScale;
-        _selectionPen ??= Frozen(new Pen(AccentBrush, unit));
-        _selectionDashPen ??= Frozen(new Pen(AccentBrush, unit) { DashStyle = DashStyles.Dash });
-        if (bounds is Rect frame)
-        {
-            frame.Inflate(3 * unit, 3 * unit);
-            dc.DrawRectangle(null, _selectionDashPen, frame);
-        }
-        double size = 9 * unit;
-        foreach (var h in handles)
-            dc.DrawRectangle(Brushes.White, _selectionPen, new Rect(h.X - size / 2, h.Y - size / 2, size, size));
-    }
-
-    protected override void OnMouseLeftButtonDown(MouseButtonEventArgs e)
-    {
-        if (_document == null) return;
+        base.OnPointerPressed(e);
+        if (_document == null || !e.GetCurrentPoint(this).Properties.IsLeftButtonPressed) return;
         Focus();
         e.Handled = true;
         var p = e.GetPosition(this);
@@ -408,11 +509,11 @@ public sealed class AnnotationCanvas : FrameworkElement
             if (floatingHandle >= 0)
             {
                 _handleIndex = floatingHandle;
-                BeginDrag(DragMode.FloatHandle, p);
+                BeginDrag(DragMode.FloatHandle, p, e);
             }
             else if (_floatingRect.Contains(p))
             {
-                BeginDrag(DragMode.FloatMove, p);
+                BeginDrag(DragMode.FloatMove, p, e);
             }
             else
             {
@@ -429,7 +530,7 @@ public sealed class AnnotationCanvas : FrameworkElement
             {
                 _handleIndex = handle;
                 _selected.BeginHandleDrag(handle);
-                BeginDrag(DragMode.Handle, p);
+                BeginDrag(DragMode.Handle, p, e);
                 return;
             }
         }
@@ -447,7 +548,7 @@ public sealed class AnnotationCanvas : FrameworkElement
                 if (hit != null)
                 {
                     hit.BeginMove(p);
-                    BeginDrag(DragMode.Move, p);
+                    BeginDrag(DragMode.Move, p, e);
                 }
                 break;
 
@@ -480,7 +581,7 @@ public sealed class AnnotationCanvas : FrameworkElement
                     // Clicking an existing stamp moves it instead of stacking a new one.
                     SetSelected(existingStamp);
                     existingStamp.BeginMove(p);
-                    BeginDrag(DragMode.Move, p);
+                    BeginDrag(DragMode.Move, p, e);
                     break;
                 }
                 if (StampLibrary.Find(CurrentStampId) is not { } definition) break;
@@ -495,12 +596,12 @@ public sealed class AnnotationCanvas : FrameworkElement
                 // Clicking a magnifier moves its lens or its area instead of drawing a new one.
                 SetSelected(existingMagnifier);
                 existingMagnifier.BeginMove(p);
-                BeginDrag(DragMode.Move, p);
+                BeginDrag(DragMode.Move, p, e);
                 break;
 
             case EditorTool.Crop:
                 SetSelected(null);
-                BeginDrag(DragMode.Crop, p);
+                BeginDrag(DragMode.Crop, p, e);
                 _cropRect = new Rect(p, p);
                 break;
 
@@ -512,14 +613,15 @@ public sealed class AnnotationCanvas : FrameworkElement
                 _document.Annotations.Add(shape);
                 _creating = shape;
                 SetSelected(null);
-                BeginDrag(DragMode.Create, p);
+                BeginDrag(DragMode.Create, p, e);
                 break;
         }
         InvalidateLayers();
     }
 
-    protected override void OnMouseMove(MouseEventArgs e)
+    protected override void OnPointerMoved(PointerEventArgs e)
     {
+        base.OnPointerMoved(e);
         if (_document == null) return;
         var p = e.GetPosition(this);
         if (_mode == DragMode.None)
@@ -528,7 +630,7 @@ public sealed class AnnotationCanvas : FrameworkElement
             return;
         }
 
-        bool shift = Keyboard.Modifiers.HasFlag(ModifierKeys.Shift);
+        bool shift = e.KeyModifiers.HasFlag(KeyModifiers.Shift);
         switch (_mode)
         {
             case DragMode.Move when _selected != null:
@@ -556,35 +658,36 @@ public sealed class AnnotationCanvas : FrameworkElement
                 break;
 
             case DragMode.FloatMove:
-                var moved = _floatingStart;
-                moved.Offset(p - _dragStart);
+                var moved = Rects.Offset(_floatingStart, p - _dragStart);
                 // Alt places it freely, without sticking to the edges.
-                _floatingRect = Keyboard.Modifiers.HasFlag(ModifierKeys.Alt) ? moved : SnapToEdges(moved);
-                break;
+                _floatingRect = e.KeyModifiers.HasFlag(KeyModifiers.Alt) ? moved : SnapToEdges(moved);
+                _lastPosition = p;
+                InvalidateFloating();
+                return;
 
             case DragMode.FloatHandle:
                 _floatingRect = ResizeFloating(p, keepRatio: !shift);
-                break;
+                _lastPosition = p;
+                InvalidateFloating();
+                return;
 
             case DragMode.Crop:
-                var image = ImageArea;
-                var crop = new Rect(_dragStart, p);
-                crop.Intersect(image);
-                _cropRect = crop.IsEmpty ? null : crop;
+                _cropRect = Rects.Intersect(Rects.Between(_dragStart, p), ImageArea);
                 break;
         }
         _lastPosition = p;
-        InvalidateVisual();
+        InvalidateActive();
     }
 
-    protected override void OnMouseLeftButtonUp(MouseButtonEventArgs e)
+    protected override void OnPointerReleased(PointerReleasedEventArgs e)
     {
-        if (_mode == DragMode.None || _document == null) return;
+        base.OnPointerReleased(e);
+        if (e.InitialPressMouseButton != MouseButton.Left || _mode == DragMode.None || _document == null) return;
         var mode = _mode;
         var checkpoint = _checkpoint;
         _mode = DragMode.None;
         _checkpoint = null;
-        ReleaseMouseCapture();
+        ReleaseCapture();
 
         switch (mode)
         {
@@ -605,7 +708,7 @@ public sealed class AnnotationCanvas : FrameworkElement
             case DragMode.Crop:
                 if (_cropRect is Rect r && r.Width >= 2 && r.Height >= 2)
                 {
-                    _document.Crop(new Int32Rect((int)Math.Round(r.X), (int)Math.Round(r.Y),
+                    _document.Crop(new PixelRect((int)Math.Round(r.X), (int)Math.Round(r.Y),
                         (int)Math.Round(r.Width), (int)Math.Round(r.Height)));
                 }
                 _cropRect = null;
@@ -624,33 +727,47 @@ public sealed class AnnotationCanvas : FrameworkElement
         InvalidateLayers();
     }
 
+    protected override void OnPointerCaptureLost(PointerCaptureLostEventArgs e)
+    {
+        base.OnPointerCaptureLost(e);
+        // Another window or a system dialog took the mouse in the middle of a drag.
+        if (_mode != DragMode.None && ReferenceEquals(e.Pointer, _capturedPointer))
+        {
+            _capturedPointer = null;
+            CancelOperation();
+        }
+    }
+
     /// <summary>A shape drawn by a click or a tiny drag is dropped; the limit is on screen, whatever the zoom.</summary>
     private bool IsTooSmall(Annotation created)
     {
         double min = MinDragOnScreen / _viewScale;
+        double Length(TwoPointAnnotation t) => ((Vector)(t.End - t.Start)).Length;
         return created switch
         {
             FreehandAnnotation f => f.Points.Count < 2,
             // The lens shows whole pixels: at least 2 of them each way.
-            MagnifierAnnotation m => (m.End - m.Start).Length < min || m.GetRect().Width < 2 || m.GetRect().Height < 2,
+            MagnifierAnnotation m => Length(m) < min || m.GetRect().Width < 2 || m.GetRect().Height < 2,
             // Less than a pixel high or wide would be invisible.
-            BoxAnnotation b => (b.End - b.Start).Length < min || b.GetRect().Width < 1 || b.GetRect().Height < 1,
-            TwoPointAnnotation t => (t.End - t.Start).Length < min,
+            BoxAnnotation b => Length(b) < min || b.GetRect().Width < 1 || b.GetRect().Height < 1,
+            TwoPointAnnotation t => Length(t) < min,
             _ => false,
         };
     }
 
-    protected override void OnLostMouseCapture(MouseEventArgs e)
-    {
-        base.OnLostMouseCapture(e);
-        if (_mode != DragMode.None && Mouse.LeftButton != MouseButtonState.Pressed) CancelOperation();
-    }
-
-    private void BeginDrag(DragMode mode, Point p)
+    private void BeginDrag(DragMode mode, Point p, PointerEventArgs e)
     {
         _mode = mode;
         _dragStart = _lastPosition = p;
-        CaptureMouse();
+        _capturedPointer = e.Pointer;
+        e.Pointer.Capture(this);
+    }
+
+    private void ReleaseCapture()
+    {
+        var pointer = _capturedPointer;
+        _capturedPointer = null;
+        if (pointer?.Captured == this) pointer.Capture(null);
     }
 
     /// <summary>Saves the state before the first change of a move or resize.</summary>
@@ -687,7 +804,7 @@ public sealed class AnnotationCanvas : FrameworkElement
     /// <summary>Shift: 45° steps for lines, squares/circles for boxes.</summary>
     private static Point Constrain(Point origin, Point p, bool isLine)
     {
-        var v = p - origin;
+        Vector v = p - origin;
         if (isLine)
         {
             double step = Math.PI / 4;
@@ -709,14 +826,11 @@ public sealed class AnnotationCanvas : FrameworkElement
         return null;
     }
 
-    /// <summary>Distance, in screen pixels, under which a moved image sticks to an edge of the capture.</summary>
-    private const double SnapOnScreen = 8;
-
     /// <summary>
     /// Moves an inserted image near an edge of the capture onto it: aligned with the edge inside, or right next
     /// to it outside (two captures side by side, the capture then grows to hold both).
     /// </summary>
-    private Rect SnapToEdges(Rect r)
+    internal Rect SnapToEdges(Rect r)
     {
         var image = ImageArea;
         double tolerance = SnapOnScreen / _viewScale;
@@ -735,8 +849,7 @@ public sealed class AnnotationCanvas : FrameworkElement
         }
         double dx = Nearest(tolerance, -r.Left, image.Right - r.Right, image.Right - r.Left, -r.Right);
         double dy = Nearest(tolerance, -r.Top, image.Bottom - r.Bottom, image.Bottom - r.Top, -r.Bottom);
-        r.Offset(dx, dy);
-        return r;
+        return Rects.Offset(r, new Vector(dx, dy));
     }
 
     /// <summary>
@@ -747,7 +860,7 @@ public sealed class AnnotationCanvas : FrameworkElement
     {
         var start = _floatingStart;
         var anchor = new[] { start.BottomRight, start.BottomLeft, start.TopLeft, start.TopRight }[_handleIndex];
-        var v = p - anchor;
+        Vector v = p - anchor;
         double width = Math.Max(Math.Abs(v.X), MinFloatingSize), height = Math.Max(Math.Abs(v.Y), MinFloatingSize);
         if (keepRatio && start.Width > 0 && start.Height > 0)
         {
@@ -756,7 +869,7 @@ public sealed class AnnotationCanvas : FrameworkElement
             height = width / ratio;
         }
         // The handle may be dragged past the anchor: the image then grows on the other side.
-        return new Rect(anchor, anchor + new Vector(v.X < 0 ? -width : width, v.Y < 0 ? -height : height));
+        return Rects.Between(anchor, anchor + new Vector(v.X < 0 ? -width : width, v.Y < 0 ? -height : height));
     }
 
     private int HitHandle(IReadOnlyList<Point> handles, Point p)
@@ -773,24 +886,24 @@ public sealed class AnnotationCanvas : FrameworkElement
     {
         Cursor cursor;
         if (_floatingImage != null)
-            cursor = HitHandle(FloatingHandles(), p) >= 0 ? Cursors.Hand : _floatingRect.Contains(p) ? Cursors.SizeAll : Cursors.Arrow;
-        else if (_selected != null && _tool != EditorTool.Crop && HitHandle(_selected.GetHandles(), p) >= 0) cursor = Cursors.Hand;
-        else if (_tool == EditorTool.Select && HitTestAll(p) != null) cursor = Cursors.SizeAll;
-        else if (_tool == EditorTool.Magnifier && HitTestAll(p) is MagnifierAnnotation) cursor = Cursors.SizeAll;
+            cursor = HitHandle(FloatingHandles(), p) >= 0 ? HandCursor : _floatingRect.Contains(p) ? MoveCursor : ArrowCursor;
+        else if (_selected != null && _tool != EditorTool.Crop && HitHandle(_selected.GetHandles(), p) >= 0) cursor = HandCursor;
+        else if (_tool == EditorTool.Select && HitTestAll(p) != null) cursor = MoveCursor;
+        else if (_tool == EditorTool.Magnifier && HitTestAll(p) is MagnifierAnnotation) cursor = MoveCursor;
         else cursor = _tool switch
         {
-            EditorTool.Select => Cursors.Arrow,
-            EditorTool.Text => Cursors.IBeam,
-            _ => Cursors.Cross,
+            EditorTool.Select => ArrowCursor,
+            EditorTool.Text => TextCursor,
+            _ => CrossCursor,
         };
-        if (Cursor != cursor) Cursor = cursor;
+        if (!ReferenceEquals(Cursor, cursor)) Cursor = cursor;
     }
 
     private void SetSelected(Annotation? annotation)
     {
         if (ReferenceEquals(_selected, annotation)) return;
         _selected = annotation;
-        InvalidateVisual();
+        _overlayLayer.InvalidateVisual();
         SelectionChanged?.Invoke();
     }
 
@@ -798,8 +911,8 @@ public sealed class AnnotationCanvas : FrameworkElement
     {
         if (_document is { IsEffectsChange: true })
         {
-            // Only the outline and the border change (a slider being dragged): the recorded layers stay valid.
-            InvalidateVisual();
+            // Only the outline and the border change (a slider being dragged): the annotations themselves do not.
+            InvalidateLayers();
             return;
         }
         if (_selected != null && _document != null && !_document.Annotations.Contains(_selected)) SetSelected(null);
@@ -807,4 +920,18 @@ public sealed class AnnotationCanvas : FrameworkElement
         InvalidateMeasure();
     }
 
+    /// <summary>One layer of the drawing: the size of the canvas, drawn by the canvas, transparent to the mouse.</summary>
+    private sealed class Layer : Control
+    {
+        private readonly Action<DrawingContext> _draw;
+
+        public Layer(Action<DrawingContext> draw)
+        {
+            _draw = draw;
+            IsHitTestVisible = false;
+            ClipToBounds = false;
+        }
+
+        public override void Render(DrawingContext context) => _draw(context);
+    }
 }

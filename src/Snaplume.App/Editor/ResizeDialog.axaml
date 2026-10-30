@@ -1,0 +1,34 @@
+<Window xmlns="https://github.com/avaloniaui"
+        xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+        xmlns:l="using:Snaplume.Ui"
+        x:Class="Snaplume.Editor.ResizeDialog"
+        Title="{l:T Resize.Title}" Width="380" SizeToContent="Height" CanResize="False"
+        WindowStartupLocation="CenterOwner" ShowInTaskbar="False">
+    <StackPanel Margin="20,16,20,18">
+        <TextBlock x:Name="CurrentSizeText" Foreground="{DynamicResource MutedTextBrush}" Margin="0,0,0,12" />
+
+        <TextBlock Text="{l:T Resize.Percentage}" FontWeight="SemiBold" Margin="0,0,0,6" />
+        <WrapPanel x:Name="PercentButtons" Margin="0,0,0,14" />
+
+        <Grid ColumnDefinitions="*,Auto,*">
+            <StackPanel>
+                <TextBlock Text="{l:T Resize.Width}" FontWeight="SemiBold" Margin="0,0,0,4" />
+                <TextBox x:Name="WidthBox" />
+            </StackPanel>
+            <TextBlock Grid.Column="1" Text="×" FontSize="18" VerticalAlignment="Bottom" Margin="10,0,10,6"
+                       Foreground="{DynamicResource MutedTextBrush}" />
+            <StackPanel Grid.Column="2">
+                <TextBlock Text="{l:T Resize.Height}" FontWeight="SemiBold" Margin="0,0,0,4" />
+                <TextBox x:Name="HeightBox" />
+            </StackPanel>
+        </Grid>
+        <CheckBox x:Name="KeepRatioCheck" Content="{l:T Resize.KeepRatio}" IsChecked="True" Margin="0,10,0,0" />
+        <TextBlock x:Name="ErrorText" Foreground="{DynamicResource ErrorTextBrush}" Margin="0,8,0,0" IsVisible="False" TextWrapping="Wrap" />
+        <TextBlock Text="{l:T Resize.Note}" Foreground="{DynamicResource MutedTextBrush}" TextWrapping="Wrap" Margin="0,10,0,0" FontSize="11.5" />
+
+        <StackPanel Orientation="Horizontal" HorizontalAlignment="Right" Margin="0,16,0,0" Spacing="8">
+            <Button x:Name="OkButton" Classes="accent" Content="{l:T Resize.Ok}" IsDefault="True" Padding="14,4" />
+            <Button x:Name="CancelButton" Content="{l:T Resize.Cancel}" IsCancel="True" Padding="14,4" />
+        </StackPanel>
+    </StackPanel>
+</Window>
