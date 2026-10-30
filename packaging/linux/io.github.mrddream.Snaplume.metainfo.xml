@@ -1,0 +1,98 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!-- AppStream metadata, shown by GNOME Software, KDE Discover and the other software centres. -->
+<component type="desktop-application">
+  <id>io.github.mrddream.Snaplume</id>
+  <metadata_license>CC0-1.0</metadata_license>
+  <project_license>MIT</project_license>
+
+  <name>Snaplume</name>
+  <summary>Capture, annotate and record your screen</summary>
+  <summary xml:lang="fr">Capturer, annoter et enregistrer l'écran</summary>
+  <summary xml:lang="de">Bildschirm aufnehmen, kommentieren und filmen</summary>
+  <summary xml:lang="es">Capture, anote y grabe la pantalla</summary>
+  <summary xml:lang="it">Cattura, annota e registra lo schermo</summary>
+  <summary xml:lang="ar">التقط الشاشة وعلّق عليها وسجّلها</summary>
+
+  <developer id="io.github.mrddream">
+    <name>MrDDream</name>
+  </developer>
+
+  <description>
+    <p>
+      Snaplume is a free screenshot and annotation tool that works entirely on your computer: no account,
+      no online service, no telemetry.
+    </p>
+    <p xml:lang="fr">
+      Snaplume est un logiciel libre de capture d'écran et d'annotation qui fonctionne entièrement sur votre
+      ordinateur : pas de compte, pas de service en ligne, pas de télémétrie.
+    </p>
+    <ul>
+      <li>Capture a region, a window, a screen or a whole scrolling page</li>
+      <li xml:lang="fr">Capture d'une zone, d'une fenêtre, d'un écran ou d'une page entière qui défile</li>
+      <li>Annotate with arrows, shapes, text, highlights, blur and pixelation, steps and stamps</li>
+      <li xml:lang="fr">Annotations : flèches, formes, texte, surligneur, flou et pixelisation, étapes et tampons</li>
+      <li>Record the screen as MP4 video, with sound and webcam, then cut clips or export GIFs</li>
+      <li xml:lang="fr">Enregistrement vidéo MP4 avec le son et la webcam, découpe d'extraits et export en GIF</li>
+      <li>Read text (OCR) and QR codes from the screen</li>
+      <li xml:lang="fr">Lecture du texte (OCR) et des QR codes à l'écran</li>
+      <li>Organise captures in workspaces, export them as PDF, Word or HTML documents</li>
+      <li xml:lang="fr">Rangement en espaces de travail, export en documents PDF, Word ou HTML</li>
+    </ul>
+    <p>
+      Under Wayland, the desktop asks once for the permission to take screenshots, turn the wheel and
+      register global shortcuts; window detection and click highlighting are only available under X11.
+    </p>
+    <p xml:lang="fr">
+      Sous Wayland, le bureau demande une fois l'autorisation de capturer l'écran, de tourner la molette et
+      d'enregistrer les raccourcis globaux ; la détection des fenêtres et la mise en évidence des clics ne sont
+      disponibles que sous X11.
+    </p>
+  </description>
+
+  <launchable type="desktop-id">io.github.mrddream.Snaplume.desktop</launchable>
+
+  <url type="homepage">https://mrddream.github.io/Snaplume/</url>
+  <url type="bugtracker">https://github.com/MrDDream/Snaplume/issues</url>
+  <url type="vcs-browser">https://github.com/MrDDream/Snaplume</url>
+
+  <screenshots>
+    <screenshot type="default">
+      <caption>The editor and its annotation tools</caption>
+      <image>https://mrddream.github.io/Snaplume/assets/screenshots/editor.png</image>
+    </screenshot>
+    <screenshot>
+      <caption>The workspace with its captures and videos</caption>
+      <image>https://mrddream.github.io/Snaplume/assets/screenshots/workspace.png</image>
+    </screenshot>
+    <screenshot>
+      <caption>The video player: clips and GIF export</caption>
+      <image>https://mrddream.github.io/Snaplume/assets/screenshots/player.png</image>
+    </screenshot>
+  </screenshots>
+
+  <provides>
+    <binary>snaplume</binary>
+    <mediatype>image/png</mediatype>
+    <mediatype>image/jpeg</mediatype>
+    <mediatype>video/mp4</mediatype>
+  </provides>
+
+  <supports>
+    <control>pointing</control>
+    <control>keyboard</control>
+  </supports>
+  <requires>
+    <display_length compare="ge">768</display_length>
+  </requires>
+
+  <content_rating type="oars-1.1" />
+
+  <releases>
+    <release version="1.2.0" date="2026-10-30">
+      <description>
+        <p>First version for Linux (X11 and Wayland), with the same interface as the Windows version.</p>
+        <p xml:lang="fr">Première version pour Linux (X11 et Wayland), avec la même interface que la version Windows.</p>
+      </description>
+    </release>
+  </releases>
+</component>
