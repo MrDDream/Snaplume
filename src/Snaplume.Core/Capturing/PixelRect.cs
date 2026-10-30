@@ -1,5 +1,3 @@
-using System.Windows;
-
 namespace Snaplume.Capturing;
 
 /// <summary>Integer rectangle in physical screen pixels.</summary>
@@ -39,10 +37,7 @@ public readonly record struct PixelRect(int X, int Y, int Width, int Height)
     public static PixelRect FromCorners(int x0, int y0, int x1, int y1) =>
         new(Math.Min(x0, x1), Math.Min(y0, y1), Math.Abs(x1 - x0) + 1, Math.Abs(y1 - y0) + 1);
 
-    /// <summary>From a WinForms / GDI rectangle (e.g. Screen.Bounds, already in physical pixels).</summary>
-    public static PixelRect From(System.Drawing.Rectangle r) => new(r.X, r.Y, r.Width, r.Height);
+    public Avalonia.Rect ToRect() => new(X, Y, Width, Height);
 
-    public Rect ToRect() => new(X, Y, Width, Height);
-
-    public Int32Rect ToInt32Rect() => new(X, Y, Width, Height);
+    public Avalonia.PixelRect ToAvalonia() => new(X, Y, Width, Height);
 }

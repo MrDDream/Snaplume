@@ -1,5 +1,5 @@
 using System.Globalization;
-using System.Windows;
+using Avalonia.Threading;
 using Snaplume.Editor;
 
 namespace Snaplume.Core;
@@ -11,14 +11,14 @@ namespace Snaplume.Core;
 public static class Workspaces
 {
     /// <summary>Root capture folder (<see cref="AppSettings.WorkspaceFolder"/>).</summary>
-    public static string Root => App.Instance.Settings.WorkspaceFolder;
+    public static string Root => AppServices.Settings.WorkspaceFolder;
 
     /// <summary>Active workspace name; "" for Base, also when the chosen sub-folder no longer exists.</summary>
     public static string ActiveName
     {
         get
         {
-            var name = App.Instance.Settings.ActiveWorkspace;
+            var name = AppServices.Settings.ActiveWorkspace;
             return name.Length > 0 && IsPlainName(name) && Directory.Exists(Path.Combine(Root, name)) ? name : "";
         }
     }
@@ -73,7 +73,7 @@ public static class Workspaces
     {
         name ??= "";
         if (name.Length > 0 && !Directory.Exists(FolderOf(name))) name = "";
-        var settings = App.Instance.Settings;
+        var settings = AppServices.Settings;
         if (settings.ActiveWorkspace != name)
         {
             settings.ActiveWorkspace = name;
@@ -121,7 +121,7 @@ public static class Workspaces
             Directory.Move(source, target);
         }
 
-        var settings = App.Instance.Settings;
+        var settings = AppServices.Settings;
         if (string.Equals(settings.ActiveWorkspace, oldName, StringComparison.OrdinalIgnoreCase))
         {
             settings.ActiveWorkspace = final;
@@ -137,8 +137,8 @@ public static class Workspaces
     {
         if (string.IsNullOrEmpty(name)) return false;
         var folder = FolderOf(name);
-        if (Directory.Exists(folder) && !FileOps.MoveToRecycleBin(new[] { folder })) return false;
-        if (string.Equals(App.Instance.Settings.ActiveWorkspace, name, StringComparison.OrdinalIgnoreCase)) Select("");
+        if (Directory.Exists(folder) && !FileOps.MoveToTrash(new[] { folder })) return false;
+        if (string.Equals(AppServices.Settings.ActiveWorkspace, name, StringComparison.OrdinalIgnoreCase)) Select("");
         else RaiseChanged();
         return true;
     }
@@ -166,7 +166,7 @@ public static class Workspaces
                 var destination = FileOps.UniquePath(target, Path.GetFileNameWithoutExtension(source), Path.GetExtension(source));
                 File.Move(source, destination);
                 moved++;
-                MoveSidecar(source, destination);
+                SidecarFiles.Move(source, destination);
             }
             catch (Exception ex)
             {
@@ -183,38 +183,18 @@ public static class Workspaces
         return summary;
     }
 
-    /// <summary>The annotations (".snaplume" folder next to the file) follow the capture.</summary>
-    private static void MoveSidecar(string oldFile, string newFile)
-    {
-        try
-        {
-            var (oldBase, oldJson) = EditorDocument.SidecarPaths(oldFile);
-            if (!File.Exists(oldBase) && !File.Exists(oldJson)) return;
-            var (newBase, newJson) = EditorDocument.SidecarPaths(newFile);
-            var folder = Directory.CreateDirectory(Path.GetDirectoryName(newJson)!);
-            folder.Attributes |= FileAttributes.Hidden;
-            if (File.Exists(oldBase)) File.Move(oldBase, newBase, overwrite: true);
-            if (File.Exists(oldJson)) File.Move(oldJson, newJson, overwrite: true);
-        }
-        catch (Exception ex)
-        {
-            // The capture itself was moved: only its editable annotations are lost.
-            ErrorLog.Write("Déplacement des annotations", ex);
-        }
-    }
-
     /// <summary>Called when the root folder changes (settings).</summary>
     internal static void OnRootChanged() => RaiseChanged();
 
     /// <summary>A single folder name: no separators, not "." or "..".</summary>
     internal static bool IsPlainName(string name) =>
         name.Length > 0 && name.Trim() == name && name is not "." and not ".."
-        && name.IndexOfAny(Path.GetInvalidFileNameChars()) < 0;
+        && !FileOps.HasInvalidNameChars(name);
 
     /// <summary>Folder name typed by the user, made valid.</summary>
     private static string Clean(string? name)
     {
-        // Windows drops trailing dots and spaces from folder names.
+        // Windows drops trailing dots and spaces from folder names (kept the same everywhere: workspaces may be shared).
         var clean = FileOps.SanitizeFileName(name ?? "").Trim().TrimEnd('.', ' ');
         // A leading dot would make it a hidden, unlisted folder.
         if (clean.Length == 0 || clean.StartsWith('.') || !IsPlainName(clean))
@@ -242,7 +222,7 @@ public static class Workspaces
     {
         try
         {
-            App.Instance.Settings.Save();
+            AppServices.Settings.Save();
         }
         catch (Exception ex)
         {
@@ -253,8 +233,7 @@ public static class Workspaces
 
     private static void RaiseChanged()
     {
-        var dispatcher = Application.Current?.Dispatcher;
-        if (dispatcher == null || dispatcher.CheckAccess()) Changed?.Invoke();
-        else dispatcher.BeginInvoke(() => Changed?.Invoke());
+        if (Dispatcher.UIThread.CheckAccess()) Changed?.Invoke();
+        else Dispatcher.UIThread.Post(() => Changed?.Invoke());
     }
 }

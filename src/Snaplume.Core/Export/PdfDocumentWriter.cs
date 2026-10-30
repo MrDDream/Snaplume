@@ -1,9 +1,9 @@
 using System.Globalization;
 using System.IO.Compression;
 using System.Text;
-using System.Windows;
-using System.Windows.Media;
-using System.Windows.Media.Imaging;
+using Avalonia.Media;
+using SkiaSharp;
+using Snaplume.Imaging;
 
 namespace Snaplume.Export;
 
@@ -11,7 +11,7 @@ namespace Snaplume.Export;
 /// PDF written directly (PDF 1.4), without a third-party library: each image is written to the file
 /// as soon as it is read, so memory does not grow with the number of captures.
 /// JPEG files are embedded as they are; other images are decoded and compressed (Flate), with their
-/// transparency as a soft mask. Text is laid out by WPF (shaping, right-to-left, font fallback) and
+/// transparency as a soft mask. Text is shaped by HarfBuzz (right-to-left, font fallback, see <see cref="TextOutline"/>) and
 /// stored as vector outlines: it prints sharp in every language but cannot be selected.
 /// </summary>
 internal static class PdfDocumentWriter
@@ -28,8 +28,6 @@ internal static class PdfDocumentWriter
     private static readonly Color TextColor = Color.FromRgb(0x11, 0x18, 0x27);
     private static readonly Color MutedColor = Color.FromRgb(0x6B, 0x72, 0x80);
     private static readonly Color FrameColor = Color.FromRgb(0xD1, 0xD5, 0xDB);
-    private static readonly Typeface RegularFace = new(new FontFamily("Segoe UI"), FontStyles.Normal, FontWeights.Normal, FontStretches.Normal);
-    private static readonly Typeface BoldFace = new(new FontFamily("Segoe UI"), FontStyles.Normal, FontWeights.SemiBold, FontStretches.Normal);
 
     public static void Write(IReadOnlyList<DocumentImage> images, DocumentOptions options, string path,
         IProgress<int>? progress, CancellationToken cancellation)
@@ -80,8 +78,8 @@ internal static class PdfDocumentWriter
             y += height;
             if (caption)
             {
-                page.DrawText(DocumentGenerator.Caption(options, image), RegularFace, CaptionSize, MutedColor,
-                    DocumentGenerator.Margin, y + CaptionGap, contentWidth, TextAlignment.Center, maxLines: 1, options.Culture);
+                page.DrawText(DocumentGenerator.Caption(options, image), bold: false, CaptionSize, MutedColor,
+                    DocumentGenerator.Margin, y + CaptionGap, contentWidth, TextAlign.Center, maxLines: 1);
                 y += CaptionHeight;
             }
             progress?.Report(i + 1);
@@ -113,12 +111,12 @@ internal static class PdfDocumentWriter
     {
         var title = options.Title.Trim();
         if (title.Length > 0)
-            y += page.DrawText(title, BoldFace, TitleSize, TextColor, DocumentGenerator.Margin, y, width, TextAlignment.Left, maxLines: 3, options.Culture);
+            y += page.DrawText(title, bold: true, TitleSize, TextColor, DocumentGenerator.Margin, y, width, TextAlign.Start, maxLines: 3);
         if (options.IncludeDate)
         {
             var date = DocumentGenerator.FormatDate(options, DateTime.Now, longFormat: true);
-            y += 2 + page.DrawText(date, RegularFace, DateSize, MutedColor, DocumentGenerator.Margin, y + 2, width, TextAlignment.Left, maxLines: 1,
-                options.Culture, rightToLeft: options.Culture.TextInfo.IsRightToLeft);
+            y += 2 + page.DrawText(date, bold: false, DateSize, MutedColor, DocumentGenerator.Margin, y + 2, width, TextAlign.Start, maxLines: 1,
+                rightToLeft: options.Culture.TextInfo.IsRightToLeft);
         }
         return title.Length > 0 || options.IncludeDate ? y + 16 : y;
     }
@@ -128,30 +126,27 @@ internal static class PdfDocumentWriter
     /// <returns>Object number of the image XObject.</returns>
     private static int WriteImage(PdfFile pdf, string path, CancellationToken cancellation)
     {
-        using var stream = new FileStream(path, FileMode.Open, FileAccess.Read, FileShare.ReadWrite | FileShare.Delete);
-        var decoder = BitmapDecoder.Create(stream, BitmapCreateOptions.IgnoreColorProfile, BitmapCacheOption.None);
-        var frame = decoder.Frames[0];
-        int width = frame.PixelWidth, height = frame.PixelHeight;
+        var data = File.ReadAllBytes(path);
 
-        // JPEG (RGB or grey): the file itself is valid PDF image data.
-        if (decoder is JpegBitmapDecoder && (frame.Format == PixelFormats.Bgr24 || frame.Format == PixelFormats.Gray8))
+        // JPEG (RGB or grey, not CMYK): the file itself is valid PDF image data.
+        if (JpegInfo(data) is (int jpegWidth, int jpegHeight, int components) && components is 1 or 3)
         {
             int id = pdf.Reserve();
             pdf.Begin(id);
-            var space = frame.Format == PixelFormats.Gray8 ? "/DeviceGray" : "/DeviceRGB";
-            pdf.Write($"<< /Type /XObject /Subtype /Image /Width {width} /Height {height} /ColorSpace {space} /BitsPerComponent 8 /Filter /DCTDecode /Length {stream.Length} >>\nstream\n");
-            stream.Position = 0;
-            pdf.CopyFrom(stream);
+            var space = components == 1 ? "/DeviceGray" : "/DeviceRGB";
+            pdf.Write($"<< /Type /XObject /Subtype /Image /Width {jpegWidth} /Height {jpegHeight} /ColorSpace {space} /BitsPerComponent 8 /Filter /DCTDecode /Length {data.Length} >>\nstream\n");
+            pdf.CopyFrom(new MemoryStream(data, writable: false));
             pdf.Write("\nendstream");
             pdf.End();
             return id;
         }
 
-        // Anything else: RGB (+ alpha), decoded a band of rows at a time and compressed. The colors go
-        // straight into the file (their length is written afterwards); only the alpha channel, which
-        // compresses far better, waits in memory for its own object.
-        var source = frame.Format == PixelFormats.Bgra32 ? (BitmapSource)frame : new FormatConvertedBitmap(frame, PixelFormats.Bgra32, null, 0);
-        bool alpha = HasAlpha(frame);
+        // Anything else: RGB (+ alpha), compressed a band of rows at a time. The colors go straight into the
+        // file (their length is written afterwards); only the alpha channel, which compresses far better,
+        // waits in memory for its own object.
+        var source = ImageIO.Decode(data);
+        int width = source.Width, height = source.Height;
+        bool alpha = HasAlpha(source);
         int smask = alpha ? pdf.Reserve() : 0;
         int image = pdf.Reserve();
         using var mask = alpha ? new MemoryStream() : null;
@@ -160,8 +155,7 @@ internal static class PdfDocumentWriter
         using (var colorZip = new ZLibStream(pdf.Output, CompressionLevel.Optimal, leaveOpen: true))
         using (var maskZip = mask != null ? new ZLibStream(mask, CompressionLevel.Optimal, leaveOpen: true) : null)
         {
-            int stride = width * 4;
-            var band = new byte[(long)stride * Math.Min(BandRows, height)];
+            var band = source.Pixels;
             var rgb = new byte[width * 3 * Math.Min(BandRows, height)];
             var opacity = new byte[mask != null ? width * Math.Min(BandRows, height) : 0];
             for (int top = 0; top < height; top += BandRows)
@@ -169,9 +163,8 @@ internal static class PdfDocumentWriter
                 // A huge image takes a while: the dialog's Cancel must not wait for the end of it.
                 cancellation.ThrowIfCancellationRequested();
                 int rows = Math.Min(BandRows, height - top);
-                source.CopyPixels(new Int32Rect(0, top, width, rows), band, stride, 0);
                 int pixels = width * rows;
-                for (int p = 0, b = 0, c = 0; p < pixels; p++, b += 4, c += 3)
+                for (int p = 0, b = top * source.Stride, c = 0; p < pixels; p++, b += 4, c += 3)
                 {
                     rgb[c] = band[b + 2];
                     rgb[c + 1] = band[b + 1];
@@ -180,7 +173,7 @@ internal static class PdfDocumentWriter
                 colorZip.Write(rgb, 0, pixels * 3);
                 if (maskZip != null)
                 {
-                    for (int p = 0, b = 3; p < pixels; p++, b += 4) opacity[p] = band[b];
+                    for (int p = 0, b = top * source.Stride + 3; p < pixels; p++, b += 4) opacity[p] = band[b];
                     maskZip.Write(opacity, 0, pixels);
                 }
             }
@@ -199,24 +192,41 @@ internal static class PdfDocumentWriter
         return image;
     }
 
-    /// <summary>
-    /// The pixel format can hold transparency (an alpha channel, or a palette with a transparent color).
-    /// Captures saved by Snaplume are opaque (Bgr24): they get no soft mask.
-    /// </summary>
-    private static bool HasAlpha(BitmapSource frame)
+    /// <summary>Some pixel is not fully opaque. Captures saved by Snaplume are opaque: they get no soft mask.</summary>
+    private static bool HasAlpha(PixelBuffer image)
     {
-        var format = frame.Format;
-        if (format == PixelFormats.Bgra32 || format == PixelFormats.Pbgra32 || format == PixelFormats.Rgba64 ||
-            format == PixelFormats.Prgba64 || format == PixelFormats.Rgba128Float || format == PixelFormats.Prgba128Float)
-            return true;
-        try
+        var pixels = image.Pixels;
+        for (int i = 3; i < pixels.Length; i += 4)
         {
-            return frame.Palette?.Colors.Any(c => c.A < 255) == true;
+            if (pixels[i] != 255) return true;
         }
-        catch (Exception ex) when (ex is not OutOfMemoryException)
+        return false;
+    }
+
+    /// <summary>Size and number of color components of a baseline or progressive JPEG file, from its SOF marker; null if not a JPEG.</summary>
+    internal static (int Width, int Height, int Components)? JpegInfo(byte[] data)
+    {
+        if (data.Length < 4 || data[0] != 0xFF || data[1] != 0xD8) return null;
+        int i = 2;
+        while (i + 9 < data.Length)
         {
-            return true; // unknown: keep the alpha channel to be safe
+            if (data[i] != 0xFF) return null;
+            byte marker = data[i + 1];
+            if (marker == 0xFF) { i++; continue; }
+            if (marker is 0xD8 or 0x01 || marker is >= 0xD0 and <= 0xD7) { i += 2; continue; }
+            int length = data[i + 2] << 8 | data[i + 3];
+            // SOF0..SOF15, except DHT (C4), JPG (C8) and DAC (CC).
+            if (marker is >= 0xC0 and <= 0xCF and not 0xC4 and not 0xC8 and not 0xCC)
+            {
+                int height = data[i + 5] << 8 | data[i + 6];
+                int width = data[i + 7] << 8 | data[i + 8];
+                int components = data[i + 9];
+                return width > 0 && height > 0 ? (width, height, components) : null;
+            }
+            if (marker == 0xDA) return null; // image data before any frame header
+            i += 2 + length;
         }
+        return null;
     }
 
     // ---- Page content ----
@@ -254,87 +264,76 @@ internal static class PdfDocumentWriter
             _content.Append($"q {Rgb(color)} RG {N(thickness)} w {N(x)} {N(y)} {N(width)} {N(height)} re S Q\n");
         }
 
-        /// <summary>Text laid out by WPF in a box of the given width (wrapped up to maxLines, then "…").</summary>
+        /// <summary>Text in a box of the given width (wrapped up to maxLines, then "…"), see <see cref="TextOutline"/>.</summary>
+        /// <param name="rightToLeft">Lines start at the right edge; by default when the text is mostly right-to-left.</param>
         /// <returns>Height taken.</returns>
-        public double DrawText(string text, Typeface face, double size, Color color, double x, double y, double width,
-            TextAlignment alignment, int maxLines, CultureInfo culture, bool? rightToLeft = null)
+        public double DrawText(string text, bool bold, double size, Color color, double x, double y, double width,
+            TextAlign alignment, int maxLines, bool? rightToLeft = null)
         {
             if (string.IsNullOrWhiteSpace(text)) return 0;
             bool rtl = rightToLeft ?? DocumentGenerator.IsRightToLeftText(text);
-            var formatted = new FormattedText(text, culture, rtl ? FlowDirection.RightToLeft : FlowDirection.LeftToRight,
-                face, size, Brushes.Black, 1.0)
+            var (path, height) = TextOutline.Layout(text, size, bold, x, y, width, alignment, maxLines, rtl);
+            using (path)
             {
-                MaxTextWidth = width,
-                MaxLineCount = maxLines,
-                Trimming = TextTrimming.CharacterEllipsis,
-                TextAlignment = alignment,
-            };
-            // The origin is the top left of the box in both directions (right to left, "Left" is the start: the right edge).
-            var geometry = formatted.BuildGeometry(new Point(x, y));
-            _content.Append($"q {Rgb(color)} rg\n");
-            AppendGeometry(geometry);
-            _content.Append("Q\n");
-            return formatted.Height;
+                _content.Append($"q {Rgb(color)} rg\n");
+                AppendPath(path);
+                _content.Append("Q\n");
+            }
+            return height;
         }
 
-        private void AppendGeometry(Geometry geometry)
+        private void AppendPath(SKPath path)
         {
-            var path = PathGeometry.CreateFromGeometry(geometry);
-            if (path.Figures.Any(f => f.Segments.Any(s => s is ArcSegment)))
-                path = geometry.GetFlattenedPathGeometry(0.01, ToleranceType.Absolute);
-            if (path.Figures.Count == 0) return;
-            foreach (var figure in path.Figures)
+            if (path.IsEmpty) return;
+            using var iterator = path.CreateRawIterator();
+            var points = new SKPoint[4];
+            SKPathVerb verb;
+            while ((verb = iterator.Next(points)) != SKPathVerb.Done)
             {
-                var current = figure.StartPoint;
-                _content.Append($"{N(current.X)} {N(current.Y)} m\n");
-                foreach (var segment in figure.Segments)
+                switch (verb)
                 {
-                    switch (segment)
-                    {
-                        case LineSegment line:
-                            current = LineTo(line.Point);
-                            break;
-                        case PolyLineSegment poly:
-                            foreach (var point in poly.Points) current = LineTo(point);
-                            break;
-                        case BezierSegment bezier:
-                            current = CurveTo(bezier.Point1, bezier.Point2, bezier.Point3);
-                            break;
-                        case PolyBezierSegment poly:
-                            for (int i = 0; i + 2 < poly.Points.Count; i += 3)
-                                current = CurveTo(poly.Points[i], poly.Points[i + 1], poly.Points[i + 2]);
-                            break;
-                        case QuadraticBezierSegment quad:
-                            current = QuadTo(current, quad.Point1, quad.Point2);
-                            break;
-                        case PolyQuadraticBezierSegment poly:
-                            for (int i = 0; i + 1 < poly.Points.Count; i += 2)
-                                current = QuadTo(current, poly.Points[i], poly.Points[i + 1]);
-                            break;
-                    }
+                    case SKPathVerb.Move:
+                        _content.Append($"{N(points[0].X)} {N(points[0].Y)} m\n");
+                        break;
+                    case SKPathVerb.Line:
+                        LineTo(points[1]);
+                        break;
+                    case SKPathVerb.Quad:
+                        QuadTo(points[0], points[1], points[2]);
+                        break;
+                    case SKPathVerb.Conic:
+                        // Glyph outlines rarely have conics: turned into quadratic curves.
+                        foreach (var (control, end, start) in ConicToQuads(points[0], points[1], points[2], iterator.ConicWeight()))
+                            QuadTo(start, control, end);
+                        break;
+                    case SKPathVerb.Cubic:
+                        CurveTo(points[1], points[2], points[3]);
+                        break;
+                    case SKPathVerb.Close:
+                        _content.Append("h\n");
+                        break;
                 }
-                if (figure.IsClosed) _content.Append("h\n");
             }
-            // Nonzero winding, like the glyphs themselves: the geometry group built by WPF says "even-odd",
-            // which would punch holes where contours overlap (joined Arabic letters, overlapping glyphs).
+            // Nonzero winding, like the glyphs themselves: even-odd would punch holes where contours overlap
+            // (joined Arabic letters, overlapping glyphs).
             _content.Append("f\n");
         }
 
-        private Point LineTo(Point point)
+        private static IEnumerable<(SKPoint Control, SKPoint End, SKPoint Start)> ConicToQuads(SKPoint p0, SKPoint p1, SKPoint p2, float weight)
         {
-            _content.Append($"{N(point.X)} {N(point.Y)} l\n");
-            return point;
+            var quads = SKPath.ConvertConicToQuads(p0, p1, p2, weight, 2);
+            for (int i = 0; i + 2 < quads.Length; i += 2) yield return (quads[i + 1], quads[i + 2], quads[i]);
         }
 
-        private Point CurveTo(Point a, Point b, Point end)
-        {
+        private void LineTo(SKPoint point) => _content.Append($"{N(point.X)} {N(point.Y)} l\n");
+
+        private void CurveTo(SKPoint a, SKPoint b, SKPoint end) =>
             _content.Append($"{N(a.X)} {N(a.Y)} {N(b.X)} {N(b.Y)} {N(end.X)} {N(end.Y)} c\n");
-            return end;
-        }
 
         /// <summary>Quadratic curve as the equivalent cubic one (PDF only has cubic curves).</summary>
-        private Point QuadTo(Point start, Point control, Point end) =>
-            CurveTo(start + (control - start) * (2.0 / 3), end + (control - end) * (2.0 / 3), end);
+        private void QuadTo(SKPoint start, SKPoint control, SKPoint end) =>
+            CurveTo(start + new SKPoint((control.X - start.X) * 2f / 3, (control.Y - start.Y) * 2f / 3),
+                end + new SKPoint((control.X - end.X) * 2f / 3, (control.Y - end.Y) * 2f / 3), end);
 
         /// <summary>Writes the content stream and the page object.</summary>
         /// <returns>Object number of the page.</returns>

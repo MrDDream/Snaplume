@@ -1,5 +1,8 @@
 <Solution>
   <Folder Name="/src/">
-    <Project Path="src/Snaplume/Snaplume.csproj" />
+    <Project Path="src/Snaplume.Core/Snaplume.Core.csproj" />
+  </Folder>
+  <Folder Name="/tests/">
+    <Project Path="tests/Snaplume.Tests/Snaplume.Tests.csproj" />
   </Folder>
 </Solution>

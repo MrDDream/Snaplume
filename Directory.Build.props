@@ -1,0 +1,20 @@
+<Project>
+  <!-- Settings shared by every project of the solution. -->
+  <PropertyGroup>
+    <Nullable>enable</Nullable>
+    <ImplicitUsings>enable</ImplicitUsings>
+    <LangVersion>latest</LangVersion>
+    <Version>1.2.0</Version>
+    <Product>Snaplume</Product>
+    <Copyright>Contributeurs Snaplume — licence MIT</Copyright>
+    <!-- Avalonia's build telemetry: Snaplume sends nothing anywhere, its build neither. -->
+    <AvaloniaTelemetryOptOut>true</AvaloniaTelemetryOptOut>
+  </PropertyGroup>
+
+  <!-- One version of each package for the whole solution. -->
+  <PropertyGroup>
+    <AvaloniaVersion>12.1.4</AvaloniaVersion>
+    <!-- The SkiaSharp version Avalonia is built with. -->
+    <SkiaSharpVersion>3.119.4</SkiaSharpVersion>
+  </PropertyGroup>
+</Project>

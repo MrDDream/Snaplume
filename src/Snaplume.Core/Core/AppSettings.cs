@@ -1,14 +1,13 @@
 using System.Text.Json;
 using System.Text.Json.Serialization;
-using Microsoft.Win32;
 
 namespace Snaplume.Core;
 
 public sealed class AppSettings
 {
-    /// <summary>Interface language code ("fr", "en"...), empty for the Windows language.</summary>
+    /// <summary>Interface language code ("fr", "en"...), empty for the system language.</summary>
     public string Language { get; set; } = "";
-    /// <summary>"auto" (follows Windows), "light" or "dark".</summary>
+    /// <summary>"auto" (follows the system), "light" or "dark".</summary>
     public string Theme { get; set; } = "auto";
     /// <summary>Root capture folder (the "Base" workspace).</summary>
     public string WorkspaceFolder { get; set; } = DefaultWorkspaceFolder;
@@ -26,7 +25,9 @@ public sealed class AppSettings
     public bool ShowPanelAfterCapture { get; set; } = true;
     public bool IncludeCursor { get; set; }
     public int DelaySeconds { get; set; } = 3;
-    public bool StartWithWindows { get; set; }
+    /// <summary>Starts with the user session, in the tray (stored under its former name).</summary>
+    [JsonPropertyName("StartWithWindows")]
+    public bool StartWithSession { get; set; }
 
     public string HotkeyRegion { get; set; } = "PrintScreen";
     public string HotkeyScreen { get; set; } = "Shift+PrintScreen";
@@ -36,7 +37,7 @@ public sealed class AppSettings
     public string HotkeyVideo { get; set; } = "Ctrl+Alt+PrintScreen";
     /// <summary>Text capture (OCR); none by default, PrintScreen combinations are all taken.</summary>
     public string HotkeyText { get; set; } = "";
-    /// <summary>OCR language tag ("fr-FR"...), empty for the Windows language.</summary>
+    /// <summary>OCR language tag ("fr-FR"...), empty for the system language.</summary>
     public string OcrLanguage { get; set; } = "";
 
     public bool VideoSystemAudio { get; set; } = true;
@@ -69,7 +70,7 @@ public sealed class AppSettings
 
     /// <summary>
     /// Settings live next to the executable when a "portable" marker file is present
-    /// (run without installation), otherwise in %APPDATA%\Snaplume.
+    /// (run without installation), otherwise in %APPDATA%\Snaplume (Windows) or ~/.config/Snaplume (Linux).
     /// </summary>
     public static string SettingsFolder { get; } = IsPortable
         ? AppContext.BaseDirectory
@@ -103,68 +104,20 @@ public sealed class AppSettings
         }
         settings ??= new AppSettings();
         settings.Sanitize();
-        // The installer may have registered the start with Windows: show it checked, so that saving keeps it.
-        if (!settings.StartWithWindows && RunEntryPointsToThisExe()) settings.StartWithWindows = true;
-        if (migrated && settings.StartWithWindows)
+        // The installer may have registered the start with the session: show it checked, so that saving keeps it.
+        if (!settings.StartWithSession && AppServices.HasPlatform && AppServices.Platform.Shell.StartsWithSession) settings.StartWithSession = true;
+        if (migrated && settings.StartWithSession)
         {
             try
             {
-                settings.ApplyStartWithWindows();
+                settings.ApplyStartWithSession();
             }
             catch (Exception ex)
             {
-                ErrorLog.Write("Démarrage avec Windows", ex);
+                ErrorLog.Write("Démarrage avec la session", ex);
             }
         }
         return settings;
-    }
-
-    private const string RunKey = @"Software\Microsoft\Windows\CurrentVersion\Run";
-
-    /// <summary>
-    /// True when the "Snaplume" value of the Run key starts this executable (e.g. created by the
-    /// installer). A value starting another copy of Snaplume does not count.
-    /// </summary>
-    private static bool RunEntryPointsToThisExe()
-    {
-        try
-        {
-            using var key = Registry.CurrentUser.OpenSubKey(RunKey);
-            if (key?.GetValue("Snaplume") is not string command || Environment.ProcessPath is not { } exe) return false;
-            return CommandExecutable(command) is { } target && IsSameFile(target, exe);
-        }
-        catch (Exception ex)
-        {
-            ErrorLog.Write("Démarrage avec Windows", ex);
-            return false;
-        }
-    }
-
-    /// <summary>Executable of a command line: the quoted path, or the text up to the first space.</summary>
-    private static string? CommandExecutable(string command)
-    {
-        command = command.Trim();
-        if (command.StartsWith('"'))
-        {
-            int end = command.IndexOf('"', 1);
-            return end > 1 ? command[1..end] : null;
-        }
-        int space = command.IndexOf(' ');
-        return space < 0 ? command : command[..space];
-    }
-
-    private static bool IsSameFile(string a, string b)
-    {
-        try
-        {
-            a = Path.GetFullPath(Environment.ExpandEnvironmentVariables(a));
-            b = Path.GetFullPath(b);
-            return string.Equals(a, b, StringComparison.OrdinalIgnoreCase);
-        }
-        catch (Exception)
-        {
-            return false;
-        }
     }
 
     private static void BackUpUnreadableFile()
@@ -297,22 +250,10 @@ public sealed class AppSettings
 
     public AppSettings Clone() => (AppSettings)MemberwiseClone();
 
-    public void ApplyStartWithWindows()
+    /// <summary>Turns the start with the user session on or off, as <see cref="StartWithSession"/> says.</summary>
+    public void ApplyStartWithSession()
     {
-        using var key = Registry.CurrentUser.OpenSubKey(RunKey, writable: true);
-        if (key == null) return;
-        key.DeleteValue(LegacyName, throwOnMissingValue: false);
-        if (StartWithWindows) key.SetValue("Snaplume", $"\"{Environment.ProcessPath}\" --tray");
-        else key.DeleteValue("Snaplume", throwOnMissingValue: false);
-    }
-
-    /// <summary>
-    /// True when Windows 11 routes the Print Screen key to the Snipping Tool,
-    /// which prevents other applications from using it.
-    /// </summary>
-    public static bool SnippingToolOwnsPrintScreen()
-    {
-        using var key = Registry.CurrentUser.OpenSubKey(@"Control Panel\Keyboard");
-        return key?.GetValue("PrintScreenKeyForSnippingEnabled") is int value && value == 1;
+        if (AppServices.Platform.Has(Platform.PlatformFeatures.StartWithSession))
+            AppServices.Platform.Shell.SetStartWithSession(StartWithSession);
     }
 }

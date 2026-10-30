@@ -1,0 +1,37 @@
+<Project Sdk="Microsoft.NET.Sdk">
+
+  <!--
+    Everything that does not depend on the operating system: settings, translations, workspaces, the
+    annotation model and its rendering (Avalonia drawing + SkiaSharp pixels), the scrolling-capture
+    stitcher, the GIF encoder, the document writers, and the platform service interfaces (Platform/).
+  -->
+  <PropertyGroup>
+    <TargetFramework>net10.0</TargetFramework>
+    <RootNamespace>Snaplume</RootNamespace>
+    <AssemblyName>Snaplume.Core</AssemblyName>
+    <!-- Pixel buffers are handed to SkiaSharp by pointer (fixed blocks). -->
+    <AllowUnsafeBlocks>true</AllowUnsafeBlocks>
+  </PropertyGroup>
+
+  <ItemGroup>
+    <InternalsVisibleTo Include="Snaplume.Tests" />
+    <InternalsVisibleTo Include="Snaplume" />
+    <InternalsVisibleTo Include="Snaplume.Platform.Windows" />
+    <InternalsVisibleTo Include="Snaplume.Platform.Linux" />
+  </ItemGroup>
+
+  <ItemGroup>
+    <!-- Interface translations, read by Core/Loc.cs. -->
+    <EmbeddedResource Include="Languages\*.json" LogicalName="Snaplume.Languages.%(Filename).json" />
+  </ItemGroup>
+
+  <!-- Drawing (MIT), pixels and image files (MIT), QR codes (Apache-2.0), Word documents (MIT). -->
+  <ItemGroup>
+    <PackageReference Include="Avalonia" Version="$(AvaloniaVersion)" />
+    <PackageReference Include="SkiaSharp" Version="$(SkiaSharpVersion)" />
+    <PackageReference Include="SkiaSharp.HarfBuzz" Version="$(SkiaSharpVersion)" />
+    <PackageReference Include="ZXing.Net" Version="0.16.11" />
+    <PackageReference Include="DocumentFormat.OpenXml" Version="3.5.1" />
+  </ItemGroup>
+
+</Project>

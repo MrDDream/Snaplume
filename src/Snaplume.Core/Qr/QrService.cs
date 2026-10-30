@@ -1,8 +1,5 @@
 using System.Globalization;
-using System.Windows;
-using System.Windows.Media;
-using System.Windows.Media.Imaging;
-using Snaplume.Core;
+using Snaplume.Imaging;
 using ZXing;
 using ZXing.Common;
 
@@ -27,31 +24,6 @@ public static class QrService
         BarcodeFormat.EAN_13, BarcodeFormat.EAN_8, BarcodeFormat.UPC_A, BarcodeFormat.UPC_E,
         BarcodeFormat.CODE_128, BarcodeFormat.CODE_39, BarcodeFormat.CODE_93, BarcodeFormat.CODABAR, BarcodeFormat.ITF,
     };
-
-    /// <summary>Shows the window with the codes read in an image file (gallery, editor).</summary>
-    /// <returns>The window, or null if the file could not be read (the error is shown).</returns>
-    public static QrWindow? ShowForFile(string path)
-    {
-        try
-        {
-            return Show(ImageIO.Load(path));
-        }
-        catch (Exception ex)
-        {
-            ErrorLog.Write("QR code", ex);
-            MessageBox.Show(ex.Message, "Snaplume", MessageBoxButton.OK, MessageBoxImage.Error);
-            return null;
-        }
-    }
-
-    /// <summary>Shows the window with the codes read in the image (the reading runs in the background).</summary>
-    public static QrWindow Show(BitmapSource image)
-    {
-        var window = new QrWindow(image);
-        window.Show();
-        window.Activate();
-        return window;
-    }
 
     /// <summary>Reads every code of a BGRA image (stride = width * 4).</summary>
     /// <param name="cancel">Checked between the decoding passes (one pass cannot be interrupted).</param>
@@ -91,23 +63,18 @@ public static class QrService
     }
 
     /// <summary>
-    /// Pixels of the image as BGRA (call on the image's thread unless it is frozen). Images above
-    /// <see cref="MaxDecodePixels"/> are scaled down first: decoding them whole is slow and needs a lot
-    /// of memory, and a code readable on screen is still readable at that size.
+    /// Reads every code of an image. Images above <see cref="MaxDecodePixels"/> are scaled down first: decoding them
+    /// whole is slow and needs a lot of memory, and a code readable on screen is still readable at that size.
     /// </summary>
-    internal static (byte[] Pixels, int Width, int Height) ToBgra(BitmapSource image)
+    public static IReadOnlyList<QrCode> Decode(PixelBuffer image, CancellationToken cancel = default)
     {
-        long pixelCount = (long)image.PixelWidth * image.PixelHeight;
+        long pixelCount = (long)image.Width * image.Height;
         if (pixelCount > MaxDecodePixels)
         {
             double scale = Math.Sqrt((double)MaxDecodePixels / pixelCount);
-            image = new TransformedBitmap(image, new ScaleTransform(scale, scale));
+            image = ImageIO.Resize(image, (int)(image.Width * scale), (int)(image.Height * scale));
         }
-        BitmapSource bgra = image.Format == PixelFormats.Bgra32 ? image : new FormatConvertedBitmap(image, PixelFormats.Bgra32, null, 0);
-        int stride = bgra.PixelWidth * 4;
-        var pixels = new byte[(long)stride * bgra.PixelHeight];
-        bgra.CopyPixels(pixels, stride, 0);
-        return (pixels, bgra.PixelWidth, bgra.PixelHeight);
+        return Decode(image.Pixels, image.Width, image.Height, cancel);
     }
 
     /// <summary>Nearest-neighbour enlargement: keeps the sharp edges of the modules.</summary>

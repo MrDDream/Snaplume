@@ -1,10 +1,10 @@
 using System.Globalization;
-using System.Windows.Input;
+using Avalonia.Input;
 
 namespace Snaplume.Core;
 
 /// <summary>Keyboard shortcut, stored as "Ctrl+Shift+PrintScreen".</summary>
-public readonly record struct Hotkey(ModifierKeys Modifiers, Key Key)
+public readonly record struct Hotkey(KeyModifiers Modifiers, Key Key)
 {
     public bool IsEmpty => Key == Key.None;
 
@@ -14,17 +14,17 @@ public readonly record struct Hotkey(ModifierKeys Modifiers, Key Key)
         hotkey = default;
         if (string.IsNullOrWhiteSpace(text)) return true;
 
-        var modifiers = ModifierKeys.None;
+        var modifiers = KeyModifiers.None;
         var key = Key.None;
         foreach (var part in text.Split('+', StringSplitOptions.RemoveEmptyEntries | StringSplitOptions.TrimEntries))
         {
             Key parsed;
             switch (part.ToLowerInvariant())
             {
-                case "ctrl" or "control": modifiers |= ModifierKeys.Control; continue;
-                case "alt": modifiers |= ModifierKeys.Alt; continue;
-                case "shift" or "maj": modifiers |= ModifierKeys.Shift; continue;
-                case "win": modifiers |= ModifierKeys.Windows; continue;
+                case "ctrl" or "control": modifiers |= KeyModifiers.Control; continue;
+                case "alt": modifiers |= KeyModifiers.Alt; continue;
+                case "shift" or "maj": modifiers |= KeyModifiers.Shift; continue;
+                case "win" or "super" or "meta": modifiers |= KeyModifiers.Meta; continue;
                 case "printscreen" or "prtsc": parsed = Key.Snapshot; break;
                 default:
                     // Key names only: Enum.TryParse would also accept numbers ("44") and lists ("A, B").
@@ -50,10 +50,10 @@ public readonly record struct Hotkey(ModifierKeys Modifiers, Key Key)
     {
         if (IsEmpty) return "";
         var parts = new List<string>();
-        if (Modifiers.HasFlag(ModifierKeys.Control)) parts.Add(display ? Loc.T("Hotkey.Key.Ctrl") : "Ctrl");
-        if (Modifiers.HasFlag(ModifierKeys.Alt)) parts.Add(display ? Loc.T("Hotkey.Key.Alt") : "Alt");
-        if (Modifiers.HasFlag(ModifierKeys.Shift)) parts.Add(display ? Loc.T("Hotkey.Key.Shift") : "Shift");
-        if (Modifiers.HasFlag(ModifierKeys.Windows)) parts.Add(display ? Loc.T("Hotkey.Key.Win") : "Win");
+        if (Modifiers.HasFlag(KeyModifiers.Control)) parts.Add(display ? Loc.T("Hotkey.Key.Ctrl") : "Ctrl");
+        if (Modifiers.HasFlag(KeyModifiers.Alt)) parts.Add(display ? Loc.T("Hotkey.Key.Alt") : "Alt");
+        if (Modifiers.HasFlag(KeyModifiers.Shift)) parts.Add(display ? Loc.T("Hotkey.Key.Shift") : "Shift");
+        if (Modifiers.HasFlag(KeyModifiers.Meta)) parts.Add(display ? Loc.T(OperatingSystem.IsWindows() ? "Hotkey.Key.Win" : "Hotkey.Key.Super") : "Win");
         parts.Add(KeyName(display));
         return string.Join("+", parts);
     }

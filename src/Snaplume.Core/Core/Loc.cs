@@ -1,6 +1,5 @@
 using System.Globalization;
 using System.Text.Json;
-using System.Windows.Markup;
 
 namespace Snaplume.Core;
 
@@ -102,18 +101,3 @@ public static class Loc
     }
 }
 
-/// <summary>XAML: Text="{l:T Editor.Save}" with xmlns:l="clr-namespace:Snaplume.Core".</summary>
-[MarkupExtensionReturnType(typeof(string))]
-public sealed class TExtension : MarkupExtension
-{
-    public TExtension()
-    {
-    }
-
-    public TExtension(string key) => Key = key;
-
-    [ConstructorArgument("key")]
-    public string Key { get; set; } = "";
-
-    public override object ProvideValue(IServiceProvider serviceProvider) => Loc.T(Key);
-}

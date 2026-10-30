@@ -1,5 +1,5 @@
 using System.Globalization;
-using System.Windows.Media.Imaging;
+using Snaplume.Imaging;
 
 namespace Snaplume.Export;
 
@@ -162,19 +162,15 @@ public static class DocumentGenerator
     internal static string TempPathOf(string outputPath) => Path.GetFullPath(outputPath) + ".tmp";
 
     /// <summary>Size and date of an image, from its header only. Null if it is not a readable image (or too large).</summary>
-    private static DocumentImage? Probe(string path)
+    internal static DocumentImage? Probe(string path)
     {
         try
         {
             if (!File.Exists(path)) return null;
-            using var stream = new FileStream(path, FileMode.Open, FileAccess.Read, FileShare.ReadWrite | FileShare.Delete);
-            var decoder = BitmapDecoder.Create(stream, BitmapCreateOptions.DelayCreation | BitmapCreateOptions.IgnoreColorProfile,
-                BitmapCacheOption.None);
-            var frame = decoder.Frames[0];
-            if (frame.PixelWidth <= 0 || frame.PixelHeight <= 0) return null;
+            if (ImageIO.ReadSize(path) is not (int width, int height) || width <= 0 || height <= 0) return null;
             // Same limit as the editor: beyond it, decoding alone would take gigabytes.
-            if ((long)frame.PixelWidth * frame.PixelHeight > Snaplume.Core.ImageIO.MaxPixels) return null;
-            return new DocumentImage(Path.GetFullPath(path), frame.PixelWidth, frame.PixelHeight, File.GetCreationTime(path), stream.Length);
+            if ((long)width * height > ImageIO.MaxPixels) return null;
+            return new DocumentImage(Path.GetFullPath(path), width, height, File.GetCreationTime(path), new FileInfo(path).Length);
         }
         catch (Exception ex) when (ex is not OutOfMemoryException)
         {
