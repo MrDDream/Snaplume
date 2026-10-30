@@ -15,12 +15,20 @@
     <UseWindowsForms>true</UseWindowsForms>
     <AllowUnsafeBlocks>true</AllowUnsafeBlocks>
     <PlatformTarget>x64</PlatformTarget>
+    <!-- The DPI mode is set by the application's app.manifest (WinForms analyzer suggestion not applicable). -->
+    <NoWarn>$(NoWarn);WFO0003</NoWarn>
   </PropertyGroup>
+
+  <ItemGroup>
+    <!-- The tray icon: the application's own icon, one file for both projects. -->
+    <EmbeddedResource Include="..\Snaplume.App\Assets\app.ico" LogicalName="Snaplume.Platform.Windows.app.ico" Link="Assets\app.ico" />
+  </ItemGroup>
 
   <ItemGroup>
     <!-- Avoid WPF/WinForms/Avalonia type name clashes (Point, Color, Application...). -->
     <Using Remove="System.Windows.Forms" />
     <Using Remove="System.Drawing" />
+    <Using Include="System.IO" />
   </ItemGroup>
 
   <ItemGroup>

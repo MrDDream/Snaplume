@@ -91,9 +91,14 @@ public interface IScreenGrabber : IDisposable
 public interface IWindowLocator
 {
     /// <summary>The windows on screen now; <see cref="IWindowSnapshot.FindAt"/> then answers without asking the system again.</summary>
+    /// <param name="virtualBounds">The desktop area of the overlay image (<see cref="DesktopImage.Bounds"/>), absolute.</param>
+    /// <param name="monitors">
+    /// Monitor bounds relative to the top-left corner of <paramref name="virtualBounds"/>; <see cref="IWindowSnapshot.FindAt"/>
+    /// takes and returns coordinates relative to it too (pixels of the overlay image), as the 1.1 WindowFinder did.
+    /// </param>
     IWindowSnapshot Snapshot(PixelRect virtualBounds, IReadOnlyList<PixelRect> monitors);
 
-    /// <summary>Bounds of the active window, visible part only; null if unknown.</summary>
+    /// <summary>Bounds of the active window, visible part only, absolute physical pixels; null if unknown.</summary>
     PixelRect? ForegroundWindowBounds();
 }
 
@@ -269,8 +274,14 @@ public interface IDesktopShell
     /// <summary>True when another tool owns the Print Screen key (Windows 11 Snipping Tool).</summary>
     bool PrintScreenTakenBySystem { get; }
 
-    /// <summary>Path that cannot hold the workspace (network or system location), with the reason, or null.</summary>
+    /// <summary>Path that cannot hold the workspace (drive root, personal or system folder), with the reason, or null.</summary>
     string? CheckWorkspaceFolder(string folder);
+
+    /// <summary>
+    /// The folder is on a network share: deleted captures do not go to the trash there, so the user is asked to
+    /// confirm (Settings.NetworkFolderWarning). Not a refusal, unlike <see cref="CheckWorkspaceFolder"/>.
+    /// </summary>
+    bool IsNetworkFolder(string folder) => false;
 }
 
 public interface IImageClipboard
