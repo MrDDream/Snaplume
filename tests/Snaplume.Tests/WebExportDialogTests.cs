@@ -139,6 +139,27 @@ public class WebExportDialogTests
         Save(window, "settings-ffmpeg-row.png");
     }
 
+    [AvaloniaFact]
+    public void Both_export_dialogs_offer_the_same_parts_of_the_video()
+    {
+        var duration = TimeSpan.FromSeconds(60);
+        var whole = ExportOption.Ranges(duration, null);
+        Assert.Equal(new object[] { false }, whole.Select(o => o.Value));
+        var ranges = ExportOption.Ranges(duration, (TimeSpan.FromSeconds(5), TimeSpan.FromSeconds(20)));
+        Assert.Equal(new object[] { false, true }, ranges.Select(o => o.Value));
+        Assert.Equal(Loc.T("Player.Export.RangeSelection", "00:05", "00:20"), ranges[1].ToString());
+
+        // The extract is chosen first, in the dialog of the GIF as in the one of the web export.
+        using var scope = new Scope(new AppSettings());
+        var gif = scope.Open(new GifExportDialog(duration, TimeSpan.FromSeconds(5), TimeSpan.FromSeconds(20), 1280, 720));
+        var web = scope.Open(new WebExportDialog(duration, TimeSpan.FromSeconds(5), TimeSpan.FromSeconds(20), Source, Formats(), hasFfmpeg: true));
+        foreach (var box in new[] { gif.FindControl<ComboBox>("RangeBox")!, web.FindControl<ComboBox>("RangeBox")! })
+        {
+            Assert.Equal(ranges.Select(r => r.Name), box.Items.OfType<ExportOption>().Select(o => o.Name));
+            Assert.Equal(true, Value(box));
+        }
+    }
+
     private static object? Value(ComboBox box) => box.SelectedItem?.GetType().GetProperty("Value")!.GetValue(box.SelectedItem);
 
     /// <summary>Kept with the test results to look at the dialog; never committed.</summary>

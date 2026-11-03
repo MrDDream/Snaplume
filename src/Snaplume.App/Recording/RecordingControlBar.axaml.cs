@@ -87,17 +87,10 @@ public partial class RecordingControlBar : Window
             ShowRecordingButtons();
         }
 
-        Opened += (_, _) =>
-        {
-            FloatingBar.ApplyNativeStyles(this, activatable: showOptions);
-            FloatingBar.PlaceNearArea(this, _area);
-            if (showOptions) Activate();
-        };
+        Opened += (_, _) => FloatingBar.ApplyNativeStyles(this, activatable: showOptions);
         // The size is final after the first layout; once the user dragged the bar, it stays where it was put.
-        SizeChanged += (_, _) =>
-        {
-            if (IsVisible && !_moved) FloatingBar.PlaceNearArea(this, _area);
-        };
+        FloatingBar.KeepNearArea(this, () => _area, () => !_moved);
+        if (showOptions) Opened += (_, _) => Activate();
     }
 
     /// <summary>The options are shown (before Record).</summary>
@@ -135,11 +128,10 @@ public partial class RecordingControlBar : Window
         TitleText.Text = Loc.T("Recording.Countdown", seconds);
     }
 
-    /// <summary>Some recorders cannot pause (the button stays disabled).</summary>
+    /// <summary>Some recorders cannot pause: the button stays disabled (applied by <see cref="SetRecording"/>).</summary>
     public void SetCanPause(bool canPause)
     {
         _canPause = canPause;
-        PauseButton.IsEnabled = canPause && PauseButton.IsEnabled;
     }
 
     public void SetRecording(TimeSpan elapsed)

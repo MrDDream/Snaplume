@@ -26,15 +26,8 @@ public partial class ConversionBar : Window
     public ConversionBar(PixelRect area)
     {
         InitializeComponent();
-        Opened += (_, _) =>
-        {
-            FloatingBar.ApplyNativeStyles(this);
-            FloatingBar.PlaceNearArea(this, area);
-        };
-        SizeChanged += (_, _) =>
-        {
-            if (IsVisible) FloatingBar.PlaceNearArea(this, area);
-        };
+        Opened += (_, _) => FloatingBar.ApplyNativeStyles(this);
+        FloatingBar.KeepNearArea(this, () => area);
     }
 
     /// <summary>A new recording is converted.</summary>

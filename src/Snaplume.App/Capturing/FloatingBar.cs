@@ -37,7 +37,8 @@ internal static class FloatingBar
 
     /// <summary>
     /// Moves the bar next to the area: centered under it, or above it, or inside its bottom edge when there is no
-    /// room; always within the work area of the monitor at the bottom of the area. Call once the bar has its size.
+    /// room; always within the work area of the monitor at the bottom of the area. Call once the bar has its size
+    /// (<see cref="KeepNearArea"/> does it at the right times).
     /// </summary>
     /// <param name="area">Absolute physical screen coordinates.</param>
     /// <returns>Where the bar was placed (physical pixels).</returns>
@@ -54,5 +55,27 @@ internal static class FloatingBar
         return placed;
     }
 
-    public static PixelRect FromAvalonia(Avalonia.PixelRect r) => new(r.X, r.Y, r.Width, r.Height);
+    /// <summary>
+    /// Keeps the bar next to the area (<see cref="PlaceNearArea"/>): placed when it opens, when its size changes (first
+    /// layout, other texts) and when its scaling changes. A bar first placed with the scaling of another monitor (mixed
+    /// DPI) gets its physical size, and so its place, right once it is on the monitor of the area.
+    /// </summary>
+    /// <param name="area">The area, read at each placement (it may move): absolute physical screen coordinates.</param>
+    /// <param name="enabled">False while the bar must stay where it is (e.g. dragged elsewhere by the user); null: always.</param>
+    /// <param name="placed">Told where the bar went (physical pixels).</param>
+    public static void KeepNearArea(Window bar, Func<PixelRect> area, Func<bool>? enabled = null, Action<PixelRect>? placed = null)
+    {
+        void Place()
+        {
+            if (!bar.IsVisible || enabled?.Invoke() == false) return;
+            var bounds = PlaceNearArea(bar, area());
+            placed?.Invoke(bounds);
+        }
+
+        bar.Opened += (_, _) => Place();
+        bar.SizeChanged += (_, _) => Place();
+        bar.ScalingChanged += (_, _) => Place();
+    }
+
+    private static PixelRect FromAvalonia(Avalonia.PixelRect r) => new(r.X, r.Y, r.Width, r.Height);
 }

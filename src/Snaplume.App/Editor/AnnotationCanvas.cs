@@ -248,8 +248,10 @@ public sealed class AnnotationCanvas : Control
     public void ApplyToSelection(Action<Annotation> change)
     {
         if (_selected == null || _document == null) return;
-        _document.PushUndo();
+        // Told once changed: the window shows the new style.
+        var before = _document.BeginChange();
         change(_selected);
+        _document.CommitChange(before);
         InvalidateLayers();
     }
 
@@ -570,9 +572,10 @@ public sealed class AnnotationCanvas : Control
             case EditorTool.Step:
                 var step = new StepAnnotation { Center = p, Number = _document.NextStepNumber };
                 CurrentStyle.ApplyTo(step, ImageArea);
-                _document.PushUndo();
+                var beforeStep = _document.BeginChange();
                 _document.Annotations.Add(step);
                 SetSelected(step);
+                _document.CommitChange(beforeStep);
                 break;
 
             case EditorTool.Stamp:
@@ -585,11 +588,12 @@ public sealed class AnnotationCanvas : Control
                     break;
                 }
                 if (StampLibrary.Find(CurrentStampId) is not { } definition) break;
-                _document.PushUndo();
+                var beforeStamp = _document.BeginChange();
                 var size = new Vector(definition.Width, definition.Height) * CurrentStampScale;
                 var stamp = new StampAnnotation { StampId = definition.Id, Start = p - size / 2, End = p + size / 2 };
                 _document.Annotations.Add(stamp);
                 SetSelected(stamp);
+                _document.CommitChange(beforeStamp);
                 break;
 
             case EditorTool.Magnifier when HitTestAll(p) is MagnifierAnnotation existingMagnifier:
@@ -647,7 +651,7 @@ public sealed class AnnotationCanvas : Control
                 break;
 
             case DragMode.Create when _creating is FreehandAnnotation freehand:
-                if (freehand.Points.Count < FreehandAnnotation.MaxPoints) freehand.Points.Add(p);
+                freehand.AddPoint(p);
                 break;
 
             case DragMode.Create when _creating is TwoPointAnnotation shape:
@@ -797,7 +801,7 @@ public sealed class AnnotationCanvas : Control
         CurrentStyle.ApplyTo(annotation);
         if (annotation is TwoPointAnnotation shape) shape.Start = shape.End = p;
         if (annotation is MagnifierAnnotation magnifier) magnifier.LensCenter = p;
-        if (annotation is FreehandAnnotation freehand) freehand.Points.Add(p);
+        if (annotation is FreehandAnnotation freehand) freehand.AddPoint(p);
         return annotation;
     }
 

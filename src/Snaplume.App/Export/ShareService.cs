@@ -63,13 +63,13 @@ public static class ShareService
         }
     }
 
-    /// <summary>Prints one image held in memory (e.g. the editor's image with its annotations).</summary>
-    public static void Print(Window owner, PixelBuffer image, string title) => _ = PrintAsync(owner, image, title);
-
-    /// <inheritdoc cref="Print(Window, PixelBuffer, string)"/>
+    /// <summary>
+    /// Prints one image held in memory (the editor's image with its annotations), after the print dialog; the page takes
+    /// the orientation of the image. Failures are shown.
+    /// </summary>
     public static async Task PrintAsync(Window owner, PixelBuffer image, string title)
     {
-        // The platform prints files: a temporary PNG, deleted once the job is handed over.
+        // The platform prints files: a temporary PNG (encoded in the background), deleted once the job is handed over.
         var temp = Path.Combine(Path.GetTempPath(), $"Snaplume-print-{Guid.NewGuid():N}.png");
         try
         {

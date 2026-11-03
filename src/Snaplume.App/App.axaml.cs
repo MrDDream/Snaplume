@@ -748,6 +748,13 @@ public partial class App : Application
             Captures.StopThen(() => ExitApp(restart));
             return;
         }
+        // A video being exported by a player would be lost: asked first, like the unsaved changes of the editors (and
+        // before them, so that answering No closes nothing).
+        if (OpenWindows.OfType<Player.PlayerWindow>().FirstOrDefault(p => p.IsExporting) is { } exporting)
+        {
+            _ = ConfirmQuitWhileExportingAsync(exporting);
+            return;
+        }
         // Let editors ask about unsaved changes first: one still open after Close() keeps Snaplume running.
         foreach (var editor in OpenWindows.OfType<EditorWindow>().ToList())
         {
@@ -778,6 +785,22 @@ public partial class App : Application
             }
         }
         Desktop?.Shutdown();
+
+        // Yes: the exports are cancelled (their players closed, their partial files deleted) and quitting goes on.
+        async Task ConfirmQuitWhileExportingAsync(Player.PlayerWindow player)
+        {
+            player.Activate();
+            var answer = await Dialogs.ShowAsync(player, Loc.T("App.QuitWhileExporting"), "Snaplume", DialogButtons.YesNo, DialogIcon.Warning,
+                DialogResult.No);
+            if (answer != DialogResult.Yes)
+            {
+                _restartOnExit = false;
+                _launchOnExit = null;
+                return;
+            }
+            foreach (var other in OpenWindows.OfType<Player.PlayerWindow>().Where(p => p.IsExporting).ToList()) other.Close();
+            ExitApp(restart);
+        }
     }
 
     /// <summary>The session is ending (log off, shutdown): finish the video file while there is time.</summary>

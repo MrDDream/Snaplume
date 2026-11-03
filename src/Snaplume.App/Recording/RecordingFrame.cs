@@ -45,7 +45,7 @@ public sealed class RecordingFrame : Window
         IsHitTestVisible = false;
         WindowStartupLocation = WindowStartupLocation.Manual;
         FlowDirection = FlowDirection.LeftToRight; // placed in screen pixels, never mirrored
-        Title = "Snaplume";
+        Title = Loc.T("Recording.FrameTitle");
         Content = new Rectangle
         {
             Stroke = new SolidColorBrush(Color.FromRgb(0xE5, 0x39, 0x35)),
@@ -133,7 +133,7 @@ public sealed class RecordingFrame : Window
             SizeToContent = SizeToContent.WidthAndHeight;
             WindowStartupLocation = WindowStartupLocation.Manual;
             FlowDirection = FlowDirection.LeftToRight;
-            Title = "Snaplume";
+            Title = Loc.T("Recording.GripTitle");
             Position = new PixelPoint(frame._area.X, frame._area.Y);
             Cursor = new Cursor(StandardCursorType.SizeAll);
             ToolTip.SetTip(this, Loc.T("Recording.MoveAreaTip"));

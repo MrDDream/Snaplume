@@ -13,12 +13,6 @@ namespace Snaplume.Player;
 /// </summary>
 public partial class WebExportDialog : Window
 {
-    /// <summary>An item of a combo box: what it stands for, its text, and why it is greyed (tooltip).</summary>
-    private sealed record Option(object Value, string Name, bool Enabled = true, string Tip = "")
-    {
-        public override string ToString() => Name;
-    }
-
     private static readonly WebQuality[] Qualities = { WebQuality.High, WebQuality.Medium, WebQuality.Light };
     private static readonly string[] Targets = { SizeTargets.Off, SizeTargets.Discord, SizeTargets.Nitro, SizeTargets.Email, SizeTargets.Custom };
 
@@ -27,7 +21,7 @@ public partial class WebExportDialog : Window
     /// <summary>The size field is being filled from the list: it does not switch the list to "custom".</summary>
     private bool _fillingSize;
     /// <summary>The items of the format list, in its order.</summary>
-    private List<Option> _formatOptions = new();
+    private List<ExportOption> _formatOptions = new();
     /// <summary>Download of the ffmpeg module in progress, cancelled with its button or by closing the dialog.</summary>
     private CancellationTokenSource? _download;
     private bool _closed;
@@ -52,9 +46,7 @@ public partial class WebExportDialog : Window
         _form = new WebExportForm(duration, inPoint, outPoint, source, formats);
         var settings = AppServices.Settings;
 
-        var ranges = new List<Option> { new(false, Loc.T("Player.Gif.RangeAll", PlayerWindow.Format(duration))) };
-        if (_form.HasSelection)
-            ranges.Add(new Option(true, Loc.T("Player.Gif.RangeSelection", PlayerWindow.Format(_form.In), PlayerWindow.Format(_form.Out))));
+        var ranges = ExportOption.Ranges(duration, _form.HasSelection ? (_form.In, _form.Out) : null);
         RangeBox.ItemsSource = ranges;
         RangeBox.SelectedItem = ranges[^1];
 
@@ -71,7 +63,7 @@ public partial class WebExportDialog : Window
         ModuleNote.Text = Loc.T("Player.Web.MoreFormatsPackage");
         ShowFormats(formats, hasFfmpeg, WebFormats.FromId(settings.WebExportFormat));
 
-        var targets = Targets.Select(t => new Option(t, t == SizeTargets.Off || t == SizeTargets.Custom
+        var targets = Targets.Select(t => new ExportOption(t, t == SizeTargets.Off || t == SizeTargets.Custom
             ? Loc.T("Player.Web.Target." + t)
             : Loc.T("Player.Web.Target." + t, SizeTargets.Megabytes(t)))).ToList();
         TargetBox.ItemsSource = targets;
@@ -80,7 +72,7 @@ public partial class WebExportDialog : Window
             ? preset
             : settings.WebExportMegabytes);
 
-        var qualities = Qualities.Select(q => new Option(q, Loc.T("Player.Web.Quality." + WebFormats.QualityId(q)))).ToList();
+        var qualities = Qualities.Select(q => new ExportOption(q, Loc.T("Player.Web.Quality." + WebFormats.QualityId(q)))).ToList();
         QualityBox.ItemsSource = qualities;
         QualityBox.SelectedItem = qualities.FirstOrDefault(q => (WebQuality)q.Value == WebFormats.QualityFromId(settings.WebExportQuality)) ?? qualities[1];
 
@@ -98,7 +90,7 @@ public partial class WebExportDialog : Window
         Update();
     }
 
-    private string SelectedTarget => (TargetBox.SelectedItem as Option)?.Value as string ?? SizeTargets.Off;
+    private string SelectedTarget => (TargetBox.SelectedItem as ExportOption)?.Value as string ?? SizeTargets.Off;
 
     /// <summary>A preset puts its size in the field; "custom" keeps what is there.</summary>
     private void OnTargetChanged()
@@ -121,7 +113,7 @@ public partial class WebExportDialog : Window
         if (SizeTargets.Megabytes(target) is > 0 and var preset
             && !(WebExportForm.TryParseMegabytes(MegabytesBox.Text ?? "", out var typed) && Math.Abs(typed - preset) < 0.001))
         {
-            TargetBox.SelectedItem = TargetBox.Items.OfType<Option>().First(o => (string)o.Value == SizeTargets.Custom);
+            TargetBox.SelectedItem = TargetBox.Items.OfType<ExportOption>().First(o => (string)o.Value == SizeTargets.Custom);
             return; // Update() follows the selection change
         }
         Update();
@@ -130,9 +122,9 @@ public partial class WebExportDialog : Window
     /// <summary>Copies the fields into the form.</summary>
     private WebExportForm Read()
     {
-        _form.UseSelection = (RangeBox.SelectedItem as Option)?.Value is true;
-        _form.Format = (FormatBox.SelectedItem as Option)?.Value as WebFormat? ?? WebFormat.Mp4H264;
-        _form.Quality = (QualityBox.SelectedItem as Option)?.Value as WebQuality? ?? WebQuality.Medium;
+        _form.UseSelection = (RangeBox.SelectedItem as ExportOption)?.Value is true;
+        _form.Format = (FormatBox.SelectedItem as ExportOption)?.Value as WebFormat? ?? WebFormat.Mp4H264;
+        _form.Quality = (QualityBox.SelectedItem as ExportOption)?.Value as WebQuality? ?? WebQuality.Medium;
         _form.TargetId = SelectedTarget;
         _form.MegabytesText = MegabytesBox.Text ?? "";
         return _form;
@@ -202,7 +194,7 @@ public partial class WebExportDialog : Window
         _formatOptions = formats.Select(a =>
         {
             var name = Loc.T("Player.Web.Format." + WebFormats.Id(a.Format));
-            return new Option(a.Format, a.IsAvailable ? name : Loc.T("Player.Web.Unavailable", name), a.IsAvailable, a.Reason);
+            return new ExportOption(a.Format, a.IsAvailable ? name : Loc.T("Player.Web.Unavailable", name), a.IsAvailable, a.Reason);
         }).ToList();
         FormatBox.ItemsSource = _formatOptions;
         var format = _form.Available(preferred);
@@ -284,7 +276,7 @@ public partial class WebExportDialog : Window
         var video = AppServices.HasPlatform ? AppServices.Platform.Video : null;
         var formats = await Task.Run(() => WebVideoExport.Offered(c => video?.CanTranscode(c) == true, ffmpeg, OperatingSystem.IsWindows()));
         if (_closed) return ffmpeg != null;
-        ShowFormats(formats, ffmpeg != null, (FormatBox.SelectedItem as Option)?.Value as WebFormat? ?? WebFormat.Mp4H264);
+        ShowFormats(formats, ffmpeg != null, (FormatBox.SelectedItem as ExportOption)?.Value as WebFormat? ?? WebFormat.Mp4H264);
         Update();
         return ffmpeg != null;
     }

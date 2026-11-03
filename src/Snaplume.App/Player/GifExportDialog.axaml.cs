@@ -10,12 +10,6 @@ namespace Snaplume.Player;
 /// </summary>
 public partial class GifExportDialog : Window
 {
-    /// <summary>An item of a combo box: what it stands for, and its text.</summary>
-    private sealed record Option(object Value, string Name)
-    {
-        public override string ToString() => Name;
-    }
-
     private static readonly double[] Speeds = { 0.5, 1, 1.5, 2 };
 
     // Choices kept for the next GIF of the session.
@@ -39,13 +33,11 @@ public partial class GifExportDialog : Window
         InitializeComponent();
         _form = new GifExportForm(duration, inPoint, outPoint, videoWidth, videoHeight);
 
-        var ranges = new List<Option> { new(false, Loc.T("Player.Gif.RangeAll", PlayerWindow.Format(duration))) };
-        if (_form.HasSelection)
-            ranges.Add(new Option(true, Loc.T("Player.Gif.RangeSelection", PlayerWindow.Format(_form.In), PlayerWindow.Format(_form.Out))));
+        var ranges = ExportOption.Ranges(duration, _form.HasSelection ? (_form.In, _form.Out) : null);
         RangeBox.ItemsSource = ranges;
         RangeBox.SelectedItem = ranges[^1];
 
-        var speeds = Speeds.Select(s => new Option(s, s.ToString("0.#", Loc.Culture) + "×")).ToList();
+        var speeds = Speeds.Select(s => new ExportOption(s, s.ToString("0.#", Loc.Culture) + "×")).ToList();
         SpeedBox.ItemsSource = speeds;
         SpeedBox.SelectedItem = speeds.FirstOrDefault(s => (double)s.Value == _lastSpeed) ?? speeds[1];
 
@@ -70,10 +62,10 @@ public partial class GifExportDialog : Window
     /// <summary>Copies the fields into the form.</summary>
     private GifExportForm Read()
     {
-        _form.UseSelection = (RangeBox.SelectedItem as Option)?.Value is true;
+        _form.UseSelection = (RangeBox.SelectedItem as ExportOption)?.Value is true;
         _form.FramesPerSecondText = FpsBox.Text ?? "";
         _form.WidthText = WidthBox.Text ?? "";
-        _form.Speed = (SpeedBox.SelectedItem as Option)?.Value as double? ?? 1;
+        _form.Speed = (SpeedBox.SelectedItem as ExportOption)?.Value as double? ?? 1;
         _form.Loop = LoopCheck.IsChecked == true;
         _form.Dither = DitherCheck.IsChecked == true;
         return _form;

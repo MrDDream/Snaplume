@@ -33,6 +33,9 @@ internal sealed class SelectionOverlay : Control
     private double _penUnit = double.NaN;
     private IPen _gridPen = null!, _cellPen = null!, _boxPen = null!, _hoverPen = null!, _selectionPen = null!, _crosshairPen = null!;
     private bool _rightDown;
+    /// <summary>The help line, laid out for <see cref="_helpUnit"/>.</summary>
+    private FormattedText? _helpText;
+    private double _helpUnit;
 
     /// <param name="monitor">The monitor this overlay shows, relative to the desktop image.</param>
     public SelectionOverlay(RegionSelectorWindow.Session session, PixelRect monitor)
@@ -120,7 +123,9 @@ internal sealed class SelectionOverlay : Control
 
         var focus = Model.Focus;
         DrawDim(context, monitorRect, focus);
-        if (!Model.IsDragging) DrawCrosshair(context);
+        // The crosshair, the magnifier and the help follow the mouse: drawn by the window of its monitor only.
+        bool underCursor = Model.MonitorAt(Model.X, Model.Y) == _monitor;
+        if (underCursor && !Model.IsDragging) DrawCrosshair(context);
 
         if (focus is PixelRect f)
         {
@@ -132,6 +137,7 @@ internal sealed class SelectionOverlay : Control
             DrawSizeLabel(context, f, u);
         }
 
+        if (!underCursor) return;
         DrawMagnifier(context, u);
         DrawHelp(context, u);
     }
@@ -236,7 +242,13 @@ internal sealed class SelectionOverlay : Control
 
     private void DrawHelp(DrawingContext context, double u)
     {
-        var text = MakeText((_session.Title != null ? _session.Title + "   •   " : "") + Loc.T("Selection.Help"), 12 * u);
+        // The same text at each mouse move: laid out again only when the scaling changes.
+        if (_helpText == null || _helpUnit != u)
+        {
+            _helpText = MakeText((_session.Title != null ? _session.Title + "   •   " : "") + Loc.T("Selection.Help"), 12 * u);
+            _helpUnit = u;
+        }
+        var text = _helpText;
         double pad = 8 * u;
         var mon = Model.MonitorAt(Model.X, Model.Y);
         var size = new Size(text.Width + 2 * pad, text.Height + 2 * pad);
