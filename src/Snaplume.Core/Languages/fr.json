@@ -1000,5 +1000,8 @@
   "Video.Converting": "Conversion en {0}…",
   "Video.ConvertingSize": "Conversion en {0} (au plus {1:0.#} Mo)…",
   "Video.ConvertingTray": "Conversion de la vidéo : {0:0} %",
-  "Video.OriginalKept": "La vidéo d'origine est conservée : {0}"
+  "Video.OriginalKept": "La vidéo d'origine est conservée : {0}",
+  "App.ImageFileTooLarge": "Ce fichier est trop volumineux pour une image ({0} Mo) : la limite est de 1 Go.",
+  "Workspaces.Delete.Nested": "L'espace de travail « {0} » ne peut pas être supprimé : son dossier contient celui de {1}. Donnez d'abord un autre dossier à ces espaces de travail, ou retirez-les de la liste.",
+  "Workspaces.Folder.Nested": "Ce dossier est à l'intérieur de celui de l'espace de travail « {0} », ou le contient : les dossiers des espaces de travail ne peuvent pas être imbriqués."
 }

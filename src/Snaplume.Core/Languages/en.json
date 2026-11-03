@@ -1000,5 +1000,8 @@
   "Video.Converting": "Converting to {0}…",
   "Video.ConvertingSize": "Converting to {0} (at most {1:0.#} MB)…",
   "Video.ConvertingTray": "Converting the video: {0:0} %",
-  "Video.OriginalKept": "The original video is kept: {0}"
+  "Video.OriginalKept": "The original video is kept: {0}",
+  "App.ImageFileTooLarge": "This file is too large for an image ({0} MB): the limit is 1 GB.",
+  "Workspaces.Delete.Nested": "The workspace “{0}” cannot be deleted: its folder contains the one of {1}. First give these workspaces another folder, or remove them from the list.",
+  "Workspaces.Folder.Nested": "This folder is inside the one of the workspace “{0}”, or contains it: workspace folders cannot be nested."
 }

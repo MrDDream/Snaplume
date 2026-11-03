@@ -1000,5 +1000,8 @@
   "Video.Converting": "Conversione in {0}…",
   "Video.ConvertingSize": "Conversione in {0} (al massimo {1:0.#} MB)…",
   "Video.ConvertingTray": "Conversione del video: {0:0} %",
-  "Video.OriginalKept": "Il video originale è conservato: {0}"
+  "Video.OriginalKept": "Il video originale è conservato: {0}",
+  "App.ImageFileTooLarge": "Questo file è troppo grande per un'immagine ({0} MB): il limite è di 1 GB.",
+  "Workspaces.Delete.Nested": "L'area di lavoro «{0}» non può essere eliminata: la sua cartella contiene quella di {1}. Assegna prima un'altra cartella a queste aree di lavoro, oppure rimuovile dall'elenco.",
+  "Workspaces.Folder.Nested": "Questa cartella si trova in quella dell'area di lavoro «{0}», o la contiene: le cartelle delle aree di lavoro non possono essere annidate."
 }

@@ -1000,5 +1000,8 @@
   "Video.Converting": "Convirtiendo a {0}…",
   "Video.ConvertingSize": "Convirtiendo a {0} (como máximo {1:0.#} MB)…",
   "Video.ConvertingTray": "Convirtiendo el vídeo: {0:0} %",
-  "Video.OriginalKept": "Se conserva el vídeo original: {0}"
+  "Video.OriginalKept": "Se conserva el vídeo original: {0}",
+  "App.ImageFileTooLarge": "Este archivo es demasiado grande para una imagen ({0} MB): el límite es de 1 GB.",
+  "Workspaces.Delete.Nested": "El espacio de trabajo «{0}» no se puede eliminar: su carpeta contiene la de {1}. Primero asigne otra carpeta a esos espacios de trabajo, o quítelos de la lista.",
+  "Workspaces.Folder.Nested": "Esta carpeta está dentro de la del espacio de trabajo «{0}», o la contiene: las carpetas de los espacios de trabajo no se pueden anidar."
 }

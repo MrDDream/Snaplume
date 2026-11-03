@@ -1000,5 +1000,8 @@
   "Video.Converting": "Umwandlung in {0}…",
   "Video.ConvertingSize": "Umwandlung in {0} (höchstens {1:0.#} MB)…",
   "Video.ConvertingTray": "Video wird umgewandelt: {0:0} %",
-  "Video.OriginalKept": "Das Originalvideo bleibt erhalten: {0}"
+  "Video.OriginalKept": "Das Originalvideo bleibt erhalten: {0}",
+  "App.ImageFileTooLarge": "Diese Datei ist für ein Bild zu groß ({0} MB): Die Grenze liegt bei 1 GB.",
+  "Workspaces.Delete.Nested": "Der Arbeitsbereich „{0}“ kann nicht gelöscht werden: Sein Ordner enthält den von {1}. Geben Sie diesen Arbeitsbereichen zuerst einen anderen Ordner oder entfernen Sie sie aus der Liste.",
+  "Workspaces.Folder.Nested": "Dieser Ordner liegt im Ordner des Arbeitsbereichs „{0}“ oder enthält ihn: Ordner von Arbeitsbereichen können nicht verschachtelt werden."
 }
