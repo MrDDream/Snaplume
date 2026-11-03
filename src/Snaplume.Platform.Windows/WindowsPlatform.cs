@@ -18,6 +18,18 @@ public static class WindowsPlatform
     /// </summary>
     public static IPlatform Create() => new Services();
 
+    /// <summary>
+    /// True when Avalonia should draw with Skia on the processor instead of its default GPU rendering (ANGLE over
+    /// Direct3D): without a GPU (virtual machines, remote sessions), Direct3D is emulated on the processor (WARP), which
+    /// draws the selection overlay 3 to 10 times slower. SNAPLUME_RENDERING=software or gpu forces either.
+    /// </summary>
+    public static bool PreferSoftwareRendering() => Environment.GetEnvironmentVariable("SNAPLUME_RENDERING")?.ToLowerInvariant() switch
+    {
+        "software" => true,
+        "gpu" => false,
+        _ => !Native.GraphicsAdapter.HasHardwareGpu(),
+    };
+
     private sealed class Services : IPlatform
     {
         private readonly Lazy<IGlobalHotkeys> _hotkeys = new(() => new GlobalHotkeys());
