@@ -1,5 +1,4 @@
 using System.Collections.Concurrent;
-using Avalonia.Threading;
 using Snaplume.Core;
 using Snaplume.Platform.Linux.DBus;
 using Snaplume.Platform.Linux.Util;
@@ -19,8 +18,10 @@ internal sealed class Notifications : IDisposable
     private const string ObjectPath = "/org/freedesktop/Notifications";
 
     private readonly ConcurrentDictionary<uint, Action> _clicks = new();
+    private readonly SemaphoreSlim _watchGate = new(1, 1);
     private IDisposable? _actionWatch;
     private IDisposable? _closedWatch;
+    private volatile bool _disposed;
 
     public async Task ShowAsync(string title, string text, Urgency urgency, Action? onClick)
     {
@@ -49,41 +50,47 @@ internal sealed class Notifications : IDisposable
     internal static string EscapeBody(string text) =>
         text.Replace("&", "&amp;").Replace("<", "&lt;").Replace(">", "&gt;");
 
+    /// <summary>Subscribes once, however many notifications are shown at the same time.</summary>
     private async Task EnsureWatchesAsync(DBusConnection connection)
     {
-        if (_actionWatch != null) return;
-        _actionWatch = await DBusCalls.WatchAsync(connection, ObjectPath, Service, "ActionInvoked",
-            (message, _) =>
-            {
-                var reader = message.GetBodyReader();
-                return (Id: reader.ReadUInt32(), Action: reader.ReadString());
-            },
-            invoked =>
-            {
-                if (invoked.Action != "default") return;
-                if (_clicks.TryRemove(invoked.Id, out var action)) Dispatcher.UIThread.Post(() => Run(action));
-            }).ConfigureAwait(false);
-        _closedWatch = await DBusCalls.WatchAsync(connection, ObjectPath, Service, "NotificationClosed",
-            (message, _) => message.GetBodyReader().ReadUInt32(),
-            // Some servers send ActionInvoked after NotificationClosed: the action is forgotten a little later.
-            id => _ = Task.Delay(2000).ContinueWith(_ => _clicks.TryRemove(id, out Action? _), TaskScheduler.Default)).ConfigureAwait(false);
-    }
-
-    private static void Run(Action action)
-    {
+        if (_closedWatch != null) return;
+        await _watchGate.WaitAsync().ConfigureAwait(false);
         try
         {
-            action();
+            if (_closedWatch != null || _disposed) return;
+            _actionWatch = await DBusCalls.WatchAsync(connection, Service, ObjectPath, Service, "ActionInvoked",
+                (message, _) =>
+                {
+                    var reader = message.GetBodyReader();
+                    return (Id: reader.ReadUInt32(), Action: reader.ReadString());
+                },
+                invoked =>
+                {
+                    if (invoked.Action != "default") return;
+                    if (_clicks.TryRemove(invoked.Id, out var action)) UiActions.Post(action, "Clic sur une notification");
+                }).ConfigureAwait(false);
+            _closedWatch = await DBusCalls.WatchAsync(connection, Service, ObjectPath, Service, "NotificationClosed",
+                (message, _) => message.GetBodyReader().ReadUInt32(),
+                // Some servers send ActionInvoked after NotificationClosed: the action is forgotten a little later.
+                id => _ = Task.Delay(2000).ContinueWith(_ => _clicks.TryRemove(id, out Action? _), TaskScheduler.Default)).ConfigureAwait(false);
+            if (_disposed) DisposeWatches();
         }
-        catch (Exception ex)
+        finally
         {
-            ErrorLog.Write("Clic sur une notification", ex);
+            _watchGate.Release();
         }
+    }
+
+    private void DisposeWatches()
+    {
+        _actionWatch?.Dispose();
+        _closedWatch?.Dispose();
     }
 
     public void Dispose()
     {
-        _actionWatch?.Dispose();
-        _closedWatch?.Dispose();
+        // Watches still being created are disposed by EnsureWatchesAsync.
+        _disposed = true;
+        DisposeWatches();
     }
 }

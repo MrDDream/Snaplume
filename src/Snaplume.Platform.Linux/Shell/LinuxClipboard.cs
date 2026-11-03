@@ -32,7 +32,7 @@ internal sealed class LinuxClipboard : IImageClipboard
 
     public async Task<bool> SetImageAsync(PixelBuffer image, byte[] png)
     {
-        if (_wayland && await WlCopyAsync("image/png", png).ConfigureAwait(false)) return true;
+        if (_wayland && await ToolCopyAsync(wayland: true, "image/png", png).ConfigureAwait(false)) return true;
         if (await WithAvaloniaAsync(async clipboard =>
             {
                 var item = new DataTransferItem();
@@ -42,7 +42,7 @@ internal sealed class LinuxClipboard : IImageClipboard
                 await clipboard.SetDataAsync(transfer);
                 return true;
             }).ConfigureAwait(false)) return true;
-        return await XclipCopyAsync("image/png", png).ConfigureAwait(false);
+        return await ToolCopyAsync(wayland: false, "image/png", png).ConfigureAwait(false);
     }
 
     public async Task<PixelBuffer?> GetImageAsync()
@@ -99,13 +99,13 @@ internal sealed class LinuxClipboard : IImageClipboard
     public async Task<bool> SetTextAsync(string text)
     {
         var bytes = Encoding.UTF8.GetBytes(text);
-        if (_wayland && await WlCopyAsync("text/plain;charset=utf-8", bytes).ConfigureAwait(false)) return true;
+        if (_wayland && await ToolCopyAsync(wayland: true, "text/plain;charset=utf-8", bytes).ConfigureAwait(false)) return true;
         if (await WithAvaloniaAsync(async clipboard =>
             {
                 await clipboard.SetTextAsync(text);
                 return true;
             }).ConfigureAwait(false)) return true;
-        return await XclipCopyAsync("UTF8_STRING", bytes).ConfigureAwait(false);
+        return await ToolCopyAsync(wayland: false, "UTF8_STRING", bytes).ConfigureAwait(false);
     }
 
     /// <summary>
@@ -116,7 +116,7 @@ internal sealed class LinuxClipboard : IImageClipboard
     {
         var uriList = Encoding.UTF8.GetBytes(FileUris.UriList(paths));
         var gnome = Encoding.UTF8.GetBytes("copy\n" + string.Join("\n", paths.Select(FileUris.FromPath)));
-        if (_wayland && await WlCopyAsync("text/uri-list", uriList).ConfigureAwait(false)) return true;
+        if (_wayland && await ToolCopyAsync(wayland: true, "text/uri-list", uriList).ConfigureAwait(false)) return true;
         if (await WithAvaloniaAsync(async clipboard =>
             {
                 var item = new DataTransferItem();
@@ -127,7 +127,7 @@ internal sealed class LinuxClipboard : IImageClipboard
                 await clipboard.SetDataAsync(transfer);
                 return true;
             }).ConfigureAwait(false)) return true;
-        return await XclipCopyAsync("text/uri-list", uriList).ConfigureAwait(false);
+        return await ToolCopyAsync(wayland: false, "text/uri-list", uriList).ConfigureAwait(false);
     }
 
     private static string? FirstImageFile(IEnumerable<string> paths) => paths.FirstOrDefault(p => ImageIO.IsImage(p) && File.Exists(p));
@@ -155,31 +155,23 @@ internal sealed class LinuxClipboard : IImageClipboard
             ? desktop.Windows.Select(w => TopLevel.GetTopLevel(w)?.Clipboard).FirstOrDefault(c => c != null)
             : null;
 
-    /// <summary>wl-copy stays in the background to serve the data, like a clipboard owner.</summary>
-    private static async Task<bool> WlCopyAsync(string type, byte[] data)
+    /// <summary>
+    /// Copies with wl-copy (Wayland) or xclip (X11), which stay in the background to serve the data, like a
+    /// clipboard owner. False when the tool is missing or failed.
+    /// </summary>
+    private static async Task<bool> ToolCopyAsync(bool wayland, string type, byte[] data)
     {
-        if (ExternalTools.Find("wl-copy") is not { } wlCopy) return false;
+        var (tool, arguments) = wayland
+            ? ("wl-copy", new[] { "--type", type })
+            : ("xclip", new[] { "-selection", "clipboard", "-t", type, "-i" });
+        if (ExternalTools.Find(tool) is not { } path) return false;
         try
         {
-            return await ExternalTools.LaunchAsync(wlCopy, new[] { "--type", type }, ToolTimeout, data).ConfigureAwait(false) == 0;
+            return await ExternalTools.LaunchAsync(path, arguments, ToolTimeout, data).ConfigureAwait(false) == 0;
         }
         catch (Exception ex)
         {
-            ErrorLog.Write("Presse-papiers (wl-copy)", ex);
-            return false;
-        }
-    }
-
-    private static async Task<bool> XclipCopyAsync(string type, byte[] data)
-    {
-        if (ExternalTools.Find("xclip") is not { } xclip) return false;
-        try
-        {
-            return await ExternalTools.LaunchAsync(xclip, new[] { "-selection", "clipboard", "-t", type, "-i" }, ToolTimeout, data).ConfigureAwait(false) == 0;
-        }
-        catch (Exception ex)
-        {
-            ErrorLog.Write("Presse-papiers (xclip)", ex);
+            ErrorLog.Write($"Presse-papiers ({tool})", ex);
             return false;
         }
     }

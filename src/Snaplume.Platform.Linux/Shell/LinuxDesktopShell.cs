@@ -87,42 +87,63 @@ internal sealed class LinuxDesktopShell : IDesktopShell
             arguments.Add("--attach");
             arguments.Add(path);
         }
-        // xdg-email may stay until the mail program it started is closed (Thunderbird): only an immediate
-        // failure is waited for, the rest of the run goes on in the background.
-        var code = ExternalTools.LaunchAsync(email, arguments, TimeSpan.FromSeconds(3)).GetAwaiter().GetResult();
-        // xdg-email: 3 = a required tool is missing, 4 = the action failed (no mail client configured).
-        if (code is 3 or 4) throw new InvalidOperationException(Loc.T("Linux.EmailNoClient"));
-        if (code is { } c and not 0) throw new InvalidOperationException(Loc.T("Linux.EmailFailed") + $" (xdg-email {c})");
+        // xdg-email may stay until the mail program it started is closed (Thunderbird): only an immediate failure
+        // is waited for, briefly since the caller is the UI thread; a later one can only be logged.
+        var launch = ExternalTools.LaunchAsync(email, arguments, TimeSpan.FromMinutes(1));
+        Task.WhenAny(launch, Task.Delay(EmailWait)).GetAwaiter().GetResult();
+        if (!launch.IsCompleted)
+        {
+            _ = launch.ContinueWith(t =>
+            {
+                if (t.IsFaulted) ErrorLog.Write("Envoi par e-mail (xdg-email)", t.Exception!.GetBaseException());
+                else if (EmailFailure(t.Result) is { } failure) ErrorLog.Write("Envoi par e-mail (xdg-email)", failure);
+            }, TaskScheduler.Default);
+            return;
+        }
+        if (EmailFailure(launch.GetAwaiter().GetResult()) is { } message) throw new InvalidOperationException(message);
     }
+
+    private static readonly TimeSpan EmailWait = TimeSpan.FromMilliseconds(500);
+
+    /// <summary>xdg-email: 3 = a required tool is missing, 4 = the action failed (no mail client configured).</summary>
+    private static string? EmailFailure(int? code) => code switch
+    {
+        3 or 4 => Loc.T("Linux.EmailNoClient"),
+        { } c and not 0 => Loc.T("Linux.EmailFailed") + $" (xdg-email {c})",
+        _ => null,
+    };
 
     public async Task<bool> PrintImagesAsync(IReadOnlyList<string> paths, string title, IntPtr owner)
     {
         var images = paths.Where(ImageIO.IsImage).ToList();
         if (images.Count == 0) throw new InvalidOperationException(Loc.T("Share.Print.NoImage"));
-        var folder = Directory.CreateTempSubdirectory("snaplume-print-");
-        var pdf = Path.Combine(folder.FullName, FileOps.SanitizeFileName(string.IsNullOrWhiteSpace(title) ? "Snaplume" : title) + ".pdf");
-        var options = new DocumentOptions
-        {
-            Kind = DocumentKind.Pdf,
-            Title = title,
-            OnePerPage = true,
-            IncludeFileName = false,
-            Culture = Loc.Culture,
-            Language = Loc.Code,
-        };
-        await Task.Run(() => DocumentGenerator.Generate(images, options, pdf)).ConfigureAwait(false);
-
-        var lp = ExternalTools.Find("lp");
-        var printers = lp == null ? (Printers: Array.Empty<string>(), Default: null) : await ReadPrintersAsync().ConfigureAwait(false);
-        if (lp == null || printers.Printers.Count == 0)
-        {
-            // No CUPS: the PDF viewer prints it with the desktop's own dialog. The file stays in the temporary folder.
-            Open(pdf);
-            return true;
-        }
-        var choice = await Dispatcher.UIThread.InvokeAsync(() => PrintDialog.AskAsync(printers.Printers, printers.Default, title, owner));
+        var folder = Directory.CreateTempSubdirectory(PrintFolderPrefix);
+        bool keep = false;
         try
         {
+            var pdf = Path.Combine(folder.FullName, FileOps.SanitizeFileName(string.IsNullOrWhiteSpace(title) ? "Snaplume" : title) + ".pdf");
+            var options = new DocumentOptions
+            {
+                Kind = DocumentKind.Pdf,
+                Title = title,
+                OnePerPage = true,
+                IncludeFileName = false,
+                Culture = Loc.Culture,
+                Language = Loc.Code,
+            };
+            await Task.Run(() => DocumentGenerator.Generate(images, options, pdf)).ConfigureAwait(false);
+
+            var lp = ExternalTools.Find("lp");
+            var printers = lp == null ? (Printers: Array.Empty<string>(), Default: null) : await ReadPrintersAsync().ConfigureAwait(false);
+            if (lp == null || printers.Printers.Count == 0)
+            {
+                // No CUPS: the PDF viewer prints it with the desktop's own dialog. The file stays in the temporary
+                // folder (CleanStalePrintFolders removes it at a later start).
+                Open(pdf);
+                keep = true;
+                return true;
+            }
+            var choice = await Dispatcher.UIThread.InvokeAsync(() => PrintDialog.AskAsync(printers.Printers, printers.Default, title, owner));
             if (choice == null) return false;
             var result = await ExternalTools.RunAsync(lp, new[]
             {
@@ -134,14 +155,46 @@ internal sealed class LinuxDesktopShell : IDesktopShell
         finally
         {
             // lp copies the file into the CUPS spool before returning.
-            try
+            if (!keep)
             {
-                folder.Delete(recursive: true);
+                try
+                {
+                    folder.Delete(recursive: true);
+                }
+                catch (Exception ex)
+                {
+                    ErrorLog.Write("Dossier temporaire d'impression", ex);
+                }
             }
-            catch (Exception ex)
+        }
+    }
+
+    private const string PrintFolderPrefix = "snaplume-print-";
+
+    /// <summary>
+    /// Removes the print folders of earlier runs, older than a day: those handed to a PDF viewer, or left by a
+    /// crash. Links are skipped (in a shared /tmp, another user could plant one).
+    /// </summary>
+    internal static void CleanStalePrintFolders(string tempFolder, DateTime nowUtc)
+    {
+        try
+        {
+            foreach (var folder in new DirectoryInfo(tempFolder).EnumerateDirectories(PrintFolderPrefix + "*"))
             {
-                ErrorLog.Write("Dossier temporaire d'impression", ex);
+                try
+                {
+                    if (folder.LinkTarget != null || folder.LastWriteTimeUtc > nowUtc.AddDays(-1)) continue;
+                    folder.Delete(recursive: true);
+                }
+                catch (Exception ex) when (ex is IOException or UnauthorizedAccessException)
+                {
+                    // Another user's, or in use: left alone.
+                }
             }
+        }
+        catch (Exception ex) when (ex is IOException or UnauthorizedAccessException)
+        {
+            ErrorLog.Write("Dossiers temporaires d'impression", ex);
         }
     }
 

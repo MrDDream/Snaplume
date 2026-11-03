@@ -29,12 +29,10 @@ internal static unsafe class Xlib
     public const int KeyPress = 2;
     public const int ClientMessage = 33;
     public const int GenericEvent = 35;
-    public const int BadAccess = 10;
     public const nint KeyPressMask = 1 << 0;
     public const nint SubstructureNotifyMask = 1 << 19;
     public const nint SubstructureRedirectMask = 1 << 20;
     public const nuint CWOverrideRedirect = 1 << 9;
-    public const nuint CWBackPixel = 1 << 1;
 
     public const uint ShiftMask = 1, LockMask = 2, ControlMask = 4, Mod1Mask = 8, Mod4Mask = 64;
 
@@ -53,7 +51,6 @@ internal static unsafe class Xlib
     [DllImport(X11)] public static extern int XConnectionNumber(IntPtr display);
     [DllImport(X11)] public static extern IntPtr XGetImage(IntPtr display, nuint drawable, int x, int y, uint width, uint height, nuint planeMask, int format);
     [DllImport(X11)] public static extern int XDestroyImage(IntPtr image);
-    [DllImport(X11)] public static extern nuint XGetPixel(IntPtr image, int x, int y);
     [DllImport(X11)] public static extern int XFree(IntPtr data);
     [DllImport(X11)] public static extern int XFlush(IntPtr display);
     [DllImport(X11)] public static extern int XSync(IntPtr display, int discard);
@@ -93,7 +90,6 @@ internal static unsafe class Xlib
     [DllImport(X11)] public static extern int XMapRaised(IntPtr display, nuint window);
     [DllImport(X11)] public static extern int XUnmapWindow(IntPtr display, nuint window);
     [DllImport(X11)] public static extern int XMoveWindow(IntPtr display, nuint window, int x, int y);
-    [DllImport(X11)] public static extern int XRaiseWindow(IntPtr display, nuint window);
     [DllImport(X11)] public static extern int XDestroyWindow(IntPtr display, nuint window);
     [DllImport(X11)] public static extern int XQueryExtension(IntPtr display, [MarshalAs(UnmanagedType.LPUTF8Str)] string name, out int opcode, out int firstEvent, out int firstError);
     [DllImport(X11)] public static extern int XGetEventData(IntPtr display, byte* cookie);
@@ -168,12 +164,12 @@ internal static unsafe class Xlib
 internal static class XOffsets
 {
     // XImage
-    public const int ImageWidth = 0, ImageHeight = 4, ImageFormat = 12, ImageData = 16, ImageByteOrder = 24,
-        ImageDepth = 40, ImageBytesPerLine = 44, ImageBitsPerPixel = 48, ImageRedMask = 56, ImageGreenMask = 64, ImageBlueMask = 72;
+    public const int ImageWidth = 0, ImageHeight = 4, ImageData = 16, ImageByteOrder = 24,
+        ImageBytesPerLine = 44, ImageBitsPerPixel = 48, ImageRedMask = 56, ImageGreenMask = 64, ImageBlueMask = 72;
 
     // XWindowAttributes (136 bytes)
     public const int AttributesSize = 136;
-    public const int AttrX = 0, AttrY = 4, AttrWidth = 8, AttrHeight = 12, AttrClass = 40, AttrMapState = 92, AttrOverrideRedirect = 120;
+    public const int AttrWidth = 8, AttrHeight = 12, AttrMapState = 92;
 
     // XRRMonitorInfo (56 bytes)
     public const int MonitorSize = 56;
@@ -183,7 +179,7 @@ internal static class XOffsets
     public const int CursorX = 0, CursorY = 2, CursorWidth = 4, CursorHeight = 6, CursorXHot = 8, CursorYHot = 10, CursorPixels = 24;
 
     // XEvent: XAnyEvent / XKeyEvent / XClientMessageEvent / XGenericEventCookie
-    public const int EventType = 0, EventDisplay = 24, EventWindow = 32;
+    public const int EventType = 0, EventWindow = 32;
     public const int KeyState = 80, KeyKeycode = 84;
     public const int ClientMessageType = 40, ClientFormat = 48, ClientData = 56;
     public const int CookieExtension = 32, CookieEvType = 36, CookieData = 48;
@@ -192,7 +188,7 @@ internal static class XOffsets
     public const int RawDetail = 56;
 
     // XErrorEvent
-    public const int ErrorDisplay = 8, ErrorCode = 32;
+    public const int ErrorCode = 32;
 
     // XWMHints
     public const int HintsFlags = 0, HintsInput = 8;
@@ -203,5 +199,5 @@ internal static class XOffsets
 
     // XSetWindowAttributes (112 bytes)
     public const int SetAttributesSize = 112;
-    public const int SetBackgroundPixel = 8, SetOverrideRedirect = 88;
+    public const int SetOverrideRedirect = 88;
 }

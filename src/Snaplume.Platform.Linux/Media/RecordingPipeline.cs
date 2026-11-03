@@ -40,6 +40,18 @@ internal static class RecordingPipeline
     public const string ZoomElement = "zoom";
     /// <summary>Name of the microphone source, whose device is set after parsing (the name comes from the sound server).</summary>
     public const string MicrophoneElement = "mic";
+    /// <summary>Name of the mp4mux element, whose faststart-file is set after parsing.</summary>
+    public const string MuxElement = "mux";
+
+    /// <summary>
+    /// Where mp4mux spools the samples until it writes the index first (faststart): beside the output file, never
+    /// in the shared temporary folder (often a small tmpfs in RAM, where the spool is created readable by everyone).
+    /// </summary>
+    public static string FastStartFile(string outputPath)
+    {
+        var full = Path.GetFullPath(outputPath);
+        return Path.Combine(Path.GetDirectoryName(full)!, "." + Path.GetFileName(full) + ".faststart");
+    }
 
     /// <param name="outputWidth">Width of the recording, to place the webcam (0 when unknown).</param>
     /// <param name="clickZoom">
@@ -59,7 +71,7 @@ internal static class RecordingPipeline
         var f = CultureInfo.InvariantCulture;
         framerate = Math.Clamp(framerate, 1, 120);
         var d = new StringBuilder();
-        d.Append(f, $"mp4mux name=mux faststart=true ! filesink name=out ");
+        d.Append(f, $"mp4mux name={MuxElement} faststart=true ! filesink name=out ");
 
         string screen = source switch
         {
@@ -72,9 +84,11 @@ internal static class RecordingPipeline
         if (clickZoom && source is X11AreaSource zoomed)
             // add-borders=false: a crop whose ratio is a pixel off is stretched, never framed with black.
             screenChain += string.Create(f, $" ! videocrop name={ZoomElement} ! videoscale add-borders=false ! video/x-raw,width={zoomed.Area.Width},height={zoomed.Area.Height},pixel-aspect-ratio=1/1");
-        if (source is PipeWireSource { Width: > 0, Height: > 0 } pw && webcam != null)
-            // The webcam position is computed on the size the portal announced: the stream is scaled to it.
-            screenChain += string.Create(f, $" ! videoscale ! video/x-raw,width={pw.Width & ~1},height={pw.Height & ~1}");
+        if (source is PipeWireSource { Width: > 0, Height: > 0 } pw && (webcam != null || pw.Width % 2 != 0 || pw.Height % 2 != 0))
+            // The webcam position is computed on the size the portal announced, and the encoders need even sizes (a
+            // window may have an odd one): the stream is scaled to it then. Otherwise it keeps its own size, which
+            // is larger than the announced (logical) one on a HiDPI screen.
+            screenChain += string.Create(f, $" ! videoscale ! video/x-raw,width={Math.Max(2, pw.Width & ~1)},height={Math.Max(2, pw.Height & ~1)}");
         // A quality preset may record a smaller picture than the area (same shape), scaled before the encoder.
         var (encodedWidth, encodedHeight) = outputWidth > 0 && outputHeight > 0 ? encoding.OutputSize(outputWidth, outputHeight) : (0, 0);
         string scale = encodedWidth > 0 && (encodedWidth != (outputWidth & ~1) || encodedHeight != (outputHeight & ~1))

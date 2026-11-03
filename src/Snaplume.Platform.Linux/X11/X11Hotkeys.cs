@@ -1,6 +1,6 @@
-using Avalonia.Threading;
 using Snaplume.Core;
 using Snaplume.Platform.Linux.Interop;
+using Snaplume.Platform.Linux.Util;
 using static Snaplume.Platform.Linux.Interop.Xlib;
 
 namespace Snaplume.Platform.Linux.X11;
@@ -29,10 +29,8 @@ internal sealed unsafe class X11Hotkeys : IGlobalHotkeys
     {
         try
         {
-            X11Errors.Install();
-            _display = XOpenDisplay(IntPtr.Zero);
+            _display = X11Errors.OpenDisplay();
             if (_display == IntPtr.Zero) return;
-            X11Errors.Track(_display);
             _root = XDefaultRootWindow(_display);
             _lockMasks = LockMasks(_display);
             XSelectInput(_display, _root, KeyPressMask);
@@ -58,16 +56,16 @@ internal sealed unsafe class X11Hotkeys : IGlobalHotkeys
             uint modifiers = KeySyms.ModifierMask(hotkey.Modifiers);
             var combinations = KeySyms.LockCombinations(_lockMasks);
             XSync(_display, 0);
-            X11Errors.Reset(_display);
+            X11Errors.TakeLastError(_display);
             foreach (var locks in combinations)
                 XGrabKey(_display, keycode, modifiers | locks, _root, 0, GrabModeAsync, GrabModeAsync);
             XSync(_display, 0);
-            if (X11Errors.Reset(_display) != 0)
+            if (X11Errors.TakeLastError(_display) != 0)
             {
                 // BadAccess: another application holds the shortcut. Release the combinations that did succeed.
                 foreach (var locks in combinations) XUngrabKey(_display, keycode, modifiers | locks, _root);
                 XSync(_display, 0);
-                X11Errors.Reset(_display);
+                X11Errors.TakeLastError(_display);
                 return false;
             }
             _bindings.Add(new Binding(keycode, modifiers, action));
@@ -85,7 +83,7 @@ internal sealed unsafe class X11Hotkeys : IGlobalHotkeys
                 foreach (var locks in combinations)
                     XUngrabKey(_display, binding.Keycode, binding.Modifiers | locks, _root);
             XSync(_display, 0);
-            X11Errors.Reset(_display);
+            X11Errors.TakeLastError(_display);
             _bindings.Clear();
         }
     }
@@ -119,22 +117,10 @@ internal sealed unsafe class X11Hotkeys : IGlobalHotkeys
                     }
                 }
             }
-            foreach (var action in fired) Dispatcher.UIThread.Post(() => Run(action));
+            foreach (var action in fired) UiActions.Post(action, "Raccourci clavier");
             // Outside the lock: grabs from the UI thread are not delayed. The timeout bounds the delay of events
             // that a grab's XSync read into the queue while this thread was waiting.
             LibC.poll(&pollFd, 1, 100);
-        }
-    }
-
-    private static void Run(Action action)
-    {
-        try
-        {
-            action();
-        }
-        catch (Exception ex)
-        {
-            ErrorLog.Write("Raccourci clavier", ex);
         }
     }
 
@@ -172,8 +158,7 @@ internal sealed unsafe class X11Hotkeys : IGlobalHotkeys
         lock (_gate)
         {
             if (_display == IntPtr.Zero) return;
-            X11Errors.Untrack(_display);
-            XCloseDisplay(_display);
+            X11Errors.CloseDisplay(_display);
             _display = IntPtr.Zero;
         }
     }

@@ -20,6 +20,7 @@ public static class LinuxPlatform
     public static IPlatform Create()
     {
         var session = SessionInfo.Detect(Environment.GetEnvironmentVariable);
+        _ = Task.Run(() => LinuxDesktopShell.CleanStalePrintFolders(Path.GetTempPath(), DateTime.UtcNow));
         var x11 = X11Connection.TryOpen();
         if (session == SessionKind.Wayland) return CreateWayland(x11);
         if (x11 == null) ErrorLog.Write("Plateforme Linux", "Aucune connexion X11 (DISPLAY) : capture et raccourcis indisponibles");

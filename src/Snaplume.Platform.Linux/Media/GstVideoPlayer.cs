@@ -19,6 +19,8 @@ internal sealed unsafe class GstVideoPlayer : IVideoPlayer, IVideoPlayerSpeed
     private IntPtr _sink;
     private IntPtr _bus;
     private Thread? _worker;
+    /// <summary>Wakes the worker that waits at the end of the video (set by Play, Seek and Dispose).</summary>
+    private readonly ManualResetEventSlim _wake = new();
     private volatile bool _disposed;
     private volatile bool _playing;
     private PixelBuffer? _frame;
@@ -80,6 +82,7 @@ internal sealed unsafe class GstVideoPlayer : IVideoPlayer, IVideoPlayerSpeed
         try
         {
             GStreamerRuntime.EnsureInit();
+            IntPtr playbin;
             lock (_gate)
             {
                 if (_disposed) return;
@@ -88,15 +91,27 @@ internal sealed unsafe class GstVideoPlayer : IVideoPlayer, IVideoPlayerSpeed
                 var bin = Gst.gst_parse_bin_from_description(
                     "videoconvert ! video/x-raw,format=BGRA ! appsink name=frames sync=true max-buffers=2 drop=true", 1, out var error);
                 if (bin == IntPtr.Zero) throw new InvalidOperationException("GStreamer: " + Gst.TakeError(error));
+                if (error != IntPtr.Zero) ErrorLog.Write("Lecteur vidéo", Gst.TakeError(error)); // recoverable (unknown property...)
                 _sink = Gst.gst_bin_get_by_name(bin, "frames");
                 Gst.SetElement(_playbin, "video-sink", bin); // playbin takes the floating reference
                 Gst.SetString(_playbin, "uri", FileUris.FromPath(Path.GetFullPath(path)));
                 Gst.SetDouble(_playbin, "volume", _volume);
                 _bus = Gst.gst_element_get_bus(_playbin);
                 Gst.gst_element_set_state(_playbin, Gst.StatePaused);
+                // A reference of our own for the wait below, outside the lock: Dispose may release _playbin meanwhile.
+                playbin = Gst.gst_object_ref(_playbin);
             }
             // Pausing prerolls: the file is opened, decoded up to the first picture, and its duration known.
-            var result = Gst.gst_element_get_state(_playbin, out _, out _, 15 * Second);
+            int result;
+            try
+            {
+                result = Gst.gst_element_get_state(playbin, out _, out _, 15 * Second);
+            }
+            finally
+            {
+                Gst.gst_object_unref(playbin);
+            }
+            if (_disposed) return;
             if (result == Gst.StateChangeFailure)
                 throw new InvalidOperationException("GStreamer: " + (PopError() ?? "the file could not be opened"));
             ReadDuration();
@@ -127,6 +142,7 @@ internal sealed unsafe class GstVideoPlayer : IVideoPlayer, IVideoPlayerSpeed
             Gst.gst_element_set_state(_playbin, Gst.StatePlaying);
             _playing = true;
         }
+        _wake.Set();
         Raise();
     }
 
@@ -151,6 +167,7 @@ internal sealed unsafe class GstVideoPlayer : IVideoPlayer, IVideoPlayerSpeed
             SeekAt(ns, Gst.SeekFlagFlush | Gst.SeekFlagAccurate);
             HasEnded = false;
         }
+        _wake.Set();
     }
 
     private void Work()
@@ -158,16 +175,22 @@ internal sealed unsafe class GstVideoPlayer : IVideoPlayer, IVideoPlayerSpeed
         while (!_disposed)
         {
             ReadBus();
-            IntPtr sample;
             lock (_gate)
             {
                 if (_sink == IntPtr.Zero) return;
             }
             // Playing: the next picture at its time. Paused: the picture after a seek (preroll).
-            sample = _playing
+            var sample = _playing
                 ? Gst.gst_app_sink_try_pull_sample(_sink, 50_000_000UL)
                 : Gst.gst_app_sink_try_pull_preroll(_sink, 50_000_000UL);
-            if (sample == IntPtr.Zero) continue;
+            if (sample == IntPtr.Zero)
+            {
+                // At the end both pulls return at once: wait for Play or Seek (a flushing seek clears the end)
+                // instead of spinning, still reading the bus now and then.
+                _wake.Reset();
+                if (Gst.gst_app_sink_is_eos(_sink) != 0) _wake.Wait(200);
+                continue;
+            }
             try
             {
                 if (ToFrame(sample) is { } frame) FrameReady?.Invoke(frame);
@@ -201,8 +224,12 @@ internal sealed unsafe class GstVideoPlayer : IVideoPlayer, IVideoPlayerSpeed
             if (sourceStride < width * 4) return null;
             fixed (byte* target = _frame.Pixels)
             {
-                for (int y = 0; y < height; y++)
-                    Buffer.MemoryCopy(map.Data + (long)y * sourceStride, target + (long)y * _frame.Stride, _frame.Stride, _frame.Stride);
+                // Rows without padding (the usual BGRA layout): one block.
+                if (sourceStride == _frame.Stride)
+                    Buffer.MemoryCopy(map.Data, target, _frame.Pixels.Length, (long)_frame.Stride * height);
+                else
+                    for (int y = 0; y < height; y++)
+                        Buffer.MemoryCopy(map.Data + (long)y * sourceStride, target + (long)y * _frame.Stride, _frame.Stride, _frame.Stride);
             }
             return _frame;
         }
@@ -263,20 +290,7 @@ internal sealed unsafe class GstVideoPlayer : IVideoPlayer, IVideoPlayerSpeed
 
     private string? PopError()
     {
-        lock (_gate)
-        {
-            if (_bus == IntPtr.Zero) return null;
-            var message = Gst.gst_bus_timed_pop_filtered(_bus, 0, Gst.MessageError);
-            if (message == IntPtr.Zero) return null;
-            try
-            {
-                return GStreamerRuntime.DescribeMessage(message);
-            }
-            finally
-            {
-                Gst.gst_mini_object_unref(message);
-            }
-        }
+        lock (_gate) return GStreamerRuntime.PopError(_bus);
     }
 
     private void Raise()
@@ -294,6 +308,7 @@ internal sealed unsafe class GstVideoPlayer : IVideoPlayer, IVideoPlayerSpeed
     public void Dispose()
     {
         _disposed = true;
+        _wake.Set();
         _worker?.Join(1000);
         lock (_gate)
         {

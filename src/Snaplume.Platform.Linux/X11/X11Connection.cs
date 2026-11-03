@@ -35,11 +35,8 @@ internal sealed unsafe class X11Connection : IDisposable
             if (string.IsNullOrEmpty(Environment.GetEnvironmentVariable("DISPLAY"))) return null;
             // Avalonia already called it; repeating it is harmless and protects a connection opened first.
             XInitThreads();
-            X11Errors.Install();
-            var display = XOpenDisplay(IntPtr.Zero);
-            if (display == IntPtr.Zero) return null;
-            X11Errors.Track(display);
-            return new X11Connection(display);
+            var display = X11Errors.OpenDisplay();
+            return display == IntPtr.Zero ? null : new X11Connection(display);
         }
         catch (Exception ex) when (ex is DllNotFoundException or EntryPointNotFoundException)
         {
@@ -90,10 +87,10 @@ internal sealed unsafe class X11Connection : IDisposable
         lock (Gate)
         {
             XSync(Display, 0);
-            X11Errors.Reset(Display);
+            X11Errors.TakeLastError(Display);
             calls();
             XSync(Display, 0);
-            return X11Errors.Reset(Display);
+            return X11Errors.TakeLastError(Display);
         }
     }
 
@@ -102,8 +99,7 @@ internal sealed unsafe class X11Connection : IDisposable
         lock (Gate)
         {
             if (Display == IntPtr.Zero) return;
-            X11Errors.Untrack(Display);
-            XCloseDisplay(Display);
+            X11Errors.CloseDisplay(Display);
             Display = IntPtr.Zero;
         }
     }
@@ -120,18 +116,32 @@ internal static unsafe class X11Errors
     private static IntPtr _previous;
     private static int _installed;
 
-    public static void Install()
+    private static void Install()
     {
         if (Interlocked.Exchange(ref _installed, 1) == 1) return;
         delegate* unmanaged[Cdecl]<IntPtr, IntPtr, int> handler = &OnError;
         _previous = XSetErrorHandler((IntPtr)handler);
     }
 
-    public static void Track(IntPtr display) => LastError[display] = 0;
-    public static void Untrack(IntPtr display) => LastError.TryRemove(display, out _);
+    /// <summary>A new connection to $DISPLAY whose errors are recorded (<see cref="TakeLastError"/>); zero when it fails.</summary>
+    /// <exception cref="DllNotFoundException">libX11 is not installed.</exception>
+    public static IntPtr OpenDisplay()
+    {
+        Install();
+        var display = XOpenDisplay(IntPtr.Zero);
+        if (display != IntPtr.Zero) LastError[display] = 0;
+        return display;
+    }
+
+    /// <summary>Closes a connection of <see cref="OpenDisplay"/>.</summary>
+    public static void CloseDisplay(IntPtr display)
+    {
+        LastError.TryRemove(display, out _);
+        XCloseDisplay(display);
+    }
 
     /// <summary>Last error code since the previous call (0 = none), and clears it.</summary>
-    public static int Reset(IntPtr display) => LastError.TryGetValue(display, out var code) && LastError.TryUpdate(display, 0, code) ? code : 0;
+    public static int TakeLastError(IntPtr display) => LastError.TryGetValue(display, out var code) && LastError.TryUpdate(display, 0, code) ? code : 0;
 
     [UnmanagedCallersOnly(CallConvs = new[] { typeof(CallConvCdecl) })]
     private static int OnError(IntPtr display, IntPtr errorEvent)

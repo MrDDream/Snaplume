@@ -37,6 +37,27 @@ public class LinuxMediaTests
         Assert.Contains("openh264enc", description);
         Assert.Contains("framerate=60/1", description);
         Assert.DoesNotContain("pulsesrc", description); // no audio encoder: no sound rather than a failure
+        // An even stream keeps its own size (larger than the announced one on a HiDPI screen).
+        Assert.DoesNotContain("videoscale", description);
+    }
+
+    [Fact]
+    public void PipeWire_window_of_odd_size_is_scaled_to_an_even_one()
+    {
+        var description = RecordingPipeline.Build(new PipeWireSource(42, 57, 801, 601), 30, "x264enc", null, false, false, null, 800, 600);
+        Assert.Contains("videorate ! video/x-raw,framerate=30/1 ! videoscale ! video/x-raw,width=800,height=600", description);
+        var tall = RecordingPipeline.Build(new PipeWireSource(42, 57, 800, 1), 30, "x264enc", null, false, false, null, 800, 0);
+        Assert.Contains("video/x-raw,width=800,height=2", tall);
+    }
+
+    [Fact]
+    public void Faststart_spool_lies_beside_the_recording()
+    {
+        var output = Path.Combine(Path.GetTempPath(), "rec", "Recording 1.mp4");
+        var spool = RecordingPipeline.FastStartFile(output);
+        Assert.Equal(Path.GetDirectoryName(output), Path.GetDirectoryName(spool));
+        Assert.Equal(".Recording 1.mp4.faststart", Path.GetFileName(spool));
+        Assert.Contains($"mp4mux name={RecordingPipeline.MuxElement} ", RecordingPipeline.Build(new PipeWireSource(1, 2, 640, 480), 30, "x264enc", null, false, false, null, 640, 480));
     }
 
     [Fact]
@@ -151,13 +172,15 @@ public class LinuxMediaTests
     public void Clip_export_reencodes_the_exact_range()
     {
         var args = FfmpegArguments.ExportClip("/v/in put.mp4", "/v/out.mp4", TimeSpan.FromSeconds(1.5), TimeSpan.FromSeconds(4), "libx264", true);
-        Assert.Equal("-ss", args[args.IndexOf("-i") - 2]);
-        Assert.Equal("1.5", args[args.IndexOf("-i") - 1]);
-        Assert.Equal("/v/in put.mp4", args[args.IndexOf("-i") + 1]);
+        Assert.Equal("1.5", args[args.IndexOf("-ss") + 1]);
+        Assert.True(args.IndexOf("-ss") < args.IndexOf("-i"));
+        // Local files only: "file:" and the full path, and no other protocol for what the input refers to.
+        Assert.Equal(new[] { "-protocol_whitelist", "file", "-i", "file:" + Path.GetFullPath("/v/in put.mp4") },
+            args.Skip(args.IndexOf("-protocol_whitelist")).Take(4));
         Assert.Equal("2.5", args[args.IndexOf("-t") + 1]);
         Assert.Contains("libx264", args);
         Assert.Contains("aac", args);
-        Assert.Equal("/v/out.mp4", args[^1]);
+        Assert.Equal("file:" + Path.GetFullPath("/v/out.mp4"), args[^1]);
         Assert.Contains("pipe:1", args);
 
         var silent = FfmpegArguments.ExportClip("a.mp4", "b.mp4", TimeSpan.Zero, TimeSpan.FromSeconds(1), "libopenh264", false);
@@ -196,9 +219,21 @@ public class LinuxMediaTests
         Assert.Equal("10", args[args.IndexOf("-frames:v") + 1]);
         Assert.Equal("bgra", args[args.IndexOf("-pix_fmt") + 1]);
 
+        Assert.Equal("file:" + Path.GetFullPath("/v.mp4"), args[args.IndexOf("-i") + 1]);
+        Assert.Equal("file", args[args.IndexOf("-protocol_whitelist") + 1]);
+        Assert.Equal("pipe:1", args[^1]);
+
         var thumb = FfmpegArguments.Thumbnail("/v.mp4", TimeSpan.FromSeconds(1), 256);
         Assert.Contains("png", thumb);
         Assert.Contains(thumb, a => a.Contains("min(256,iw)"));
+        Assert.Equal("file:" + Path.GetFullPath("/v.mp4"), thumb[thumb.IndexOf("-i") + 1]);
+        Assert.Equal("file", thumb[thumb.IndexOf("-protocol_whitelist") + 1]);
+
+        // A name that looks like an option stays a file, made absolute.
+        var probe = FfmpegArguments.Probe("-y.mp4");
+        Assert.Equal("file:" + Path.GetFullPath("-y.mp4"), probe[^1]);
+        Assert.True(Path.IsPathFullyQualified(probe[^1]["file:".Length..]));
+        Assert.Equal(new[] { "-protocol_whitelist", "file", "-i" }, probe.Skip(probe.Count - 4).Take(3));
     }
 
     [Fact]

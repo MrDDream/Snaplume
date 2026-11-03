@@ -45,7 +45,10 @@ internal sealed class WaylandScreenCapture : IScreenCapture
 
     public IScreenGrabber CreateGrabber(PixelRect area) => new Grabber(area);
 
-    /// <summary>One screenshot through the portal, decoded; the portal's file is deleted when it is a temporary one.</summary>
+    /// <summary>
+    /// One screenshot through the portal, decoded; the portal's file is then deleted when it is a temporary one.
+    /// A file that could not be read is left where it is (it may not be a picture of Snaplume's request).
+    /// </summary>
     /// <exception cref="OperationCanceledException">The user refused.</exception>
     public static async Task<PixelBuffer> TakeScreenshotAsync(CancellationToken cancel)
     {
@@ -54,23 +57,32 @@ internal sealed class WaylandScreenCapture : IScreenCapture
             token => new DArg[] { new DString(""), new DOptions(Portal.Options(token, ("interactive", VariantValue.Bool(false)))) },
             cancel).ConfigureAwait(false);
         var path = FileUris.ToPath(results.GetString("uri")) ?? throw new InvalidOperationException("Screenshot portal: no local file");
+        var image = ImageIO.Load(path);
+        if (ShouldDelete(path, requested, Path.GetTempPath(), Xdg.RuntimeDir) && IsRegularFile(path))
+        {
+            try
+            {
+                File.Delete(path);
+            }
+            catch (Exception ex)
+            {
+                ErrorLog.Write("Suppression de la capture du portail", ex);
+            }
+        }
+        return image;
+    }
+
+    /// <summary>A plain file: not a link (which another user could have put in a shared temporary folder), not a folder.</summary>
+    internal static bool IsRegularFile(string path)
+    {
         try
         {
-            return ImageIO.Load(path);
+            var info = new FileInfo(path);
+            return info.Exists && info.LinkTarget == null && (info.Attributes & (FileAttributes.Directory | FileAttributes.ReparsePoint)) == 0;
         }
-        finally
+        catch (Exception ex) when (ex is IOException or UnauthorizedAccessException or ArgumentException)
         {
-            if (ShouldDelete(path, requested, Path.GetTempPath(), Xdg.RuntimeDir))
-            {
-                try
-                {
-                    File.Delete(path);
-                }
-                catch (Exception ex)
-                {
-                    ErrorLog.Write("Suppression de la capture du portail", ex);
-                }
-            }
+            return false;
         }
     }
 

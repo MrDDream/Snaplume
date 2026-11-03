@@ -32,10 +32,8 @@ internal sealed unsafe class X11ClickHighlighter : IDisposable
         _clicked = clicked;
         try
         {
-            X11Errors.Install();
-            _display = XOpenDisplay(IntPtr.Zero);
+            _display = X11Errors.OpenDisplay();
             if (_display == IntPtr.Zero) return;
-            X11Errors.Track(_display);
             _thread = new Thread(Run) { IsBackground = true, Name = "Snaplume click highlight" };
             _thread.Start();
         }
@@ -52,7 +50,9 @@ internal sealed unsafe class X11ClickHighlighter : IDisposable
             var d = _display;
             var root = XDefaultRootWindow(d);
             if (XQueryExtension(d, "XInputExtension", out int xiOpcode, out _, out _) == 0) return;
-            int major = 2, minor = 0;
+            // 2.2 announced (2.1 would do): from 2.1 on, raw events reach the root window even while another
+            // client grabs the pointer (a menu open, a drag, a game). An older server answers with its own version.
+            int major = 2, minor = 2;
             if (XIQueryVersion(d, ref major, ref minor) != 0) return;
             var maskBytes = stackalloc byte[4];
             new Span<byte>(maskBytes, 4).Clear();
@@ -171,8 +171,7 @@ internal sealed unsafe class X11ClickHighlighter : IDisposable
         _thread?.Join(1000);
         if (_display != IntPtr.Zero)
         {
-            X11Errors.Untrack(_display);
-            XCloseDisplay(_display);
+            X11Errors.CloseDisplay(_display);
             _display = IntPtr.Zero;
         }
     }

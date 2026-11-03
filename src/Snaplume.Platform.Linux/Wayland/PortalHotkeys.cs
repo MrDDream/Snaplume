@@ -1,6 +1,6 @@
-using Avalonia.Threading;
 using Snaplume.Core;
 using Snaplume.Platform.Linux.DBus;
+using Snaplume.Platform.Linux.Util;
 using Snaplume.Platform.Linux.X11;
 using Tmds.DBus.Protocol;
 
@@ -17,9 +17,11 @@ internal sealed class PortalHotkeys : IGlobalHotkeys
     private readonly object _gate = new();
     private readonly Dictionary<string, (string Description, string? Trigger, Action Action)> _shortcuts = new();
     private readonly Timer _debounce;
+    private readonly SemaphoreSlim _bindGate = new(1, 1);
     private string? _session;
     private IDisposable? _activatedWatch;
     private int _generation;
+    private volatile bool _disposed;
 
     public PortalHotkeys() => _debounce = new Timer(_ => _ = BindAsync(), null, Timeout.Infinite, Timeout.Infinite);
 
@@ -50,7 +52,21 @@ internal sealed class PortalHotkeys : IGlobalHotkeys
         if (session != null) _ = Portal.CloseAsync(session);
     }
 
+    /// <summary>One binding at a time: a debounce firing while the desktop's dialog is open waits for it to close.</summary>
     private async Task BindAsync()
+    {
+        await _bindGate.WaitAsync().ConfigureAwait(false);
+        try
+        {
+            await BindNowAsync().ConfigureAwait(false);
+        }
+        finally
+        {
+            _bindGate.Release();
+        }
+    }
+
+    private async Task BindNowAsync()
     {
         List<(string Id, Dictionary<string, VariantValue> Properties)> list;
         int generation;
@@ -100,11 +116,12 @@ internal sealed class PortalHotkeys : IGlobalHotkeys
         return properties;
     }
 
+    /// <summary>Subscribes once; called by <see cref="BindNowAsync"/> only, so never twice at the same time.</summary>
     private async Task EnsureActivatedWatchAsync()
     {
         if (_activatedWatch != null) return;
         var connection = await DBusCalls.SessionAsync().ConfigureAwait(false);
-        _activatedWatch = await DBusCalls.WatchAsync(connection, Portal.ObjectPath, Portal.GlobalShortcutsInterface, "Activated",
+        _activatedWatch = await DBusCalls.WatchAsync(connection, Portal.Service, Portal.ObjectPath, Portal.GlobalShortcutsInterface, "Activated",
             (message, _) =>
             {
                 var reader = message.GetBodyReader();
@@ -119,24 +136,14 @@ internal sealed class PortalHotkeys : IGlobalHotkeys
                 {
                     if (activation.Session == _session && _shortcuts.TryGetValue(activation.Id, out var shortcut)) action = shortcut.Action;
                 }
-                if (action != null) Dispatcher.UIThread.Post(() => Run(action));
+                if (action != null) UiActions.Post(action, "Raccourci clavier");
             }).ConfigureAwait(false);
-    }
-
-    private static void Run(Action action)
-    {
-        try
-        {
-            action();
-        }
-        catch (Exception ex)
-        {
-            ErrorLog.Write("Raccourci clavier", ex);
-        }
+        if (_disposed) _activatedWatch.Dispose();
     }
 
     public void Dispose()
     {
+        _disposed = true;
         _debounce.Dispose();
         UnregisterAll();
         _activatedWatch?.Dispose();

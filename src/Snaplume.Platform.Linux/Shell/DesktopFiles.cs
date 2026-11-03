@@ -8,7 +8,8 @@ internal static class DesktopFiles
 {
     /// <summary>
     /// One argument of a desktop entry's Exec key: quoted when needed, with the characters the spec reserves
-    /// inside quotes escaped, then the backslashes doubled again for the string-value level; "%" becomes "%%".
+    /// inside quotes escaped, then the backslashes doubled again for the string-value level, where a line break or
+    /// a tab is written \n, \r or \t (a raw one would end the key); "%" becomes "%%".
     /// </summary>
     public static string ExecArgument(string argument)
     {
@@ -23,7 +24,7 @@ internal static class DesktopFiles
         }
         quoted.Append('"');
         // Desktop entry string values interpret "\\" as one backslash: each backslash written above is doubled.
-        return quoted.ToString().Replace("\\", "\\\\");
+        return quoted.ToString().Replace("\\", "\\\\").Replace("\n", "\\n").Replace("\r", "\\r").Replace("\t", "\\t");
     }
 
     /// <summary>~/.config/autostart entry starting Snaplume in the notification area.</summary>
@@ -95,9 +96,13 @@ internal static class DesktopFiles
         return SystemFolders.Any(s => full == s || full.StartsWith(s + "/", StringComparison.Ordinal));
     }
 
-    /// <summary>CUPS destinations from "lpstat -a" (C locale): "name accepting requests since ...".</summary>
+    /// <summary>
+    /// CUPS destinations from "lpstat -a" (C locale): "name accepting requests since ...". The indented lines
+    /// that follow a printer refusing jobs give its reason ("\tRejecting Jobs"): they name no printer.
+    /// </summary>
     public static IReadOnlyList<string> ParsePrinters(string output) =>
         output.Split('\n')
+            .Where(l => l.Length > 0 && !char.IsWhiteSpace(l[0]))
             .Select(l => l.Trim())
             .Where(l => l.Length > 0 && !l.StartsWith("lpstat", StringComparison.Ordinal))
             .Select(l => l.Split(' ', 2)[0])

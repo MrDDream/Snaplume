@@ -58,5 +58,21 @@ internal static class GStreamerRuntime
         return $"{name ?? "?"}: {text}" + (details != null ? $" ({details})" : "");
     }
 
+    /// <summary>The first error waiting on the bus, described; null when there is none (does not wait).</summary>
+    public static string? PopError(IntPtr bus)
+    {
+        if (bus == IntPtr.Zero) return null;
+        var message = Gst.gst_bus_timed_pop_filtered(bus, 0, Gst.MessageError);
+        if (message == IntPtr.Zero) return null;
+        try
+        {
+            return DescribeMessage(message);
+        }
+        finally
+        {
+            Gst.gst_mini_object_unref(message);
+        }
+    }
+
     public static unsafe int MessageType(IntPtr message) => *(int*)((byte*)message + Gst.MessageTypeOffset);
 }
