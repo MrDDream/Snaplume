@@ -55,7 +55,7 @@ internal sealed class ScreenCastSession : IDisposable
             if (stream.Node == 0) throw new InvalidOperationException("ScreenCast: no stream");
             var fd = await DBusCalls.CallAsync(connection, (m, _) => m.GetBodyReader().ReadHandle<SafeFileHandle>(),
                 Portal.Service, Portal.ObjectPath, Portal.ScreenCastInterface, "OpenPipeWireRemote",
-                new DPath(session), new DOptions(new())).ConfigureAwait(false);
+                new DPath(session), new DOptions(new())).WaitAsync(Portal.NonInteractiveTimeout).ConfigureAwait(false);
             return new ScreenCastSession(session, stream, fd ?? throw new InvalidOperationException("ScreenCast: no PipeWire descriptor"));
         }
         catch

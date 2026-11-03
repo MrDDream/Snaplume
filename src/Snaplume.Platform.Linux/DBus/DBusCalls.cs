@@ -126,9 +126,13 @@ internal static class DBusCalls
     }
 
     /// <summary>Subscribes to a signal; <paramref name="onValue"/> runs on a D-Bus thread for each emission.</summary>
-    public static async Task<IDisposable> WatchAsync<T>(DBusConnection connection, string path, string @interface, string signal,
+    /// <param name="sender">
+    /// The well-known name of the service that emits it: any other client of the session bus could send a signal
+    /// with the same path and interface (a fake portal answer, a fake notification click).
+    /// </param>
+    public static async Task<IDisposable> WatchAsync<T>(DBusConnection connection, string sender, string path, string @interface, string signal,
         MessageValueReader<T> reader, Action<T> onValue) =>
-        await connection.WatchSignalAsync(null, path, @interface, signal, reader,
+        await connection.WatchSignalAsync(sender, path, @interface, signal, reader,
             (Notification<T> notification) =>
             {
                 if (notification.HasValue) onValue(notification.Value);

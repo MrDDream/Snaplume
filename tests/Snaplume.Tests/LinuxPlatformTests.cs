@@ -235,6 +235,30 @@ public class LinuxPlatformTests
         Assert.False(WaylandScreenCapture.ShouldDelete("/home/me/Pictures/Screenshot-none.png", old, "/tmp", null));
     }
 
+    [Fact]
+    public void Only_a_plain_portal_file_is_deleted()
+    {
+        var folder = Directory.CreateTempSubdirectory("snaplume-portal-");
+        try
+        {
+            var file = Path.Combine(folder.FullName, "shot.png");
+            File.WriteAllText(file, "x");
+            Assert.True(WaylandScreenCapture.IsRegularFile(file));
+            Assert.False(WaylandScreenCapture.IsRegularFile(folder.FullName));
+            Assert.False(WaylandScreenCapture.IsRegularFile(Path.Combine(folder.FullName, "missing.png")));
+            if (!OperatingSystem.IsWindows())
+            {
+                var link = Path.Combine(folder.FullName, "link.png");
+                File.CreateSymbolicLink(link, file);
+                Assert.False(WaylandScreenCapture.IsRegularFile(link));
+            }
+        }
+        finally
+        {
+            folder.Delete(true);
+        }
+    }
+
     [Theory]
     [InlineData("/home/me/My Captures/a#1.png", "file:///home/me/My%20Captures/a%231.png")]
     [InlineData("/tmp/été.png", "file:///tmp/%C3%A9t%C3%A9.png")]
