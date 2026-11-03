@@ -1,3 +1,4 @@
+using System.Buffers.Binary;
 using SkiaSharp;
 using Snaplume.Core;
 
@@ -10,7 +11,7 @@ public static class ImageIO
     public static readonly string[] Extensions = { ".png", ".jpg", ".jpeg", ".bmp", ".gif", ".webp" };
 
     /// <summary>Videos: recordings, and the WebM exports of the player.</summary>
-    public static readonly string[] VideoExtensions = { ".mp4", ".webm" };
+    private static readonly string[] VideoExtensions = { ".mp4", ".webm" };
 
     /// <summary>Lossless WebP for <see cref="Save"/> (a lower value is the quality of a lossy WebP).</summary>
     public const int WebPLossless = 100;
@@ -92,9 +93,26 @@ public static class ImageIO
             throw new InvalidDataException(Loc.T("App.ImageTooLarge", width, height));
     }
 
+    /// <summary>
+    /// Largest image file read (a BMP of <see cref="MaxPixels"/> takes about this much): a bigger file is refused before
+    /// it is read into memory.
+    /// </summary>
+    internal const long MaxFileBytes = 1024L * 1024 * 1024;
+
     /// <summary>Loads an image file (first frame of a GIF or an animated WebP) without locking it, as BGRA.</summary>
-    /// <exception cref="InvalidDataException">Not a readable image, or too large.</exception>
-    public static PixelBuffer Load(string path) => Decode(File.ReadAllBytes(path));
+    /// <exception cref="InvalidDataException">Not a readable image, or too large (the file or the image).</exception>
+    public static PixelBuffer Load(string path)
+    {
+        byte[] data;
+        using (var stream = new FileStream(path, FileMode.Open, FileAccess.Read, FileShare.ReadWrite | FileShare.Delete))
+        {
+            if (stream.Length > MaxFileBytes)
+                throw new InvalidDataException(Loc.T("App.ImageFileTooLarge", stream.Length / (1024 * 1024)));
+            data = new byte[stream.Length];
+            stream.ReadExactly(data);
+        }
+        return Decode(data);
+    }
 
     /// <summary>Decodes an image file in memory (PNG, JPEG, BMP, GIF...), as BGRA; the size is checked before the pixels are read.</summary>
     /// <exception cref="InvalidDataException">Not a readable image, or too large.</exception>
@@ -221,57 +239,43 @@ public static class ImageIO
         }
     }
 
-    /// <summary>Pixels drawn on a white background (formats without transparency).</summary>
+    /// <summary>Pixels drawn on a white background (formats without transparency), rounded like <see cref="DibEncoder"/>.</summary>
     private static PixelBuffer OnWhite(PixelBuffer image)
     {
+        if (image.IsOpaque()) return image;
         var src = image.Pixels;
-        bool opaque = true;
-        for (int i = 3; i < src.Length && opaque; i += 4) opaque = src[i] == 255;
-        if (opaque) return image;
         var result = new PixelBuffer(image.Width, image.Height);
         var dst = result.Pixels;
         for (int i = 0; i < src.Length; i += 4)
         {
             int a = src[i + 3];
-            dst[i] = (byte)((src[i] * a + 255 * (255 - a)) / 255);
-            dst[i + 1] = (byte)((src[i + 1] * a + 255 * (255 - a)) / 255);
-            dst[i + 2] = (byte)((src[i + 2] * a + 255 * (255 - a)) / 255);
+            int white = 255 * (255 - a) + 127;
+            dst[i] = (byte)((src[i] * a + white) / 255);
+            dst[i + 1] = (byte)((src[i + 1] * a + white) / 255);
+            dst[i + 2] = (byte)((src[i + 2] * a + white) / 255);
             dst[i + 3] = 255;
         }
         return result;
     }
 
-    /// <summary>24-bit BMP (Skia writes no BMP): bottom-up rows padded to 4 bytes, on white.</summary>
+    /// <summary>Size of BITMAPFILEHEADER, before the DIB of a .bmp file.</summary>
+    private const int BmpFileHeaderSize = 14;
+
+    /// <summary>
+    /// 24-bit BMP (Skia writes no BMP): a BITMAPFILEHEADER, then the DIB of <see cref="DibEncoder.Encode"/> (bottom-up
+    /// rows padded to 4 bytes, on white).
+    /// </summary>
     internal static byte[] EncodeBmp(PixelBuffer image)
     {
-        var source = OnWhite(image);
-        int rowBytes = (source.Width * 3 + 3) & ~3;
-        int pixelBytes = rowBytes * source.Height;
-        var data = new byte[54 + pixelBytes];
-        void Int(int offset, int value) => BitConverter.TryWriteBytes(data.AsSpan(offset, 4), value);
-        void Short(int offset, short value) => BitConverter.TryWriteBytes(data.AsSpan(offset, 2), value);
+        var dib = DibEncoder.Encode(image);
+        if ((long)BmpFileHeaderSize + dib.Length > Array.MaxLength) throw new ArgumentOutOfRangeException(nameof(image), "Image too large");
+        var data = new byte[BmpFileHeaderSize + dib.Length];
         data[0] = (byte)'B';
         data[1] = (byte)'M';
-        Int(2, data.Length);
-        Int(10, 54);
-        Int(14, 40);
-        Int(18, source.Width);
-        Int(22, source.Height);
-        Short(26, 1);
-        Short(28, 24);
-        Int(34, pixelBytes);
-        Int(38, 3780); // 96 DPI
-        Int(42, 3780);
-        for (int y = 0; y < source.Height; y++)
-        {
-            int src = (source.Height - 1 - y) * source.Stride, dst = 54 + y * rowBytes;
-            for (int x = 0; x < source.Width; x++, src += 4, dst += 3)
-            {
-                data[dst] = source.Pixels[src];
-                data[dst + 1] = source.Pixels[src + 1];
-                data[dst + 2] = source.Pixels[src + 2];
-            }
-        }
+        BinaryPrimitives.WriteInt32LittleEndian(data.AsSpan(2), data.Length);
+        // Bytes 6 to 9 are reserved (0); then where the pixels start (no colour table at 24 bits).
+        BinaryPrimitives.WriteInt32LittleEndian(data.AsSpan(10), BmpFileHeaderSize + DibEncoder.HeaderSize);
+        dib.CopyTo(data, BmpFileHeaderSize);
         return data;
     }
 

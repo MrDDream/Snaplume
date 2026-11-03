@@ -1,3 +1,5 @@
+using System.Runtime.InteropServices;
+
 namespace Snaplume.Imaging;
 
 /// <summary>
@@ -21,6 +23,26 @@ public sealed class PixelBuffer
     public int Height { get; }
     public int Stride => Width * 4;
     public byte[] Pixels { get; }
+
+    /// <summary>True when every pixel has an alpha of 255 (no transparency to keep or to composite).</summary>
+    public bool IsOpaque()
+    {
+        var pixels = Pixels.AsSpan(0, Stride * Height);
+        // Four bytes at a time where the system allows it: the alpha is the high byte of a little-endian BGRA pixel.
+        if (BitConverter.IsLittleEndian)
+        {
+            foreach (uint pixel in MemoryMarshal.Cast<byte, uint>(pixels))
+            {
+                if (pixel < 0xFF000000) return false;
+            }
+            return true;
+        }
+        for (int i = 3; i < pixels.Length; i += 4)
+        {
+            if (pixels[i] != 255) return false;
+        }
+        return true;
+    }
 
     /// <summary>Screen copies leave the 4th byte undefined (BGRX): makes every pixel opaque.</summary>
     public PixelBuffer MakeOpaque()

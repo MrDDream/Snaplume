@@ -50,7 +50,7 @@ public static class Loc
     }
 
     /// <summary>Windows display language if Snaplume speaks it, else English.</summary>
-    public static string SystemLanguage
+    private static string SystemLanguage
     {
         get
         {
@@ -82,8 +82,9 @@ public static class Loc
     }
 
     /// <summary>Count with the singular or plural text (French puts 0 in the singular, the other languages do not).</summary>
-    public static string Plural(long count, string oneKey, string manyKey) =>
-        T(count == 1 || (count == 0 && Code == "fr") ? oneKey : manyKey, count);
+    /// <param name="extra">Values of {1}, {2}... ({0} is the count).</param>
+    public static string Plural(long count, string oneKey, string manyKey, params object?[] extra) =>
+        T(count == 1 || (count == 0 && Code == "fr") ? oneKey : manyKey, [count, .. extra]);
 
     private static Dictionary<string, string> Read(string code)
     {

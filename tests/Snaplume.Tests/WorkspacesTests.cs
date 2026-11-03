@@ -50,11 +50,11 @@ public class WorkspacesTests
         // A custom workspace whose folder is the sub-folder "Beta": listed once, under its own name.
         scope.Settings.WorkspaceFolders["Projet"] = Path.Combine(scope.Root, "Beta");
         // A custom workspace named like a sub-folder: the custom one wins.
-        scope.Settings.WorkspaceFolders["Alpha"] = scope.Other;
+        scope.Settings.WorkspaceFolders["Alpha"] = Path.Combine(scope.Other, "Alpha ailleurs");
 
         Assert.Equal(new[] { "", "Alpha", "Clients", "Projet" }, Workspaces.List());
         Assert.Equal(external, Workspaces.FolderOf("Clients"));
-        Assert.Equal(scope.Other, Workspaces.FolderOf("Alpha"));
+        Assert.Equal(Path.Combine(scope.Other, "Alpha ailleurs"), Workspaces.FolderOf("Alpha"));
         Assert.Equal(Path.Combine(scope.Root, "Gamma"), Workspaces.FolderOf("Gamma"));
         Assert.True(Workspaces.IsCustom("clients"));
         Assert.False(Workspaces.IsCustom(""));
@@ -197,5 +197,129 @@ public class WorkspacesTests
         }
         Assert.True(File.Exists(destination));
         Assert.False(File.Exists(third));
+    }
+
+    [AvaloniaFact]
+    public void Workspace_folders_cannot_be_nested()
+    {
+        using var scope = new Scope();
+        var clients = Path.Combine(scope.Other, "Clients");
+        Workspaces.Create("Clients", clients);
+        Workspaces.Create("Alpha");
+
+        // Inside or around the folder of another workspace, or of the root.
+        Assert.Throws<ArgumentException>(() => Workspaces.CheckFolder("New", Path.Combine(clients, "Sub")));
+        Assert.Throws<ArgumentException>(() => Workspaces.CheckFolder("New", scope.Other));
+        Assert.Throws<ArgumentException>(() => Workspaces.CheckFolder("New", Path.Combine(scope.Root, "Alpha", "Deeper")));
+        Assert.Throws<ArgumentException>(() => Workspaces.CheckFolder("New", Path.Combine(scope.Root, ".snaplume")));
+        Assert.Throws<ArgumentException>(() => Workspaces.CheckFolder("New", Path.GetDirectoryName(scope.Root)!));
+        // A direct sub-folder of the root, or a folder beside the others.
+        Assert.Equal(Path.Combine(scope.Root, "New"), Workspaces.CheckFolder("New", Path.Combine(scope.Root, "New")));
+        Assert.Equal(Path.Combine(scope.Other, "Beside"), Workspaces.CheckFolder("New", Path.Combine(scope.Other, "Beside")));
+        // Its own folder, and a folder inside it, are its to take.
+        Assert.Equal(clients, Workspaces.CheckFolder("Clients", clients));
+        Assert.Equal(Path.Combine(clients, "2026"), Workspaces.CheckFolder("Clients", Path.Combine(clients, "2026")));
+    }
+
+    [AvaloniaFact]
+    public void A_sub_folder_holding_the_folder_of_another_workspace_is_not_deleted()
+    {
+        using var scope = new Scope();
+        Workspaces.Create("Parent");
+        var inner = Path.Combine(scope.Root, "Parent", "Inner");
+        Directory.CreateDirectory(inner);
+        // Made by an older version: CheckFolder refuses it now.
+        scope.Settings.WorkspaceFolders["Inner"] = inner;
+
+        Assert.Equal(new[] { "Inner" }, Workspaces.NestedCustomWorkspaces("Parent"));
+        Assert.Empty(Workspaces.NestedCustomWorkspaces("Inner"));
+        Assert.Throws<ArgumentException>(() => Workspaces.Delete("Parent"));
+        Assert.True(Directory.Exists(inner));
+        Assert.Contains("Parent", Workspaces.List());
+
+        // Removing the custom one from the list touches nothing.
+        Assert.True(Workspaces.Delete("Inner"));
+        Assert.True(Directory.Exists(inner));
+        Assert.Empty(Workspaces.NestedCustomWorkspaces("Parent"));
+    }
+
+    [AvaloniaFact]
+    public async Task Captures_are_moved_from_another_thread_with_a_resolved_workspace()
+    {
+        using var scope = new Scope();
+        Workspaces.Create("Projet");
+        Workspaces.Create("Dossier", Path.Combine(scope.Other, "Dossier"));
+        var capture = Path.Combine(scope.Root, "capture.png");
+        ImageIO.Save(Solid(10, 10, Colors.Red), capture);
+
+        var target = Workspaces.Resolve("Dossier");
+        Assert.True(target.IsCustom);
+        var summary = await Task.Run(() => Workspaces.MoveFiles(new[] { capture }, target), TestContext.Current.CancellationToken);
+        Assert.Contains("Dossier", summary);
+        Assert.True(File.Exists(Path.Combine(target.Folder, "capture.png")));
+
+        // The default sub-folder, left with only an empty annotation folder, is removed; never what is in it.
+        var projet = Workspaces.Resolve("Projet");
+        ImageIO.Save(Solid(10, 10, Colors.Blue), Path.Combine(projet.Folder, "b.png"));
+        Directory.CreateDirectory(Path.Combine(projet.Folder, SidecarFiles.Folder));
+        var (moved, failed, _) = await Task.Run(() => Workspaces.MoveCaptures(projet, target.Folder), TestContext.Current.CancellationToken);
+        Assert.Equal((1, 0), (moved, failed));
+        Assert.False(Directory.Exists(projet.Folder));
+    }
+
+    [AvaloniaFact]
+    public void A_rename_that_only_changes_the_case_keeps_another_folder_of_that_name()
+    {
+        using var scope = new Scope();
+        Workspaces.Create("Projet");
+        if (OperatingSystem.IsWindows())
+        {
+            Assert.Equal("projet", Workspaces.Rename("Projet", "projet"));
+            Assert.Equal(new[] { "projet" }, new DirectoryInfo(scope.Root).GetDirectories().Select(d => d.Name));
+            return;
+        }
+        // Linux tells the two apart: "projet" is another folder (another workspace) there.
+        Directory.CreateDirectory(Path.Combine(scope.Root, "projet"));
+        Assert.Equal("projet 2", Workspaces.Rename("Projet", "projet"));
+        Assert.True(Directory.Exists(Path.Combine(scope.Root, "projet")));
+    }
+
+    [AvaloniaFact]
+    public void Settings_copies_and_hidden_workspace_names()
+    {
+        var settings = new AppSettings { ActiveWorkspace = ".snaplume" };
+        settings.WorkspaceFolders["A"] = Path.GetTempPath();
+        var copy = settings.Clone();
+        copy.WorkspaceFolders["B"] = Path.GetTempPath();
+        Assert.Equal(new[] { "A" }, settings.WorkspaceFolders.Keys);
+        Assert.True(copy.WorkspaceFolders.ContainsKey("a"));
+
+        settings.Sanitize();
+        Assert.Equal("", settings.ActiveWorkspace);
+    }
+
+    [AvaloniaFact]
+    public void Unreadable_settings_are_reported_and_numbers_as_text_are_read()
+    {
+        var file = Path.Combine(AppSettings.SettingsFolder, "settings.json");
+        var saved = File.Exists(file) ? File.ReadAllBytes(file) : null;
+        try
+        {
+            File.WriteAllText(file, """{ "DelaySeconds": "7", "JpegQuality": 80 }""");
+            var settings = AppSettings.Load();
+            Assert.False(settings.LoadFailed);
+            Assert.Equal(7, settings.DelaySeconds);
+
+            File.WriteAllText(file, "{ not json");
+            Assert.True(AppSettings.Load().LoadFailed);
+            File.WriteAllText(file, "null");
+            Assert.True(AppSettings.Load().LoadFailed);
+        }
+        finally
+        {
+            if (saved != null) File.WriteAllBytes(file, saved);
+            else File.Delete(file);
+            File.Delete(file + ".bak");
+        }
     }
 }

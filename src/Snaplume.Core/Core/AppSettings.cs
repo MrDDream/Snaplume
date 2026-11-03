@@ -126,29 +126,41 @@ public sealed class AppSettings
 
     private static string SettingsFile => Path.Combine(SettingsFolder, "settings.json");
 
-    private static readonly JsonSerializerOptions JsonOptions = new() { WriteIndented = true };
+    /// <summary>Numbers written as text in a hand-edited file ("DelaySeconds": "5") are read too.</summary>
+    private static readonly JsonSerializerOptions JsonOptions = new() { WriteIndented = true, NumberHandling = JsonNumberHandling.AllowReadingFromString };
 
     /// <summary>Settings folder used before the project was renamed Snaplume.</summary>
     private const string LegacyName = "LibreCapture";
+
+    /// <summary>
+    /// settings.json exists but could not be read (<see cref="Load"/>): the defaults are used, and a copy of the file
+    /// was kept as settings.json.bak before the next save replaces it. Not saved; for the interface to tell the user.
+    /// </summary>
+    [JsonIgnore]
+    public bool LoadFailed { get; private set; }
 
     public static AppSettings Load()
     {
         var migrated = MigrateLegacyFolder();
         AppSettings? settings = null;
+        bool failed = false;
         if (File.Exists(SettingsFile))
         {
             try
             {
-                settings = JsonSerializer.Deserialize<AppSettings>(File.ReadAllText(SettingsFile), JsonOptions);
+                settings = JsonSerializer.Deserialize<AppSettings>(File.ReadAllText(SettingsFile), JsonOptions)
+                           ?? throw new JsonException("settings.json ne contient que null");
             }
             catch (Exception ex)
             {
                 ErrorLog.Write("Lecture des paramètres", ex);
+                failed = true;
                 // The defaults will overwrite the file on the next save: keep a copy for the user.
                 BackUpUnreadableFile();
             }
         }
         settings ??= new AppSettings();
+        settings.LoadFailed = failed;
         settings.Sanitize();
         // The installer may have registered the start with the session: show it checked, so that saving keeps it.
         if (!settings.StartWithSession && AppServices.HasPlatform && AppServices.Platform.Shell.StartsWithSession) settings.StartWithSession = true;
@@ -201,7 +213,8 @@ public sealed class AppSettings
         if (LastUpdateCheckUtc > DateTime.UtcNow) LastUpdateCheckUtc = default;
 
         WorkspaceFolder = NormalizeFolder(WorkspaceFolder) ?? defaults.WorkspaceFolder;
-        ActiveWorkspace = ActiveWorkspace?.Trim() is { } active && Workspaces.IsPlainName(active) ? active : "";
+        // A leading dot would be a hidden folder, not a workspace (".snaplume" holds the annotations).
+        ActiveWorkspace = ActiveWorkspace?.Trim() is { } active && Workspaces.IsPlainName(active) && !active.StartsWith('.') ? active : "";
         // Valid names and absolute folders only, names compared without case like the sub-folders.
         var customFolders = new Dictionary<string, string>(StringComparer.OrdinalIgnoreCase);
         foreach (var (name, folder) in WorkspaceFolders ?? new())
@@ -319,7 +332,16 @@ public sealed class AppSettings
         }
     }
 
-    public AppSettings Clone() => (AppSettings)MemberwiseClone();
+    /// <summary>
+    /// A copy to edit (the settings dialog) with its own list of workspace folders. The folder used in place of an
+    /// unavailable one (<see cref="UseFallbackFolder"/>) is kept: saved unchanged, the copy still writes the configured one.
+    /// </summary>
+    public AppSettings Clone()
+    {
+        var copy = (AppSettings)MemberwiseClone();
+        copy.WorkspaceFolders = new Dictionary<string, string>(WorkspaceFolders, StringComparer.OrdinalIgnoreCase);
+        return copy;
+    }
 
     /// <summary>Turns the start with the user session on or off, as <see cref="StartWithSession"/> says.</summary>
     public void ApplyStartWithSession()

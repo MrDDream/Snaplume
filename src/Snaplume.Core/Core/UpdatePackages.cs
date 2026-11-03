@@ -169,12 +169,19 @@ public static class UpdatePackages
     /// The first address of a download: a file attached to one of the project's releases on github.com, over HTTPS
     /// ("…/releases/download/&lt;tag&gt;/&lt;file&gt;").
     /// </summary>
-    public static bool IsAllowedDownload(Uri uri)
+    public static bool IsAllowedDownload(Uri uri) => IsReleaseDownload(uri, DownloadPrefix);
+
+    /// <summary>
+    /// A file attached to a release of a GitHub project, over plain HTTPS: "<paramref name="prefix"/>&lt;tag&gt;/&lt;file&gt;",
+    /// both plain names (nothing escaped, no "." or "..").
+    /// </summary>
+    /// <param name="prefix">"https://github.com/&lt;owner&gt;/&lt;project&gt;/releases/download/".</param>
+    internal static bool IsReleaseDownload(Uri uri, string prefix)
     {
-        if (!IsHttps(uri) || !string.Equals(uri.Host, "github.com", StringComparison.OrdinalIgnoreCase)) return false;
+        if (!IsPlainHttps(uri) || !string.Equals(uri.Host, "github.com", StringComparison.OrdinalIgnoreCase)) return false;
         var address = uri.GetLeftPart(UriPartial.Path);
-        if (!address.StartsWith(DownloadPrefix, StringComparison.Ordinal)) return false;
-        var rest = address[DownloadPrefix.Length..].Split('/');
+        if (!address.StartsWith(prefix, StringComparison.Ordinal)) return false;
+        var rest = address[prefix.Length..].Split('/');
         return rest.Length == 2 && rest.All(part => part.Length > 0 && part != "." && part != ".." && !part.Contains('%'));
     }
 
@@ -186,8 +193,9 @@ public static class UpdatePackages
 
     /// <summary>GitHub's storage for release files (where github.com redirects their downloads), over HTTPS.</summary>
     internal static bool IsReleaseStorage(Uri uri) =>
-        IsHttps(uri) && RedirectHosts.Any(host => string.Equals(uri.Host, host, StringComparison.OrdinalIgnoreCase));
+        IsPlainHttps(uri) && RedirectHosts.Any(host => string.Equals(uri.Host, host, StringComparison.OrdinalIgnoreCase));
 
-    internal static bool IsHttps(Uri uri) =>
+    /// <summary>An absolute HTTPS address on the default port, without a user name or password.</summary>
+    internal static bool IsPlainHttps(Uri uri) =>
         uri.IsAbsoluteUri && uri.Scheme == Uri.UriSchemeHttps && uri.IsDefaultPort && string.IsNullOrEmpty(uri.UserInfo);
 }

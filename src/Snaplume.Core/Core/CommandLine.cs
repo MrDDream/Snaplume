@@ -26,11 +26,18 @@ public enum CaptureKind
 public sealed record CommandLine(bool Tray, CaptureKind? Capture, int DelaySeconds, bool Exit, string? EditPath,
     string? Record, int DurationSeconds, bool Settings, bool Text, string? Workspace, bool Window = false, bool Qr = false)
 {
-    /// <summary>Options followed by a value.</summary>
-    private static readonly HashSet<string> ValueOptions = new(StringComparer.OrdinalIgnoreCase)
-    {
-        "--delay", "--capture", "--record", "--duration", "--workspace",
-    };
+    /// <summary>
+    /// The option at <paramref name="i"/> takes the next argument as its value: always for --capture, --record and
+    /// --workspace, only a number for --delay and --duration (else the next argument is read on its own). Shared by
+    /// <see cref="Parse"/> and <see cref="WithFullPaths"/>, so that both see the same file paths.
+    /// </summary>
+    private static bool TakesValue(string[] args, int i) =>
+        i + 1 < args.Length && args[i].ToLowerInvariant() switch
+        {
+            "--capture" or "--record" or "--workspace" => true,
+            "--delay" or "--duration" => TryParseInt(args[i + 1], out _),
+            _ => false,
+        };
 
     public static CommandLine Parse(string[] args)
     {
@@ -44,11 +51,11 @@ public sealed record CommandLine(bool Tray, CaptureKind? Capture, int DelaySecon
             {
                 case "--tray": tray = true; break;
                 case "--exit": exit = true; break;
-                case "--delay" when i + 1 < args.Length && TryParseInt(args[i + 1], out var d):
+                case "--delay" when TakesValue(args, i):
+                    TryParseInt(args[++i], out var d);
                     delay = Math.Clamp(d, 0, 60);
-                    i++;
                     break;
-                case "--capture" when i + 1 < args.Length:
+                case "--capture" when TakesValue(args, i):
                     var kind = args[++i].ToLowerInvariant();
                     switch (kind)
                     {
@@ -63,16 +70,16 @@ public sealed record CommandLine(bool Tray, CaptureKind? Capture, int DelaySecon
                         default: ErrorLog.Write("Ligne de commande", $"--capture {kind} : mode inconnu, ignoré"); break;
                     }
                     break;
-                case "--record" when i + 1 < args.Length:
+                case "--record" when TakesValue(args, i):
                     var area = args[++i].ToLowerInvariant();
                     if (area is "screen" or "region") record = area;
                     else ErrorLog.Write("Ligne de commande", $"--record {area} : mode inconnu, ignoré");
                     break;
-                case "--duration" when i + 1 < args.Length && TryParseInt(args[i + 1], out var s):
+                case "--duration" when TakesValue(args, i):
+                    TryParseInt(args[++i], out var s);
                     duration = Math.Clamp(s, 1, 24 * 3600);
-                    i++;
                     break;
-                case "--workspace" when i + 1 < args.Length:
+                case "--workspace" when TakesValue(args, i):
                     workspace = args[++i].Trim();
                     break;
                 case "--settings": settings = true; break;
@@ -93,7 +100,7 @@ public sealed record CommandLine(bool Tray, CaptureKind? Capture, int DelaySecon
         var result = (string[])args.Clone();
         for (int i = 0; i < result.Length; i++)
         {
-            if (ValueOptions.Contains(result[i]))
+            if (TakesValue(result, i))
             {
                 i++;
                 continue;

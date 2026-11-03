@@ -146,7 +146,8 @@ internal static class PdfDocumentWriter
         // waits in memory for its own object.
         var source = ImageIO.Decode(data);
         int width = source.Width, height = source.Height;
-        bool alpha = HasAlpha(source);
+        // Captures saved by Snaplume are opaque: they get no soft mask.
+        bool alpha = !source.IsOpaque();
         int smask = alpha ? pdf.Reserve() : 0;
         int image = pdf.Reserve();
         using var mask = alpha ? new MemoryStream() : null;
@@ -192,18 +193,10 @@ internal static class PdfDocumentWriter
         return image;
     }
 
-    /// <summary>Some pixel is not fully opaque. Captures saved by Snaplume are opaque: they get no soft mask.</summary>
-    private static bool HasAlpha(PixelBuffer image)
-    {
-        var pixels = image.Pixels;
-        for (int i = 3; i < pixels.Length; i += 4)
-        {
-            if (pixels[i] != 255) return true;
-        }
-        return false;
-    }
-
-    /// <summary>Size and number of color components of a baseline or progressive JPEG file, from its SOF marker; null if not a JPEG.</summary>
+    /// <summary>
+    /// Size and number of color components of a baseline or progressive JPEG file of 8-bit samples, from its SOF marker;
+    /// null for another JPEG, or if it is not one.
+    /// </summary>
     internal static (int Width, int Height, int Components)? JpegInfo(byte[] data)
     {
         if (data.Length < 4 || data[0] != 0xFF || data[1] != 0xD8) return null;
@@ -215,9 +208,12 @@ internal static class PdfDocumentWriter
             if (marker == 0xFF) { i++; continue; }
             if (marker is 0xD8 or 0x01 || marker is >= 0xD0 and <= 0xD7) { i += 2; continue; }
             int length = data[i + 2] << 8 | data[i + 3];
-            // SOF0..SOF15, except DHT (C4), JPG (C8) and DAC (CC).
+            // SOF0..SOF15, except DHT (C4), JPG (C8) and DAC (CC). Only baseline, extended and progressive Huffman frames
+            // (SOF0-2) of 8-bit samples are what a PDF reader's DCTDecode takes: the others (lossless, arithmetic,
+            // 12-bit) are decoded and written as pixels.
             if (marker is >= 0xC0 and <= 0xCF and not 0xC4 and not 0xC8 and not 0xCC)
             {
+                if (marker > 0xC2 || data[i + 4] != 8) return null;
                 int height = data[i + 5] << 8 | data[i + 6];
                 int width = data[i + 7] << 8 | data[i + 8];
                 int components = data[i + 9];

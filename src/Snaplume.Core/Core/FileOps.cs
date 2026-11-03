@@ -9,10 +9,10 @@ public static class FileOps
     /// <returns>False if the operation failed or the user cancelled it.</returns>
     public static bool MoveToTrash(IEnumerable<string> paths)
     {
-        var existing = paths.Select(Path.GetFullPath).Where(p => File.Exists(p) || Directory.Exists(p)).ToList();
-        if (existing.Count == 0) return true;
         try
         {
+            var existing = paths.Select(Path.GetFullPath).Where(p => File.Exists(p) || Directory.Exists(p)).ToList();
+            if (existing.Count == 0) return true;
             return AppServices.Platform.Shell.MoveToTrash(existing);
         }
         catch (Exception ex)

@@ -61,7 +61,6 @@ public sealed class DocumentTooLargeException(long bytes, long maxBytes)
     : IOException($"The images take {bytes} bytes, more than the {maxBytes} accepted for a Word document.")
 {
     public long Bytes { get; } = bytes;
-    public long MaxBytes { get; } = maxBytes;
 }
 
 /// <summary>One capture of the document: only its header is read beforehand, never its pixels.</summary>
@@ -74,6 +73,12 @@ internal sealed record DocumentImage(string Path, int PixelWidth, int PixelHeigh
     public double NaturalHeight => PixelHeight * 0.75;
 
     public string FileName => System.IO.Path.GetFileName(Path);
+
+    /// <summary>
+    /// Memory the image takes in a Word document: the file itself, or for a WebP (put in as a PNG, decoded first) its
+    /// pixels, a bound of the PNG's size that a compressed WebP file says nothing of.
+    /// </summary>
+    public long DocxBytes => MimeType == "image/webp" ? Math.Max(Bytes, (long)PixelWidth * PixelHeight * 4) : Bytes;
 
     public string MimeType => System.IO.Path.GetExtension(Path).ToLowerInvariant() switch
     {
@@ -119,10 +124,11 @@ public static class DocumentGenerator
             else skipped.Add(path);
         }
         if (images.Count == 0) throw new InvalidDataException("No readable image.");
-        if (options.Kind == DocumentKind.Docx && images.Sum(i => i.Bytes) is var total && total > MaxDocxImageBytes)
+        if (options.Kind == DocumentKind.Docx && images.Sum(i => i.DocxBytes) is var total && total > MaxDocxImageBytes)
             throw new DocumentTooLargeException(total, MaxDocxImageBytes);
 
-        // Written next to the target, then moved: a failure never leaves a half-written document.
+        // Written next to the target under a hidden name, flushed to the disk, then moved: a failure or a power cut
+        // never leaves a half-written document.
         var temp = TempPathOf(outputPath);
         try
         {
@@ -139,6 +145,10 @@ public static class DocumentGenerator
                     break;
             }
             cancellation.ThrowIfCancellationRequested();
+            using (var written = new FileStream(temp, FileMode.Open, FileAccess.ReadWrite, FileShare.None))
+            {
+                written.Flush(flushToDisk: true);
+            }
             File.Move(temp, outputPath, overwrite: true);
         }
         catch
@@ -157,10 +167,19 @@ public static class DocumentGenerator
     }
 
     /// <summary>
-    /// File the document is written to before it is moved to <paramref name="outputPath"/>. Deleted when the
-    /// generation fails or is cancelled; the dialog also deletes it if Snaplume quits in the middle.
+    /// File the document is written to before it is moved to <paramref name="outputPath"/>: hidden, in the same folder,
+    /// with a name no file of the user has (".report.pdf.&lt;id&gt;.tmp"; the same for a given output during a session,
+    /// so that the dialog can tell it). Deleted when the generation fails or is cancelled; the dialog also deletes it
+    /// if Snaplume quits in the middle.
     /// </summary>
-    internal static string TempPathOf(string outputPath) => Path.GetFullPath(outputPath) + ".tmp";
+    internal static string TempPathOf(string outputPath)
+    {
+        var full = Path.GetFullPath(outputPath);
+        return Path.Combine(Path.GetDirectoryName(full)!, $".{Path.GetFileName(full)}.{SessionId}.tmp");
+    }
+
+    /// <summary>Part of the temporary file names, drawn once per session.</summary>
+    private static readonly string SessionId = Guid.NewGuid().ToString("N");
 
     /// <summary>Size and date of an image, from its header only. Null if it is not a readable image (or too large).</summary>
     internal static DocumentImage? Probe(string path)
@@ -228,7 +247,8 @@ public static class DocumentGenerator
     {
         foreach (var c in text)
         {
-            if (c is >= '֐' and <= 'ࣿ' or >= 'יִ' and <= '﷿' or >= 'ﹰ' and <= '﻿') return true;
+            // Hebrew, Arabic, Syriac, Thaana, N'Ko... (0590-08FF) and their presentation forms (FB1D-FDFF, FE70-FEFF).
+            if (c is >= '\u0590' and <= '\u08FF' or >= '\uFB1D' and <= '\uFDFF' or >= '\uFE70' and <= '\uFEFF') return true;
             if (char.IsLetter(c)) return false;
         }
         return false;

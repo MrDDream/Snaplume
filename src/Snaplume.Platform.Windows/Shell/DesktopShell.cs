@@ -285,39 +285,5 @@ public sealed class DesktopShell : IDesktopShell
         }
     }
 
-    internal bool IsTooBroad(string folder)
-    {
-        folder = Path.TrimEndingDirectorySeparator(folder);
-        // Drive root (C:\) or network share root (\\server\share).
-        if (Path.GetPathRoot(folder) is { } root && SameFolder(root, folder)) return true;
-
-        var personal = new[]
-        {
-            Environment.SpecialFolder.UserProfile, Environment.SpecialFolder.Desktop, Environment.SpecialFolder.DesktopDirectory,
-            Environment.SpecialFolder.MyDocuments, Environment.SpecialFolder.MyPictures, Environment.SpecialFolder.MyVideos,
-            Environment.SpecialFolder.MyMusic, Environment.SpecialFolder.CommonDesktopDirectory,
-            Environment.SpecialFolder.CommonDocuments, Environment.SpecialFolder.CommonPictures, Environment.SpecialFolder.CommonVideos,
-        }.Select(Environment.GetFolderPath).Append(DownloadsFolder).Where(p => !string.IsNullOrEmpty(p)).ToList();
-        // The folder itself, or one of its parents (e.g. C:\Users, or a OneDrive folder holding Documents).
-        if (personal.Any(p => SameFolder(p, folder) || IsInside(p, folder))) return true;
-
-        var system = new[]
-        {
-            Environment.SpecialFolder.Windows, Environment.SpecialFolder.ProgramFiles, Environment.SpecialFolder.ProgramFilesX86,
-            Environment.SpecialFolder.CommonApplicationData,
-        }.Select(Environment.GetFolderPath).Where(p => !string.IsNullOrEmpty(p));
-        // System folders and everything inside them.
-        return system.Any(p => SameFolder(p, folder) || IsInside(folder, p));
-    }
-
-    private static bool SameFolder(string a, string b) =>
-        string.Equals(Path.TrimEndingDirectorySeparator(Path.GetFullPath(a)), Path.TrimEndingDirectorySeparator(Path.GetFullPath(b)),
-            StringComparison.OrdinalIgnoreCase);
-
-    /// <summary>True when <paramref name="path"/> is strictly inside <paramref name="folder"/>.</summary>
-    private static bool IsInside(string path, string folder)
-    {
-        var parent = Path.TrimEndingDirectorySeparator(Path.GetFullPath(folder)) + Path.DirectorySeparatorChar;
-        return Path.GetFullPath(path).StartsWith(parent, StringComparison.OrdinalIgnoreCase);
-    }
+    internal bool IsTooBroad(string folder) => PathRules.IsTooBroad(folder, DownloadsFolder);
 }
