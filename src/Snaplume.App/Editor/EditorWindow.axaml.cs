@@ -42,9 +42,10 @@ public partial class EditorWindow : Window
     /// <summary>Zoom factors of the magnifier offered in the properties bar.</summary>
     private static readonly double[] LensZooms = { 1.5, 2, 2.5, 3, 4 };
 
-    /// <summary>Colors offered for the background of the image effects (files have no transparency).</summary>
+    /// <summary>Colors offered for the background of the image effects; transparent stays see-through in PNG only.</summary>
     private static readonly (Color Color, string Name)[] EffectBackgrounds =
     {
+        (Colors.Transparent, Loc.T("Effects.Transparent")),
         (Colors.White, Loc.T("Editor.Color.White")),
         (Color.FromRgb(0xF3, 0xF4, 0xF6), Loc.T("Effects.LightGray")),
         (Color.FromRgb(0x1F, 0x29, 0x37), Loc.T("Effects.DarkGray")),
@@ -353,13 +354,30 @@ public partial class EditorWindow : Window
             Margin = new Thickness(2, 0),
             Padding = default,
             Focusable = false,
-            Background = new ImmutableSolidColorBrush(color),
+            Background = ColorBrush(color),
         };
         swatch.Classes.Add("swatch");
         ToolTip.SetTip(swatch, name);
         swatch.Click += (_, _) => click();
         return swatch;
     }
+
+    /// <summary>White and grey squares, under a color that is not opaque (transparent background of the effects).</summary>
+    private static readonly IBrush Checkerboard = new DrawingBrush(new DrawingGroup
+    {
+        Children =
+        {
+            new GeometryDrawing { Brush = Brushes.White, Geometry = new RectangleGeometry(new Rect(0, 0, 8, 8)) },
+            new GeometryDrawing { Brush = new ImmutableSolidColorBrush(Color.FromRgb(0xC8, 0xCC, 0xD2)), Geometry = Geometry.Parse("M0,0 H4 V4 H0 Z M4,4 H8 V8 H4 Z") },
+        },
+    })
+    {
+        TileMode = TileMode.Tile,
+        DestinationRect = new RelativeRect(0, 0, 8, 8, RelativeUnit.Absolute),
+    };
+
+    /// <summary>The color of a swatch; a checkerboard shows through a transparent one.</summary>
+    private static IBrush ColorBrush(Color color) => color.A == 255 ? new ImmutableSolidColorBrush(color) : Checkerboard;
 
     // ---- Tools and style ----
 
@@ -736,8 +754,9 @@ public partial class EditorWindow : Window
         // The image keeps its coordinates; the effects add margins around it.
         var margin = Backdrop.ImageMargin;
         if (ImageLayer.Margin != margin) ImageLayer.Margin = margin;
-        // The shadow of the effects replaces the decorative one of the page.
-        ImagePage.IsVisible = _document.PreviewLayout?.Effects.Shadow != true;
+        // The shadow of the effects replaces the decorative one of the page; transparent corners must not show the page.
+        ImagePage.IsVisible = _document.PreviewLayout is not { } layout
+                              || !layout.Effects.Shadow && (layout.OutlineGeometry == null || layout.Effects.Background.A == 255);
         if (EffectsPopup.IsOpen) ShowEffects();
         if (BordersPopup.IsOpen) RefreshBorders();
         if (DeleteSection.IsVisible != hasSelection) UpdateContext();
@@ -909,7 +928,7 @@ public partial class EditorWindow : Window
             if (shown == null || shown.BorderColor != effects.BorderColor || shown.Background != effects.Background)
             {
                 foreach (var (dot, isBorder) in _effectColorDots)
-                    dot.Background = new ImmutableSolidColorBrush(isBorder ? effects.BorderColor : effects.Background);
+                    dot.Background = ColorBrush(isBorder ? effects.BorderColor : effects.Background);
             }
         }
         finally

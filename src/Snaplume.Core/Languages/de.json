@@ -590,7 +590,7 @@
   "Effects.Reseed": "Andere Kante",
   "Effects.ReseedTip": "Eine andere Reißkante erzeugen",
   "Effects.Background": "Hintergrund",
-  "Effects.BackgroundNote": "Bilder werden ohne Transparenz gespeichert: Die Schattenränder, die abgerundeten Ecken und die abgerissenen Teile erhalten diese Farbe.",
+  "Effects.BackgroundNote": "Farbe der Schattenränder, abgerundeten Ecken und abgerissenen Teile. Transparent: In PNG bleiben sie durchsichtig, in JPEG und BMP werden sie weiß.",
   "Effects.LightGray": "Hellgrau",
   "Effects.DarkGray": "Dunkelgrau",
   "Effects.Gray": "Grau",
@@ -886,5 +886,6 @@
   "Recording.ZoomDescription": "Bei jedem Klick nähert sich das Video kurz der angeklickten Stelle und kehrt dann zum gesamten Bereich zurück.",
   "Recording.ZoomSetting": "Bei Klicks zoomen",
   "Recording.ZoomTip": "Bei jedem Mausklick an die Klickstelle heranzoomen",
-  "Recording.ZoomUnavailable": "Auf diesem Desktop nicht verfügbar: Das System lässt Snaplume die Mausklicks nicht verfolgen."
+  "Recording.ZoomUnavailable": "Auf diesem Desktop nicht verfügbar: Das System lässt Snaplume die Mausklicks nicht verfolgen.",
+  "Effects.Transparent": "Transparent"
 }

@@ -590,7 +590,7 @@
   "Effects.Reseed": "Otro corte",
   "Effects.ReseedTip": "Generar otra forma de rasgado",
   "Effects.Background": "Fondo",
-  "Effects.BackgroundNote": "Las imágenes se guardan sin transparencia: los márgenes de la sombra, las esquinas redondeadas y las partes rasgadas toman este color.",
+  "Effects.BackgroundNote": "Color de los márgenes de la sombra, las esquinas redondeadas y las partes rasgadas. Transparente: quedan transparentes en PNG y se vuelven blancas en JPEG y BMP.",
   "Effects.LightGray": "Gris claro",
   "Effects.DarkGray": "Gris oscuro",
   "Effects.Gray": "Gris",
@@ -886,5 +886,6 @@
   "Recording.ZoomDescription": "En cada clic, el vídeo se acerca un instante al lugar pulsado y luego vuelve a toda la zona.",
   "Recording.ZoomSetting": "Acercar en los clics",
   "Recording.ZoomTip": "Acercar la imagen al lugar de cada clic del ratón",
-  "Recording.ZoomUnavailable": "No disponible en este escritorio: el sistema no permite que Snaplume siga los clics del ratón."
+  "Recording.ZoomUnavailable": "No disponible en este escritorio: el sistema no permite que Snaplume siga los clics del ratón.",
+  "Effects.Transparent": "Transparente"
 }

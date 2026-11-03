@@ -205,6 +205,33 @@ public class EditorRenderingTests
     }
 
     [AvaloniaFact]
+    public void Cut_off_parts_are_transparent_by_default_and_white_in_jpeg()
+    {
+        using var folder = new TempFolder();
+        var path = folder.File("capture.png");
+        ImageIO.Save(Solid(200, 120, Blue), path);
+        var document = EditorDocument.Load(path);
+        document.SetEffects(ImageEffects.None with { CornerRadius = 30 });
+        var rounded = document.Flatten();
+        // The rounded corner is see-through.
+        Assert.Equal(0, At(rounded, 1, 1).A);
+        Assert.True(Near(At(rounded, 100, 60), Blue));
+
+        document.SetEffects(ImageEffects.None with { CornerRadius = 30, Shadow = true });
+        var image = document.Flatten();
+        var padding = document.Effects.GetPadding();
+        // The far margin is see-through, the shadow a translucent dark.
+        Assert.Equal(0, At(image, 0, 0).A);
+        var shadow = At(image, padding.Left + 100, image.Height - 2 - padding.Bottom / 2);
+        Assert.True(shadow.A is > 0 and < 255, $"shadow {shadow}");
+        Assert.True(Near(At(image, padding.Left + 100, padding.Top + 60), Blue));
+
+        var jpeg = folder.File("capture.jpg");
+        ImageIO.Save(rounded, jpeg);
+        Assert.True(Near(At(ImageIO.Load(jpeg), 1, 1), Colors.White, 6));
+    }
+
+    [AvaloniaFact]
     public void Insert_grows_the_capture_shifts_annotations_and_undoes_in_one_step()
     {
         using var folder = new TempFolder();

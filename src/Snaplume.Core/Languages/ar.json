@@ -590,7 +590,7 @@
   "Effects.Reseed": "تمزيق آخر",
   "Effects.ReseedTip": "إنشاء شكل آخر للحافة الممزقة",
   "Effects.Background": "الخلفية",
-  "Effects.BackgroundNote": "تُحفظ الصور بدون شفافية: تأخذ هوامش الظل والزوايا المستديرة والأجزاء الممزقة هذا اللون.",
+  "Effects.BackgroundNote": "لون هوامش الظل والزوايا المستديرة والأجزاء الممزقة. شفاف: تبقى شفافة في PNG وتصبح بيضاء في JPEG وBMP.",
   "Effects.LightGray": "رمادي فاتح",
   "Effects.DarkGray": "رمادي داكن",
   "Effects.Gray": "رمادي",
@@ -886,5 +886,6 @@
   "Recording.ZoomDescription": "عند كل نقرة، يقترب الفيديو لحظةً من الموضع الذي نُقر عليه، ثم يعود إلى المنطقة كاملة.",
   "Recording.ZoomSetting": "التكبير عند النقر",
   "Recording.ZoomTip": "التكبير على موضع كل نقرة بالفأرة",
-  "Recording.ZoomUnavailable": "غير متاح على سطح المكتب هذا: لا يسمح النظام لـ Snaplume بتتبع نقرات الفأرة."
+  "Recording.ZoomUnavailable": "غير متاح على سطح المكتب هذا: لا يسمح النظام لـ Snaplume بتتبع نقرات الفأرة.",
+  "Effects.Transparent": "شفاف"
 }

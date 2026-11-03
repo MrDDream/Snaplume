@@ -24,8 +24,7 @@ public enum TornEdges
 /// Effects applied to the whole image (drop shadow, border, rounded corners, torn edges), saved with the
 /// annotations and rendered around them. Immutable: a change is a new value, kept by the undo history.
 /// The shadow adds margins around the image in the flattened output only; annotation coordinates stay
-/// relative to the image. Saved images have no transparency, so the margins and the cut-off parts take
-/// <see cref="Background"/>.
+/// relative to the image. The margins and the cut-off parts take <see cref="Background"/>, transparent unless chosen.
 /// </summary>
 public sealed record ImageEffects
 {
@@ -58,8 +57,11 @@ public sealed record ImageEffects
     /// <summary>Draws the teeth: the same seed always gives the same edge.</summary>
     public int TornSeed { get; init; } = 1;
 
-    /// <summary>Color of the margins and of the parts cut off (files have no transparency).</summary>
-    public Color Background { get; init; } = Colors.White;
+    /// <summary>
+    /// Color of the margins and of the parts cut off; transparent by default, so that rounded corners and torn edges
+    /// stay see-through in PNG (JPEG and BMP put them on white). Files of older versions store their color.
+    /// </summary>
+    public Color Background { get; init; } = Colors.Transparent;
 
     [JsonIgnore]
     public bool IsEmpty => !Shadow && !Border && CornerRadius <= 0 && TornEdges == TornEdges.None;
@@ -133,8 +135,7 @@ public sealed class EffectsLayout
         var outline = EffectsRenderer.Outline(effects, width, height, shared);
         OutlineGeometry = outline?.Geometry;
 
-        var background = effects.Background;
-        _background = new ImmutableSolidColorBrush(Color.FromRgb(background.R, background.G, background.B));
+        _background = new ImmutableSolidColorBrush(effects.Background);
 
         if (effects.Shadow && effects.ShadowOpacity > 0)
             _shadow = EffectsRenderer.Shadow(effects, outline, width, height, shared);

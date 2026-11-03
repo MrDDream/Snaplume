@@ -590,7 +590,7 @@
   "Effects.Reseed": "Another tear",
   "Effects.ReseedTip": "Draw another torn shape",
   "Effects.Background": "Background",
-  "Effects.BackgroundNote": "Images are saved without transparency: the shadow margins, the rounded corners and the torn parts take this color.",
+  "Effects.BackgroundNote": "Color of the shadow margins, rounded corners and torn parts. Transparent: they stay see-through in PNG and turn white in JPEG and BMP.",
   "Effects.LightGray": "Light gray",
   "Effects.DarkGray": "Dark gray",
   "Effects.Gray": "Gray",
@@ -886,5 +886,6 @@
   "Recording.ZoomDescription": "At each click, the video briefly moves closer to the clicked spot, then returns to the whole area.",
   "Recording.ZoomSetting": "Zoom in on clicks",
   "Recording.ZoomTip": "Zoom in where each mouse click happens",
-  "Recording.ZoomUnavailable": "Not available on this desktop: the system does not let Snaplume follow mouse clicks."
+  "Recording.ZoomUnavailable": "Not available on this desktop: the system does not let Snaplume follow mouse clicks.",
+  "Effects.Transparent": "Transparent"
 }

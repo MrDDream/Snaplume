@@ -590,7 +590,7 @@
   "Effects.Reseed": "Autre découpe",
   "Effects.ReseedTip": "Tirer une autre forme de déchirure",
   "Effects.Background": "Fond",
-  "Effects.BackgroundNote": "Les images sont enregistrées sans transparence : les marges de l'ombre, les coins arrondis et les parties déchirées prennent cette couleur.",
+  "Effects.BackgroundNote": "Couleur des marges de l’ombre, des coins arrondis et des parties déchirées. Transparent : ils restent transparents en PNG et deviennent blancs en JPEG et BMP.",
   "Effects.LightGray": "Gris clair",
   "Effects.DarkGray": "Gris foncé",
   "Effects.Gray": "Gris",
@@ -886,5 +886,6 @@
   "Recording.ZoomDescription": "À chaque clic, la vidéo s'approche un instant de l'endroit cliqué, puis revient à toute la zone.",
   "Recording.ZoomSetting": "Zoomer sur les clics",
   "Recording.ZoomTip": "Zoomer sur l'endroit de chaque clic de souris",
-  "Recording.ZoomUnavailable": "Indisponible sur ce bureau : le système ne laisse pas Snaplume suivre les clics de souris."
+  "Recording.ZoomUnavailable": "Indisponible sur ce bureau : le système ne laisse pas Snaplume suivre les clics de souris.",
+  "Effects.Transparent": "Transparent"
 }

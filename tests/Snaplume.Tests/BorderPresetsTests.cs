@@ -49,7 +49,7 @@ public class BorderPresetsTests
             // The background and the shape of the torn edges stay those of the image.
             Assert.Equal(Colors.Black, applied.Background);
             Assert.Equal(7, applied.TornSeed);
-            Assert.Equal(preset.Effects, applied with { Background = Colors.White, TornSeed = 1 });
+            Assert.Equal(preset.Effects, applied with { Background = ImageEffects.None.Background, TornSeed = 1 });
         }
     }
 

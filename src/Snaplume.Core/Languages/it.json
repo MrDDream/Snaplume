@@ -590,7 +590,7 @@
   "Effects.Reseed": "Altro strappo",
   "Effects.ReseedTip": "Genera un'altra forma di strappo",
   "Effects.Background": "Sfondo",
-  "Effects.BackgroundNote": "Le immagini vengono salvate senza trasparenza: i margini dell'ombra, gli angoli arrotondati e le parti strappate prendono questo colore.",
+  "Effects.BackgroundNote": "Colore dei margini dell’ombra, degli angoli arrotondati e delle parti strappate. Trasparente: restano trasparenti in PNG e diventano bianchi in JPEG e BMP.",
   "Effects.LightGray": "Grigio chiaro",
   "Effects.DarkGray": "Grigio scuro",
   "Effects.Gray": "Grigio",
@@ -886,5 +886,6 @@
   "Recording.ZoomDescription": "A ogni clic, il video si avvicina per un attimo al punto cliccato, poi torna all'intera area.",
   "Recording.ZoomSetting": "Zoom sui clic",
   "Recording.ZoomTip": "Ingrandisci il punto di ogni clic del mouse",
-  "Recording.ZoomUnavailable": "Non disponibile su questo desktop: il sistema non permette a Snaplume di seguire i clic del mouse."
+  "Recording.ZoomUnavailable": "Non disponibile su questo desktop: il sistema non permette a Snaplume di seguire i clic del mouse.",
+  "Effects.Transparent": "Trasparente"
 }
