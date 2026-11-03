@@ -213,6 +213,8 @@ h3 { margin: 0 0 8px; font-size: 1.15rem; }
 .themes-shot { max-width: 1000px; margin: 0 auto; }
 
 /* Download */
+.dl-platform { max-width: 900px; margin: 0 auto 16px; font-size: 1.35rem; }
+.note + .dl-platform { margin-top: 48px; }
 .downloads { display: grid; gap: 20px; grid-template-columns: repeat(auto-fit, minmax(280px, 1fr)); max-width: 900px; margin: 0 auto; }
 .downloads .card { display: flex; flex-direction: column; gap: 10px; }
 .downloads .card p { margin: 0; color: var(--muted); }
