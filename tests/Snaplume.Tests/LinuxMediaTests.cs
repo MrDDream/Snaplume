@@ -37,6 +37,27 @@ public class LinuxMediaTests
         Assert.Contains("openh264enc", description);
         Assert.Contains("framerate=60/1", description);
         Assert.DoesNotContain("pulsesrc", description); // no audio encoder: no sound rather than a failure
+        // An even stream keeps its own size (larger than the announced one on a HiDPI screen).
+        Assert.DoesNotContain("videoscale", description);
+    }
+
+    [Fact]
+    public void PipeWire_window_of_odd_size_is_scaled_to_an_even_one()
+    {
+        var description = RecordingPipeline.Build(new PipeWireSource(42, 57, 801, 601), 30, "x264enc", null, false, false, null, 800, 600);
+        Assert.Contains("videorate ! video/x-raw,framerate=30/1 ! videoscale ! video/x-raw,width=800,height=600", description);
+        var tall = RecordingPipeline.Build(new PipeWireSource(42, 57, 800, 1), 30, "x264enc", null, false, false, null, 800, 0);
+        Assert.Contains("video/x-raw,width=800,height=2", tall);
+    }
+
+    [Fact]
+    public void Faststart_spool_lies_beside_the_recording()
+    {
+        var output = Path.Combine(Path.GetTempPath(), "rec", "Recording 1.mp4");
+        var spool = RecordingPipeline.FastStartFile(output);
+        Assert.Equal(Path.GetDirectoryName(output), Path.GetDirectoryName(spool));
+        Assert.Equal(".Recording 1.mp4.faststart", Path.GetFileName(spool));
+        Assert.Contains($"mp4mux name={RecordingPipeline.MuxElement} ", RecordingPipeline.Build(new PipeWireSource(1, 2, 640, 480), 30, "x264enc", null, false, false, null, 640, 480));
     }
 
     [Fact]

@@ -14,14 +14,12 @@ internal static unsafe class Gst
     private const string GLib = "libglib-2.0.so.0";
 
     public const int StateNull = 1, StatePaused = 3, StatePlaying = 4;
-    public const int StateChangeFailure = 0, StateChangeSuccess = 1, StateChangeAsync = 2, StateChangeNoPreroll = 3;
+    public const int StateChangeFailure = 0;
     public const int FormatTime = 3;
     public const int SeekFlagFlush = 1, SeekFlagAccurate = 2, SeekFlagKeyUnit = 4;
     public const int MapRead = 1;
-    public const ulong ClockTimeNone = ulong.MaxValue;
 
-    public const int MessageEos = 1 << 0, MessageError = 1 << 1, MessageWarning = 1 << 2, MessageStateChanged = 1 << 6,
-        MessageDurationChanged = 1 << 18, MessageAsyncDone = 1 << 21;
+    public const int MessageEos = 1 << 0, MessageError = 1 << 1, MessageWarning = 1 << 2, MessageDurationChanged = 1 << 18;
 
     /// <summary>GstMessage.type, after the 64-byte GstMiniObject header (LP64).</summary>
     public const int MessageTypeOffset = 64;
@@ -29,7 +27,7 @@ internal static unsafe class Gst
     public const int MessageSourceOffset = 80;
 
     // Fundamental GTypes are fixed numbers (type id << 2).
-    public const nuint TypeBoolean = 5 << 2, TypeInt = 6 << 2, TypeDouble = 15 << 2, TypeString = 16 << 2;
+    public const nuint TypeInt = 6 << 2, TypeDouble = 15 << 2, TypeString = 16 << 2;
 
     [StructLayout(LayoutKind.Sequential)]
     public struct GValue
@@ -57,6 +55,7 @@ internal static unsafe class Gst
     [DllImport(Core)] public static extern IntPtr gst_element_get_bus(IntPtr element);
     [DllImport(Core)] public static extern IntPtr gst_bus_timed_pop_filtered(IntPtr bus, ulong timeout, int types);
     [DllImport(Core)] public static extern void gst_mini_object_unref(IntPtr obj);
+    [DllImport(Core)] public static extern IntPtr gst_object_ref(IntPtr obj);
     [DllImport(Core)] public static extern void gst_object_unref(IntPtr obj);
     [DllImport(Core)] public static extern IntPtr gst_object_get_name(IntPtr obj);
     [DllImport(Core)] public static extern void gst_message_parse_error(IntPtr message, out IntPtr error, out IntPtr debug);
@@ -66,7 +65,6 @@ internal static unsafe class Gst
     [DllImport(Core)] public static extern IntPtr gst_bin_get_by_name(IntPtr bin, [MarshalAs(UnmanagedType.LPUTF8Str)] string name);
     [DllImport(Core)] public static extern int gst_element_query_position(IntPtr element, int format, out long position);
     [DllImport(Core)] public static extern int gst_element_query_duration(IntPtr element, int format, out long duration);
-    [DllImport(Core)] public static extern int gst_element_seek_simple(IntPtr element, int format, int flags, long position);
     /// <summary>Seek with a playback rate (GstSeekType: 0 none, 1 set).</summary>
     [DllImport(Core)] public static extern int gst_element_seek(IntPtr element, double rate, int format, int flags, int startType, long start, int stopType, long stop);
     public const int SeekTypeNone = 0, SeekTypeSet = 1;
@@ -85,7 +83,6 @@ internal static unsafe class Gst
     [DllImport(GObject)] public static extern IntPtr g_value_init(GValue* value, nuint type);
     [DllImport(GObject)] public static extern void g_value_set_string(GValue* value, [MarshalAs(UnmanagedType.LPUTF8Str)] string text);
     [DllImport(GObject)] public static extern void g_value_set_double(GValue* value, double number);
-    [DllImport(GObject)] public static extern void g_value_set_boolean(GValue* value, int boolean);
     [DllImport(GObject)] public static extern void g_value_set_int(GValue* value, int number);
     [DllImport(GObject)] public static extern void g_value_set_object(GValue* value, IntPtr obj);
     [DllImport(GObject)] public static extern void g_value_unset(GValue* value);

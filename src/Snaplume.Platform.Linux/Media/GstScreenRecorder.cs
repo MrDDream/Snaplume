@@ -41,7 +41,14 @@ internal sealed class GstScreenRecorderFactory : IScreenRecorderFactory
     private static string? HevcEncoder() =>
         GStreamerRuntime.Has("h265parse") ? RecordingPipeline.Choose(RecordingPipeline.HevcEncoders, GStreamerRuntime.Has) : null;
 
-    public async Task<IScreenRecording> StartAsync(RecordingOptions options, string outputPath, CancellationToken cancel = default)
+    /// <remarks>
+    /// Runs on the thread pool: GStreamer's initialisation, the plugin lookups and the start of the pipeline
+    /// (seconds while the live sources open) block, and the caller is usually the UI thread.
+    /// </remarks>
+    public Task<IScreenRecording> StartAsync(RecordingOptions options, string outputPath, CancellationToken cancel = default) =>
+        Task.Run(() => StartCoreAsync(options, outputPath, cancel));
+
+    private async Task<IScreenRecording> StartCoreAsync(RecordingOptions options, string outputPath, CancellationToken cancel)
     {
         GStreamerRuntime.EnsureInit();
         var h264Encoder = RecordingPipeline.Choose(RecordingPipeline.VideoEncoders, GStreamerRuntime.Has)
@@ -90,8 +97,7 @@ internal sealed class GstScreenRecorderFactory : IScreenRecorderFactory
             zoom = false;
         }
         var microphoneDevice = options.Microphone ? options.MicrophoneDevice : "";
-        // Off the UI thread: pactl may be slow to answer.
-        if (microphoneDevice.Length > 0 && (await Task.Run(AudioInputs.List, cancel).ConfigureAwait(false)).All(m => m.Id != microphoneDevice))
+        if (microphoneDevice.Length > 0 && AudioInputs.List().All(m => m.Id != microphoneDevice))
         {
             ErrorLog.Write("Microphone", $"Microphone introuvable, celui par défaut est utilisé : {microphoneDevice}");
             microphoneDevice = "";
@@ -192,6 +198,13 @@ internal sealed class GstRecording : IScreenRecording
             if (sink == IntPtr.Zero) throw new InvalidOperationException("GStreamer: no file sink");
             Gst.SetString(sink, "location", outputPath);
             Gst.gst_object_unref(sink);
+            var mux = Gst.gst_bin_get_by_name(pipeline, RecordingPipeline.MuxElement);
+            if (mux != IntPtr.Zero)
+            {
+                // mp4mux removes its spool when it stops.
+                Gst.SetString(mux, "faststart-file", RecordingPipeline.FastStartFile(outputPath));
+                Gst.gst_object_unref(mux);
+            }
             if (microphoneDevice.Length > 0)
             {
                 // Set as a property, like the file name: a name from the sound server is never parsed.
@@ -207,8 +220,8 @@ internal sealed class GstRecording : IScreenRecording
             Gst.gst_element_set_state(pipeline, Gst.StatePlaying);
             // Live sources: the change completes once every source produced (or failed to open).
             if (Gst.gst_element_get_state(pipeline, out _, out _, 8_000_000_000UL) == Gst.StateChangeFailure)
-                throw new InvalidOperationException("GStreamer: " + (recording.PopError() ?? "the recording could not start"));
-            if (recording.PopError() is { } failure) throw new InvalidOperationException("GStreamer: " + failure);
+                throw new InvalidOperationException("GStreamer: " + (GStreamerRuntime.PopError(recording._bus) ?? "the recording could not start"));
+            if (GStreamerRuntime.PopError(recording._bus) is { } failure) throw new InvalidOperationException("GStreamer: " + failure);
         }
         catch
         {
@@ -246,20 +259,6 @@ internal sealed class GstRecording : IScreenRecording
             Gst.SetInt(_crop, "right", Math.Max(0, area.Width - view.Right));
             Gst.SetInt(_crop, "bottom", Math.Max(0, area.Height - view.Bottom));
             return true;
-        }
-    }
-
-    private string? PopError()
-    {
-        var message = Gst.gst_bus_timed_pop_filtered(_bus, 0, Gst.MessageError);
-        if (message == IntPtr.Zero) return null;
-        try
-        {
-            return GStreamerRuntime.DescribeMessage(message);
-        }
-        finally
-        {
-            Gst.gst_mini_object_unref(message);
         }
     }
 
