@@ -48,11 +48,15 @@ internal sealed class LinuxUpdateInstaller : IUpdateInstaller
         return InstallKind.Unknown;
     }
 
-    public void StartInstaller(string package) => throw new NotSupportedException("Installateurs Windows uniquement");
+    public void StartInstaller(string package, string sha256) => throw new NotSupportedException("Installateurs Windows uniquement");
 
-    public async Task<bool> InstallPackageAsync(string package)
+    public async Task<bool> InstallPackageAsync(string package, string sha256)
     {
-        var pkexec = ExternalTools.Find("pkexec");
+        package = Path.GetFullPath(package);
+        // Checked again right before the package manager gets it, as root.
+        if (!UpdateDownloader.HasSha256(package, sha256))
+            throw new UpdateVerificationException($"Somme SHA-256 de {Path.GetFileName(package)} différente avant l'installation");
+        var pkexec = File.Exists(Pkexec) ? Pkexec : null;
         var command = PackageManagerCommand(package);
         if (pkexec == null || command == null)
         {
@@ -80,23 +84,30 @@ internal sealed class LinuxUpdateInstaller : IUpdateInstaller
     /// </summary>
     private List<string>? PackageManagerCommand(string package)
     {
-        package = Path.GetFullPath(package);
-        if (InstallKind == InstallKind.Deb && ExternalTools.Find("apt-get") is { } apt)
+        if (InstallKind == InstallKind.Deb && FindSystemTool("apt-get") is { } apt)
             return new List<string> { apt, "install", "-y", package };
         if (InstallKind == InstallKind.Rpm)
         {
-            if (ExternalTools.Find("dnf") is { } dnf) return new List<string> { dnf, "install", "-y", package };
-            if (ExternalTools.Find("zypper") is { } zypper)
+            if (FindSystemTool("dnf") is { } dnf) return new List<string> { dnf, "install", "-y", package };
+            if (FindSystemTool("zypper") is { } zypper)
                 return new List<string> { zypper, "--non-interactive", "install", "--allow-unsigned-rpm", package };
         }
         return null;
     }
 
+    /// <summary>pkexec by its absolute path: never one found earlier in the user's PATH.</summary>
+    private const string Pkexec = "/usr/bin/pkexec";
+
+    /// <summary>Folders of the system's own programs: a program run as root is never taken from the user's PATH (~/bin...).</summary>
+    internal const string SystemPath = "/usr/bin:/usr/sbin:/bin:/sbin";
+
+    internal static string? FindSystemTool(string name) => ExternalTools.Find(name, SystemPath);
+
     public string ManualInstallCommand(string package)
     {
         var tool = InstallKind switch
         {
-            InstallKind.Rpm when ExternalTools.Find("dnf") == null && ExternalTools.Find("zypper") != null => "zypper install --allow-unsigned-rpm",
+            InstallKind.Rpm when FindSystemTool("dnf") == null && FindSystemTool("zypper") != null => "zypper install --allow-unsigned-rpm",
             InstallKind.Rpm => "dnf install",
             _ => "apt install",
         };

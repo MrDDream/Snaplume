@@ -141,16 +141,16 @@
             <!-- Title bar (dragged to move the panel) -->
             <DockPanel Name="TitleBar" DockPanel.Dock="Top" Background="{DynamicResource PanelChromeBrush}" Height="38">
                 <StackPanel DockPanel.Dock="Right" Orientation="Horizontal">
-                    <Button Classes="flat title" Click="OnOpenFolder" ToolTip.Tip="{l:T Panel.OpenFolderTip}">
+                    <Button Classes="flat title" Click="OnOpenFolder" ToolTip.Tip="{l:T Panel.OpenFolderTip}" AutomationProperties.Name="{l:T Panel.OpenFolderTip}">
                         <Path Classes="icon" Data="{StaticResource IconFolder}" />
                     </Button>
-                    <Button Classes="flat title" Click="OnSettings" ToolTip.Tip="{l:T Panel.SettingsTip}">
+                    <Button Classes="flat title" Click="OnSettings" ToolTip.Tip="{l:T Panel.SettingsTip}" AutomationProperties.Name="{l:T Panel.SettingsTip}">
                         <Path Classes="icon" Data="{StaticResource IconSettings}" />
                     </Button>
-                    <Button Classes="flat title" Click="OnOpenWorkspace" ToolTip.Tip="{l:T Panel.OpenWorkspaceTip}">
+                    <Button Classes="flat title" Click="OnOpenWorkspace" ToolTip.Tip="{l:T Panel.OpenWorkspaceTip}" AutomationProperties.Name="{l:T Panel.OpenWorkspaceTip}">
                         <Path Classes="icon" Data="{StaticResource IconExpand}" />
                     </Button>
-                    <Button Classes="flat title" Click="OnHide" ToolTip.Tip="{l:T Panel.HideTip}">
+                    <Button Classes="flat title" Click="OnHide" ToolTip.Tip="{l:T Panel.HideTip}" AutomationProperties.Name="{l:T Panel.HideTip}">
                         <Path Classes="icon" Data="{StaticResource IconClose}" />
                     </Button>
                 </StackPanel>
@@ -180,16 +180,20 @@
 
                     <!-- Actions on the selection -->
                     <StackPanel DockPanel.Dock="Right" Orientation="Horizontal" VerticalAlignment="Center">
-                        <Button Name="EditButton" Classes="selection-action" Tag="{l:T Panel.Edit}" Click="OnEdit" ToolTip.Tip="{l:T Panel.EditTip}">
+                        <Button Name="EditButton" Classes="selection-action" Tag="{l:T Panel.Edit}" Click="OnEdit" ToolTip.Tip="{l:T Panel.EditTip}"
+                                AutomationProperties.Name="{l:T Panel.Edit}">
                             <Path Classes="icon" Data="{StaticResource IconEdit}" />
                         </Button>
-                        <Button Name="ReadTextButton" Classes="selection-action" Tag="{l:T Ocr.ReadTextShort}" Click="OnReadText" ToolTip.Tip="{l:T Ocr.ReadTextTip}">
+                        <Button Name="ReadTextButton" Classes="selection-action" Tag="{l:T Ocr.ReadTextShort}" Click="OnReadText" ToolTip.Tip="{l:T Ocr.ReadTextTip}"
+                                AutomationProperties.Name="{l:T Ocr.ReadTextShort}">
                             <Path Classes="icon" Data="{StaticResource IconOcr}" />
                         </Button>
-                        <Button Name="ReadQrButton" Classes="selection-action" Tag="{l:T Panel.Qr}" Click="OnReadQrOfSelection" ToolTip.Tip="{l:T Panel.QrTip}">
+                        <Button Name="ReadQrButton" Classes="selection-action" Tag="{l:T Panel.Qr}" Click="OnReadQrOfSelection" ToolTip.Tip="{l:T Panel.QrTip}"
+                                AutomationProperties.Name="{l:T Panel.Qr}">
                             <Path Classes="icon" Data="{StaticResource IconQr}" />
                         </Button>
-                        <Button Name="CopyButton" Classes="selection-action" Tag="{l:T Panel.Copy}" Click="OnCopy" ToolTip.Tip="{l:T Panel.CopyTip}">
+                        <Button Name="CopyButton" Classes="selection-action" Tag="{l:T Panel.Copy}" Click="OnCopy" ToolTip.Tip="{l:T Panel.CopyTip}"
+                                AutomationProperties.Name="{l:T Panel.Copy}">
                             <Path Classes="icon" Data="{StaticResource IconCopy}" />
                         </Button>
                     </StackPanel>
@@ -198,7 +202,7 @@
                         <!-- Capture: the main action, in the accent color -->
                         <StackPanel Orientation="Horizontal">
                             <Button Classes="split" Background="{DynamicResource AccentBrush}" Click="OnCaptureRegion"
-                                    ToolTip.Tip="{l:T Panel.CaptureRegionTip}">
+                                    ToolTip.Tip="{l:T Panel.CaptureRegionTip}" AutomationProperties.Name="{l:T Panel.CaptureRegion}">
                                 <StackPanel Orientation="Horizontal">
                                     <Path Classes="icon" Data="{StaticResource IconCamera}" Stroke="{DynamicResource OnAccentBrush}" />
                                     <TextBlock Text="{l:T Panel.CaptureRegion}" Foreground="{DynamicResource OnAccentBrush}" FontWeight="SemiBold"
@@ -206,8 +210,8 @@
                                 </StackPanel>
                             </Button>
                             <Rectangle Width="1" Fill="{DynamicResource OnAccentLineBrush}" Height="38" />
-                            <Button Name="CaptureMenuButton" Classes="split arrow" Background="{DynamicResource AccentBrush}"
-                                    ToolTip.Tip="{l:T Panel.MoreCapturesTip}">
+                            <Button Classes="split arrow" Background="{DynamicResource AccentBrush}"
+                                    ToolTip.Tip="{l:T Panel.MoreCapturesTip}" AutomationProperties.Name="{l:T Panel.MoreCapturesTip}">
                                 <Path Classes="chevron" Stroke="{DynamicResource OnAccentBrush}" />
                                 <Button.Flyout>
                                     <MenuFlyout Placement="TopEdgeAlignedLeft">
@@ -229,7 +233,7 @@
                         <!-- Video: secondary, with the red "record" dot (a square while recording: stop) -->
                         <StackPanel Orientation="Horizontal" Margin="10,0,0,0">
                             <Button Name="VideoButton" Classes="split" Background="{DynamicResource SecondaryActionBrush}"
-                                    Click="OnRecordVideo" ToolTip.Tip="{l:T Panel.RecordVideoTip}">
+                                    Click="OnRecordVideo" ToolTip.Tip="{l:T Panel.RecordVideoTip}" AutomationProperties.Name="{l:T Panel.RecordVideo}">
                                 <StackPanel Orientation="Horizontal">
                                     <Panel Width="11" Height="11" VerticalAlignment="Center" Margin="2,0,1,0">
                                         <Ellipse Name="RecordDot" Fill="{DynamicResource RecordBrush}" />
@@ -240,8 +244,8 @@
                                 </StackPanel>
                             </Button>
                             <Rectangle Width="1" Fill="{DynamicResource LineBrush}" Height="38" />
-                            <Button Name="VideoMenuButton" Classes="split arrow" Background="{DynamicResource SecondaryActionBrush}"
-                                    ToolTip.Tip="{l:T Panel.MoreRecordingsTip}">
+                            <Button Classes="split arrow" Background="{DynamicResource SecondaryActionBrush}"
+                                    ToolTip.Tip="{l:T Panel.MoreRecordingsTip}" AutomationProperties.Name="{l:T Panel.MoreRecordingsTip}">
                                 <Path Classes="chevron" Stroke="{DynamicResource IconBrush}" />
                                 <Button.Flyout>
                                     <MenuFlyout Placement="TopEdgeAlignedLeft">
@@ -260,8 +264,8 @@
                 <DockPanel Width="{x:Static local:QuickPanel.WorkspacePaneWidth}" HorizontalAlignment="Left">
                     <TextBlock DockPanel.Dock="Top" Text="{l:T Workspaces.Header}" Foreground="{DynamicResource MutedTextBrush}" FontWeight="SemiBold"
                                Margin="18,12,12,6" />
-                    <Button Name="NewWorkspaceButton" DockPanel.Dock="Bottom" Classes="flat" Margin="8,6,8,8" Padding="8,6"
-                            HorizontalAlignment="Stretch" HorizontalContentAlignment="Left" Focusable="True" Click="OnNewWorkspace"
+                    <Button DockPanel.Dock="Bottom" Classes="flat" Margin="8,6,8,8" Padding="8,6"
+                            HorizontalAlignment="Stretch" HorizontalContentAlignment="Left" Click="OnNewWorkspace"
                             ToolTip.Tip="{l:T Workspaces.NewTipFolder}">
                         <StackPanel Orientation="Horizontal">
                             <Path Classes="icon" Data="{StaticResource IconAdd}" />

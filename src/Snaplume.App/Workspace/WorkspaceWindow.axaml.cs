@@ -10,26 +10,29 @@ namespace Snaplume.Workspace;
 /// </summary>
 public partial class WorkspaceWindow : CaptureHostWindow
 {
+    /// <summary>
+    /// Folder of the active workspace, read when the workspaces change: the status line is updated at each selection
+    /// change, and the folder may be on a slow network share.
+    /// </summary>
+    private string _activeFolder;
+
     public WorkspaceWindow()
     {
         InitializeComponent();
-        Gallery.SelectionChanged += UpdateState;
-        Gallery.Message += ShowMessage;
-        WorkspaceList.CapturesDropped += (paths, target) => _ = Gallery.MoveToWorkspaceAsync(paths, target);
+        _activeFolder = Workspaces.ActiveFolder;
+        Host(Gallery, WorkspaceList);
         if (WorkspaceMenuButton.Flyout is MenuFlyout activeMenu) activeMenu.Opening += OnActiveWorkspaceMenuOpening;
         ScrollingButton.IsVisible = Has(PlatformFeatures.ScrollingCapture);
         UpdateState();
         if (Avalonia.Application.Current is App { Videos: { } videos }) OnRecordingChanged(videos.IsBusy);
     }
 
-    public void Reload() => Gallery.Reload();
-
     protected override TextBlock StatusLine => StatusText;
 
     protected override void UpdateState()
     {
         EditButton.IsEnabled = CopyButton.IsEnabled = DeleteButton.IsEnabled = Gallery.SelectedCount > 0;
-        if (!IsShowingMessage) StatusText.Text = $"{Gallery.SummaryText}   •   {Workspaces.ActiveFolder}";
+        if (!IsShowingMessage) StatusText.Text = $"{Gallery.SummaryText}   •   {_activeFolder}";
     }
 
     protected override void OnRecordingChanged(bool recording)
@@ -43,11 +46,13 @@ public partial class WorkspaceWindow : CaptureHostWindow
     }
 
     // The workspace list follows the changes itself (WorkspaceList).
-    protected override void OnWorkspacesChanged() => UpdateState();
+    protected override void OnWorkspacesChanged()
+    {
+        _activeFolder = Workspaces.ActiveFolder;
+        UpdateState();
+    }
 
     // ---- Workspace commands of the sidebar ----
-
-    private void OnNewWorkspace(object? sender, RoutedEventArgs e) => _ = WorkspaceCommands.CreateAsync(this);
 
     private void OnActiveWorkspaceMenuOpening(object? sender, EventArgs e)
     {
@@ -67,13 +72,5 @@ public partial class WorkspaceWindow : CaptureHostWindow
 
     // ---- Toolbar ----
 
-    private void OnEdit(object? sender, RoutedEventArgs e) => Gallery.EditSelection();
-    private void OnCopy(object? sender, RoutedEventArgs e) => Gallery.CopySelection();
     private void OnDelete(object? sender, RoutedEventArgs e) => Gallery.DeleteSelection();
-
-    protected override void OnClosed(EventArgs e)
-    {
-        Gallery.Detach();
-        base.OnClosed(e);
-    }
 }

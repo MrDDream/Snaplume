@@ -12,13 +12,21 @@ using Snaplume.Imaging;
 namespace Snaplume.Workspace;
 
 /// <summary>
-/// The list of the workspaces, the active one selected; selecting another one makes it active (<see cref="WorkspaceCommands"/>).
-/// Follows <see cref="Workspaces.Changed"/> while it is shown in a window.
+/// The list of the workspaces, the active one selected. A click (or Enter) makes another one active
+/// (<see cref="WorkspaceCommands"/>); the arrow keys move the highlight, and the workspace highlighted becomes active
+/// once they rest a moment. Shows <see cref="WorkspaceListing"/>, read off the UI thread, while it is in a window.
 /// </summary>
 public partial class WorkspaceList : UserControl
 {
+    /// <summary>Rest after the arrow keys before the highlighted workspace becomes the active one.</summary>
+    internal static readonly TimeSpan KeyboardCommitDelay = TimeSpan.FromMilliseconds(300);
+
+    private readonly DispatcherTimer _keyboardCommit;
     private bool _updating;
-    private bool _refreshQueued;
+    /// <summary>The selection is being moved by an arrow key (not a click).</summary>
+    private bool _movingWithKeys;
+    /// <summary>The active workspace of the listing shown.</summary>
+    private string _active = "";
     /// <summary>Entry right-clicked (null: empty area).</summary>
     private WorkspaceEntry? _menuEntry;
     private bool _menuFromPointer;
@@ -27,14 +35,23 @@ public partial class WorkspaceList : UserControl
     public WorkspaceList()
     {
         InitializeComponent();
+        _keyboardCommit = new DispatcherTimer { Interval = KeyboardCommitDelay };
+        _keyboardCommit.Tick += (_, _) =>
+        {
+            _keyboardCommit.Stop();
+            Commit(fromKeyboard: true);
+        };
         EntryList.SelectionChanged += OnSelected;
+        EntryList.AddHandler(KeyDownEvent, OnListKeyDown, RoutingStrategies.Tunnel);
+        // After the list has moved its selection: the next selection change may come from the mouse.
+        EntryList.AddHandler(KeyDownEvent, (_, _) => _movingWithKeys = false, RoutingStrategies.Bubble, handledEventsToo: true);
         EntryList.AddHandler(PointerPressedEvent, OnPointerPressed, RoutingStrategies.Tunnel);
         EntryMenu.Opening += OnMenuOpening;
         EntryList.AddHandler(DragDrop.DragEnterEvent, OnDragOver);
         EntryList.AddHandler(DragDrop.DragOverEvent, OnDragOver);
         EntryList.AddHandler(DragDrop.DragLeaveEvent, OnDragLeave);
         EntryList.AddHandler(DragDrop.DropEvent, OnDrop);
-        Refresh();
+        Show(WorkspaceListing.Current);
     }
 
     /// <summary>
@@ -51,38 +68,69 @@ public partial class WorkspaceList : UserControl
     protected override void OnAttachedToVisualTree(VisualTreeAttachmentEventArgs e)
     {
         base.OnAttachedToVisualTree(e);
-        Workspaces.Changed += OnWorkspacesChanged;
-        Refresh();
+        WorkspaceListing.Updated += OnListingUpdated;
+        Show(WorkspaceListing.Current);
+        WorkspaceListing.Refresh();
     }
 
     protected override void OnDetachedFromVisualTree(VisualTreeAttachmentEventArgs e)
     {
-        Workspaces.Changed -= OnWorkspacesChanged;
+        WorkspaceListing.Updated -= OnListingUpdated;
+        _keyboardCommit.Stop();
         base.OnDetachedFromVisualTree(e);
     }
 
-    /// <summary>Rebuilt after the current event: the change may come from the list's own selection.</summary>
-    private void OnWorkspacesChanged()
+    private void OnListingUpdated() => Show(WorkspaceListing.Current);
+
+    /// <summary>Reads the workspaces again (in the background); the list follows.</summary>
+    public void Refresh() => WorkspaceListing.Refresh();
+
+    /// <summary>Shows a listing, the active workspace selected.</summary>
+    private void Show(WorkspaceSnapshot listing)
     {
-        if (_refreshQueued) return;
-        _refreshQueued = true;
-        Dispatcher.UIThread.Post(() =>
+        _active = listing.ActiveName;
+        var shown = Entries;
+        if (shown.Count == listing.Workspaces.Count && shown.Zip(listing.Workspaces).All(pair => pair.First.Shows(pair.Second)))
         {
-            _refreshQueued = false;
-            Refresh();
-        });
+            // The same workspaces: the entries (and the keyboard focus) stay; a highlight moved with the arrow keys too.
+            if (!_keyboardCommit.IsEnabled) SelectActive();
+            return;
+        }
+        _keyboardCommit.Stop();
+        bool hadFocus = EntryList.IsKeyboardFocusWithin;
+        _updating = true;
+        try
+        {
+            var entries = listing.Workspaces.Select(w => new WorkspaceEntry(w.Name, Workspaces.DisplayName(w.Name), w.Folder, w.IsCustom, w.IsMissing))
+                .ToList();
+            EntryList.ItemsSource = entries;
+            EntryList.SelectedItem = entries.FirstOrDefault(e => IsActive(e.Name));
+            _dropTarget = null;
+        }
+        finally
+        {
+            _updating = false;
+        }
+        // The focused entry was replaced: the focus goes to the new selected one, once laid out.
+        if (hadFocus)
+        {
+            Dispatcher.UIThread.Post(() =>
+            {
+                if (EntryList.SelectedItem is { } selected && EntryList.ContainerFromItem(selected) is { } container) container.Focus();
+                else EntryList.Focus();
+            }, DispatcherPriority.Loaded);
+        }
     }
 
-    /// <summary>Reads the workspaces again and selects the active one.</summary>
-    public void Refresh()
+    private bool IsActive(string name) => string.Equals(name, _active, StringComparison.OrdinalIgnoreCase);
+
+    /// <summary>Back to the active workspace (one that could not be selected was highlighted).</summary>
+    private void SelectActive()
     {
         _updating = true;
         try
         {
-            var entries = Workspaces.List().Select(WorkspaceEntry.Of).ToList();
-            EntryList.ItemsSource = entries;
-            EntryList.SelectedItem = entries.FirstOrDefault(e => WorkspaceCommands.IsActive(e.Name));
-            _dropTarget = null;
+            EntryList.SelectedItem = Entries.FirstOrDefault(e => IsActive(e.Name));
         }
         finally
         {
@@ -92,16 +140,43 @@ public partial class WorkspaceList : UserControl
 
     private void OnSelected(object? sender, SelectionChangedEventArgs e)
     {
-        if (_updating || EntryList.SelectedItem is not WorkspaceEntry entry || WorkspaceCommands.IsActive(entry.Name) || Owner is not { } owner) return;
-        WorkspaceCommands.Select(owner, entry.Name);
-        // Back to the active one if it could not be selected.
-        if (!WorkspaceCommands.IsActive(entry.Name)) OnWorkspacesChanged();
+        if (_updating) return;
+        _keyboardCommit.Stop();
+        // The arrow keys only move the highlight: the workspace becomes active once they rest (or with Enter).
+        if (_movingWithKeys) _keyboardCommit.Start();
+        else Commit(fromKeyboard: false);
     }
 
-    private void OnNewWorkspace(object? sender, RoutedEventArgs e)
+    private void OnListKeyDown(object? sender, KeyEventArgs e)
     {
-        if (Owner is { } owner) _ = WorkspaceCommands.CreateAsync(owner);
+        switch (e.Key)
+        {
+            case Key.Up or Key.Down or Key.Home or Key.End or Key.PageUp or Key.PageDown:
+                _movingWithKeys = true;
+                break;
+            case Key.Enter:
+                _keyboardCommit.Stop();
+                Commit(fromKeyboard: false);
+                e.Handled = true;
+                break;
+        }
     }
+
+    /// <summary>Makes the selected workspace the active one.</summary>
+    /// <param name="fromKeyboard">
+    /// Reached with the arrow keys: one whose folder cannot be reached is passed over in silence (no message for each
+    /// key), and stays highlighted.
+    /// </param>
+    private void Commit(bool fromKeyboard)
+    {
+        if (EntryList.SelectedItem is not WorkspaceEntry entry || Owner is not { } owner) return;
+        if (fromKeyboard && entry.IsMissing) return;
+        WorkspaceCommands.Select(owner, entry.Name);
+        if (WorkspaceCommands.IsActive(entry.Name)) _active = entry.Name;
+        else SelectActive();
+    }
+
+    private void OnNewWorkspace(object? sender, RoutedEventArgs e) => _ = WorkspaceCommands.CreateAsync(Owner);
 
     // ---- Context menu ----
 
@@ -159,8 +234,8 @@ public partial class WorkspaceList : UserControl
     // ---- Captures dropped on a workspace (dragged from the gallery): moved there ----
 
     /// <summary>Workspace that would receive the dragged captures, or null.</summary>
-    private static WorkspaceEntry? DropTargetOf(DragEventArgs e) =>
-        e.DataTransfer.Contains(CaptureGallery.DragFormat) && EntryAt(e.Source) is { } entry && !WorkspaceCommands.IsActive(entry.Name)
+    private WorkspaceEntry? DropTargetOf(DragEventArgs e) =>
+        e.DataTransfer.Contains(CaptureGallery.DragFormat) && EntryAt(e.Source) is { } entry && !IsActive(entry.Name)
             ? entry
             : null;
 
@@ -181,9 +256,10 @@ public partial class WorkspaceList : UserControl
         if (DropTargetOf(e) is not { } target || e.DataTransfer.TryGetValue(CaptureGallery.DragFormat) is not { } data) return;
         e.Handled = true;
         // Only captures of the gallery's own folder (the active workspace) are moved.
+        var activeFolder = Workspaces.ActiveFolder;
         var paths = data.Split('\n', StringSplitOptions.RemoveEmptyEntries)
             .Where(p => Path.IsPathFullyQualified(p) && ImageIO.IsCapture(p) &&
-                        CaptureGallery.SameFolder(Path.GetDirectoryName(p), Workspaces.ActiveFolder))
+                        Path.GetDirectoryName(p) is { } folder && PathRules.SamePath(folder, activeFolder))
             .ToList();
         if (paths.Count == 0) return;
         // After the drag-and-drop loop has ended (it may show messages).
@@ -213,22 +289,6 @@ public sealed class WorkspaceEntry : INotifyPropertyChanged
         IsMissing = isMissing;
     }
 
-    /// <summary>The entry of a workspace, as it is now (folder, reachable or not).</summary>
-    public static WorkspaceEntry Of(string name)
-    {
-        bool custom = Workspaces.IsCustom(name);
-        string folder;
-        try
-        {
-            folder = Workspaces.FolderOf(name);
-        }
-        catch (ArgumentException)
-        {
-            folder = "";
-        }
-        return new WorkspaceEntry(name, Workspaces.DisplayName(name), folder, custom, custom && !Workspaces.IsAvailable(name));
-    }
-
     /// <summary>Name of the workspace, "" for Base.</summary>
     public string Name { get; }
     public string DisplayName { get; }
@@ -238,6 +298,10 @@ public sealed class WorkspaceEntry : INotifyPropertyChanged
     public bool IsCustom { get; }
     /// <summary>Its folder cannot be reached (unplugged drive, offline share): greyed, cannot be selected.</summary>
     public bool IsMissing { get; }
+
+    /// <summary>This entry shows the workspace as it was read (nothing to rebuild).</summary>
+    internal bool Shows(WorkspaceInfo workspace) =>
+        Name == workspace.Name && Folder == workspace.Folder && IsCustom == workspace.IsCustom && IsMissing == workspace.IsMissing;
 
     public double Opacity => IsMissing ? 0.5 : 1;
     public string Tip => IsMissing ? Loc.T("Workspaces.Folder.MissingTip", Folder) : Folder;

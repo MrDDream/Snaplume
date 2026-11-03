@@ -441,10 +441,13 @@ public interface IUpdateInstaller
 
     /// <summary>
     /// Windows installers (<see cref="InstallKind.InnoSetup"/>, <see cref="InstallKind.Msi"/>): starts the installer of
-    /// the package. Snaplume must quit right after, so that its files can be replaced.
+    /// the package. Snaplume must quit right after, so that its files can be replaced. The package is checked against
+    /// <paramref name="sha256"/> again right before it starts, and kept from being changed until it has started.
     /// </summary>
+    /// <param name="sha256">The SHA-256 the download was verified against (<see cref="VerifiedDownload.Sha256"/>).</param>
     /// <exception cref="NotSupportedException">Not a Windows installer.</exception>
-    void StartInstaller(string package);
+    /// <exception cref="UpdateVerificationException">The package changed since it was downloaded.</exception>
+    void StartInstaller(string package, string sha256);
 
     /// <summary>True when the installer started by <see cref="StartInstaller"/> starts Snaplume again once it is done.</summary>
     bool InstallerRestartsSnaplume { get; }
@@ -454,11 +457,14 @@ public interface IUpdateInstaller
     /// the package, the system asking for the administrator password. Snaplume keeps running (the new version is
     /// used after a restart).
     /// </summary>
+    /// <param name="sha256">The SHA-256 the download was verified against, checked again right before the package
+    /// manager gets the package.</param>
     /// <returns>
     /// False when it could not be done here (no graphical password prompt, refused, package manager busy or failing):
     /// the reason is logged and the user is shown <see cref="ManualInstallCommand"/>.
     /// </returns>
-    Task<bool> InstallPackageAsync(string package);
+    /// <exception cref="UpdateVerificationException">The package changed since it was downloaded.</exception>
+    Task<bool> InstallPackageAsync(string package, string sha256);
 
     /// <summary>Command that installs the package by hand, in a terminal.</summary>
     string ManualInstallCommand(string package);

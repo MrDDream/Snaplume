@@ -17,7 +17,8 @@
   precedence over the control themes, so these win over Fluent's own pointer-over and pressed colors.
 -->
 <Styles xmlns="https://github.com/avaloniaui"
-        xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml">
+        xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+        xmlns:editor="using:Snaplume.Editor">
 
     <!-- Windows: theme colors, and the 12 px text the layouts were designed for (as in the WPF version) -->
     <Style Selector=":is(Window)">
@@ -63,10 +64,16 @@
         <Setter Property="Margin" Value="1" />
         <Setter Property="MinHeight" Value="0" />
         <Setter Property="CornerRadius" Value="5" />
-        <Setter Property="Focusable" Value="False" />
         <Setter Property="Foreground" Value="{DynamicResource IconBrush}" />
         <Setter Property="HorizontalContentAlignment" Value="Center" />
         <Setter Property="VerticalContentAlignment" Value="Center" />
+    </Style>
+    <!--
+      Flat buttons are in the Tab order (keyboard and screen readers), except in the editor's toolbars: a click there
+      must leave the keyboard focus on the image, whose shortcuts (Delete, arrows, Space...) act on the annotations.
+    -->
+    <Style Selector="editor|EditorWindow :is(Button).flat">
+        <Setter Property="Focusable" Value="False" />
     </Style>
     <Style Selector=":is(Button).flat:pointerover /template/ ContentPresenter#PART_ContentPresenter">
         <Setter Property="Background" Value="{DynamicResource HoverBrush}" />

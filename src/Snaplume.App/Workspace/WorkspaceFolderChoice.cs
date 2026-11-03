@@ -28,17 +28,32 @@ public sealed class WorkspaceFolderChoice : StackPanel
         Children.Add(_custom);
         Children.Add(_path);
         // Click, not IsChecked: a second click on the option picks another folder.
-        _custom.Click += async (_, _) =>
-        {
-            if (TopLevel.GetTopLevel(this) is not Window owner) return;
-            var picked = await WorkspaceCommands.PickFolderAsync(owner, Loc.T("Workspaces.New.ChooseFolderTitle"), _folder);
-            if (picked != null) Folder = picked;
-            else if (_folder == null) _default.IsChecked = true;
-        };
+        _custom.Click += async (_, _) => await PickFolderAsync();
         _default.IsCheckedChanged += (_, _) =>
         {
             if (_default.IsChecked == true) Folder = null;
         };
+    }
+
+    /// <summary>
+    /// The system's folder picker; a folder too broad, or on a network share the user does not want, is not taken (the
+    /// previous choice stays).
+    /// </summary>
+    private async Task PickFolderAsync()
+    {
+        if (TopLevel.GetTopLevel(this) is not Window owner) return;
+        var title = Loc.T("Workspaces.New.ChooseFolderTitle");
+        try
+        {
+            var picked = await WorkspaceCommands.PickFolderAsync(owner, title, _folder);
+            if (picked != null && await WorkspaceCommands.AcceptFolderAsync(owner, picked, title)) Folder = picked;
+        }
+        catch (Exception ex)
+        {
+            await WorkspaceCommands.ShowErrorAsync(owner, Loc.T("Workspaces.Folder.PickFailed"), ex);
+        }
+        // Nothing chosen: back to the option of the folder kept.
+        Folder = _folder;
     }
 
     /// <summary>The folder chosen, or null for the default sub-folder of the captures folder.</summary>

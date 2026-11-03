@@ -15,6 +15,7 @@ namespace Snaplume.Workspace;
 public class CaptureHostWindow : Window
 {
     private readonly DispatcherTimer _messageTimer = new() { Interval = TimeSpan.FromSeconds(4) };
+    private CaptureGallery? _gallery;
 
     public CaptureHostWindow()
     {
@@ -28,6 +29,21 @@ public class CaptureHostWindow : Window
         app.Videos.StateChanged += OnVideoStateChanged;
         Workspaces.Changed += OnWorkspacesChanged;
     }
+
+    /// <summary>
+    /// Connects the gallery and the workspace list of the window: the state follows the selection, the gallery's messages
+    /// are shown, captures dropped on a workspace are moved there.
+    /// </summary>
+    protected void Host(CaptureGallery gallery, WorkspaceList workspaces)
+    {
+        _gallery = gallery;
+        gallery.SelectionChanged += UpdateState;
+        gallery.Message += ShowMessage;
+        workspaces.CapturesDropped += (paths, target) => _ = gallery.MoveToWorkspaceAsync(paths, target);
+    }
+
+    /// <summary>Reads the active workspace folder again (another root folder in the settings).</summary>
+    public void Reload() => _gallery?.Reload();
 
     /// <summary>Text line showing the summary of the gallery, or a short message.</summary>
     protected virtual TextBlock? StatusLine => null;
@@ -96,6 +112,12 @@ public class CaptureHostWindow : Window
 
     protected void OnOpenFolder(object? sender, RoutedEventArgs e) => WorkspaceCommands.OpenFolder(this, Workspaces.ActiveName);
 
+    protected void OnNewWorkspace(object? sender, RoutedEventArgs e) => _ = WorkspaceCommands.CreateAsync(this);
+
+    protected void OnEdit(object? sender, RoutedEventArgs e) => _gallery?.EditSelection();
+
+    protected void OnCopy(object? sender, RoutedEventArgs e) => _gallery?.CopySelection();
+
     protected void OnSettings(object? sender, RoutedEventArgs e) => App.Instance.ShowSettings();
 
     /// <summary>Small line icon (Icons.axaml) for a menu item.</summary>
@@ -121,6 +143,7 @@ public class CaptureHostWindow : Window
 
     protected override void OnClosed(EventArgs e)
     {
+        _gallery?.Detach();
         _messageTimer.Stop();
         if (Avalonia.Application.Current is App { Videos: { } videos }) videos.StateChanged -= OnVideoStateChanged;
         Workspaces.Changed -= OnWorkspacesChanged;

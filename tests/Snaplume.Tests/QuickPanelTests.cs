@@ -114,9 +114,11 @@ public class QuickPanelTests
             Assert.Equal(galleryWidth - QuickPanel.WorkspacePaneWidth, gallery.Bounds.Width, 1);
             Assert.Equal(windowWidth, panel.Bounds.Width);
 
-            // The workspaces, Base selected; the missing folder greyed with its path in the tooltip.
+            // The workspaces (read in the background), Base selected; the missing folder greyed with its path in the tooltip.
             var list = panel.FindControl<WorkspaceList>("WorkspaceList")!;
-            Assert.Equal(new[] { "", "Alpha", "Beta", "Clients", "Disque USB" }, list.Entries.Select(e => e.Name));
+            var expected = new[] { "", "Alpha", "Beta", "Clients", "Disque USB" };
+            await WaitForAsync(() => list.Entries.Select(e => e.Name).SequenceEqual(expected));
+            Assert.Equal(expected, list.Entries.Select(e => e.Name));
             Assert.True(list.Entries.Single(e => e.Name == "Disque USB").IsMissing);
             Assert.Contains(external, list.Entries.Single(e => e.Name == "Clients").Tip);
             var listBox = list.GetVisualDescendants().OfType<ListBox>().Single();
@@ -203,7 +205,7 @@ public class QuickPanelTests
     }
 
     [AvaloniaFact]
-    public void Workspace_window_sidebar_lists_the_custom_folders_too()
+    public async Task Workspace_window_sidebar_lists_the_custom_folders_too()
     {
         var app = Application.Current!;
         var colors = new ResourceInclude(new Uri("avares://Snaplume/")) { Source = new Uri("avares://Snaplume/Themes/Colors.axaml") };
@@ -228,7 +230,9 @@ public class QuickPanelTests
             window.Show();
             Dispatcher.UIThread.RunJobs();
             var list = window.FindControl<WorkspaceList>("WorkspaceList")!;
-            Assert.Equal(new[] { "", "Alpha", "Partage réseau" }, list.Entries.Select(e => e.Name));
+            var expected = new[] { "", "Alpha", "Partage réseau" };
+            await WaitForAsync(() => list.Entries.Select(e => e.Name).SequenceEqual(expected));
+            Assert.Equal(expected, list.Entries.Select(e => e.Name));
             Assert.True(list.Entries[2].IsMissing);
             Save(window, "workspace-window-sidebar.png");
         }
@@ -240,6 +244,18 @@ public class QuickPanelTests
             app.Styles.Remove(styles);
             app.Resources.MergedDictionaries.Remove(icons);
             app.Resources.MergedDictionaries.Remove(colors);
+        }
+    }
+
+    /// <summary>Runs the UI jobs until <paramref name="done"/> (work done in the background, timers), five seconds at most.</summary>
+    internal static async Task WaitForAsync(Func<bool> done, int timeoutMs = 5000)
+    {
+        var stopwatch = System.Diagnostics.Stopwatch.StartNew();
+        Dispatcher.UIThread.RunJobs();
+        while (!done() && stopwatch.ElapsedMilliseconds < timeoutMs)
+        {
+            await Task.Delay(20);
+            Dispatcher.UIThread.RunJobs();
         }
     }
 

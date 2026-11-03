@@ -1,8 +1,10 @@
 using Avalonia;
+using Avalonia.Automation;
 using Avalonia.Controls;
 using Avalonia.Input;
 using Avalonia.Interactivity;
 using Avalonia.Threading;
+using Avalonia.VisualTree;
 using Snaplume.Core;
 using Snaplume.Imaging;
 using Snaplume.Platform;
@@ -15,16 +17,21 @@ namespace Snaplume.Workspace;
 /// </summary>
 public partial class QuickPanel : CaptureHostWindow
 {
+    /// <summary>The user moved the panel: it is shown where they left it, not docked.</summary>
     private bool _movedByUser;
+    /// <summary>The title bar is being dragged: a change of position comes from the user.</summary>
+    private bool _dragging;
 
     public QuickPanel()
     {
         InitializeComponent();
-        Gallery.SelectionChanged += UpdateState;
-        Gallery.Message += ShowMessage;
+        Host(Gallery, WorkspaceList);
         TitleBar.PointerPressed += OnTitlePointerPressed;
         ResizeGrip.PointerPressed += OnGripPointerPressed;
-        WorkspaceList.CapturesDropped += (paths, target) => _ = Gallery.MoveToWorkspaceAsync(paths, target);
+        PositionChanged += (_, _) =>
+        {
+            if (_dragging) _movedByUser = true;
+        };
         IsWorkspacePaneOpen = AppServices.Settings.PanelWorkspacesOpen;
         ShowWorkspacePane(IsWorkspacePaneOpen, animate: false);
         // Scrolling capture needs the wheel to be turned for the user (not possible on every desktop).
@@ -34,16 +41,17 @@ public partial class QuickPanel : CaptureHostWindow
         if (Avalonia.Application.Current is App { Videos: { } videos }) OnRecordingChanged(videos.IsBusy);
     }
 
-    public void Reload() => Gallery.Reload();
-
     protected override TextBlock StatusLine => SummaryText;
 
     /// <summary>
     /// Shows the panel against the bottom-right corner of the main screen's work area (on the taskbar and the screen
-    /// edge), unless the user moved it.
+    /// edge), unless the user moved it somewhere still on a screen.
     /// </summary>
     public void ShowDocked()
     {
+        _dragging = false;
+        // Moved onto a screen unplugged since, or out of reach: docked again.
+        if (_movedByUser && !IsOnAScreen()) _movedByUser = false;
         if (!_movedByUser && Screens.Primary is { } screen)
         {
             var area = screen.WorkingArea;
@@ -61,6 +69,14 @@ public partial class QuickPanel : CaptureHostWindow
         Gallery.FocusList();
     }
 
+    /// <summary>The title bar (where the panel is dragged from) is at least partly in the work area of a screen.</summary>
+    private bool IsOnAScreen()
+    {
+        double scale = Screens.ScreenFromWindow(this)?.Scaling ?? Screens.Primary?.Scaling ?? 1;
+        var titleBar = new PixelRect(Position, new PixelSize((int)Math.Round(Width * scale), (int)Math.Round(TitleBar.Height * scale)));
+        return Screens.All.Any(s => s.WorkingArea.Intersects(titleBar));
+    }
+
     protected override void UpdateState()
     {
         EditButton.IsEnabled = CopyButton.IsEnabled = Gallery.SelectedCount > 0;
@@ -71,6 +87,7 @@ public partial class QuickPanel : CaptureHostWindow
     protected override void OnRecordingChanged(bool recording)
     {
         VideoButtonText.Text = Loc.T(recording ? "Panel.StopRecording" : "Panel.RecordVideo");
+        AutomationProperties.SetName(VideoButton, VideoButtonText.Text);
         ToolTip.SetTip(VideoButton, Loc.T(recording ? "Panel.StopRecordingTip" : "Panel.RecordVideoTip"));
         RecordDot.IsVisible = !recording;
         StopSquare.IsVisible = recording;
@@ -136,14 +153,17 @@ public partial class QuickPanel : CaptureHostWindow
         }, PaneSlide + TimeSpan.FromMilliseconds(40));
     }
 
-    private void OnNewWorkspace(object? sender, RoutedEventArgs e) => _ = WorkspaceCommands.CreateAsync(this);
-
     private void OnTitlePointerPressed(object? sender, PointerPressedEventArgs e)
     {
         // Only on the bar itself: its buttons handle their own clicks.
-        if (!e.GetCurrentPoint(this).Properties.IsLeftButtonPressed || e.Source is Visual source && source.FindAncestorOfTypeOrSelf<Button>() != null) return;
+        if (!e.GetCurrentPoint(this).Properties.IsLeftButtonPressed
+            || e.Source is Visual source && source.FindAncestorOfType<Button>(includeSelf: true) != null) return;
+        // Moved by the user only if the panel actually moves (a click on the bar leaves it docked). The drag may
+        // return at once and move the window afterwards (Linux): PositionChanged tells then.
+        var before = Position;
+        _dragging = true;
         BeginMoveDrag(e);
-        _movedByUser = true;
+        if (Position != before) _movedByUser = true;
     }
 
     private void OnGripPointerPressed(object? sender, PointerPressedEventArgs e)
@@ -163,8 +183,6 @@ public partial class QuickPanel : CaptureHostWindow
         }
     }
 
-    private void OnEdit(object? sender, RoutedEventArgs e) => Gallery.EditSelection();
-    private void OnCopy(object? sender, RoutedEventArgs e) => Gallery.CopySelection();
     private void OnReadText(object? sender, RoutedEventArgs e) => Gallery.ReadTextOfSelection();
 
     /// <summary>QR codes and barcodes of the first selected image.</summary>
@@ -177,23 +195,4 @@ public partial class QuickPanel : CaptureHostWindow
     }
 
     private void OnHide(object? sender, RoutedEventArgs e) => Hide();
-
-    protected override void OnClosed(EventArgs e)
-    {
-        Gallery.Detach();
-        base.OnClosed(e);
-    }
-}
-
-internal static class VisualExtensions
-{
-    /// <summary>The visual or its nearest ancestor of the given type.</summary>
-    public static T? FindAncestorOfTypeOrSelf<T>(this Visual visual) where T : class
-    {
-        for (Visual? current = visual; current != null; current = Avalonia.VisualTree.VisualExtensions.GetVisualParent(current))
-        {
-            if (current is T match) return match;
-        }
-        return null;
-    }
 }
