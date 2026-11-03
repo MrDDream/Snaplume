@@ -76,24 +76,11 @@ internal static class DesktopFiles
     }
 
     /// <summary>
-    /// Folders that must never hold the workspace: the file system root and the system trees. Deleting a
-    /// workspace sends a whole folder to the trash, so a system folder is refused outright.
+    /// A folder that must never hold the workspace (deleting a workspace sends a whole folder to the trash): "/", the
+    /// system trees and the temporary folders, the folders holding home folders or drives (see
+    /// <see cref="Core.PathRules.IsUnixSystemFolder"/>).
     /// </summary>
-    private static readonly string[] SystemFolders =
-    {
-        "/bin", "/boot", "/dev", "/etc", "/lib", "/lib32", "/lib64", "/libx32", "/opt", "/proc", "/run",
-        "/sbin", "/snap", "/sys", "/usr", "/var",
-    };
-
-    /// <returns>True when the folder is "/", "/home" itself, or lies in a system tree.</returns>
-    public static bool IsSystemFolder(string folder)
-    {
-        var full = Path.TrimEndingDirectorySeparator(folder.Replace('\\', '/'));
-        if (full.Length == 0 || full == "/" || full == "/home") return true;
-        // /var/home holds the home folders on Fedora Silverblue and other image-based systems.
-        if (full == "/var/home" || full.StartsWith("/var/home/", StringComparison.Ordinal)) return false;
-        return SystemFolders.Any(s => full == s || full.StartsWith(s + "/", StringComparison.Ordinal));
-    }
+    public static bool IsSystemFolder(string folder) => Core.PathRules.IsUnixSystemFolder(folder);
 
     /// <summary>CUPS destinations from "lpstat -a" (C locale): "name accepting requests since ...".</summary>
     public static IReadOnlyList<string> ParsePrinters(string output) =>

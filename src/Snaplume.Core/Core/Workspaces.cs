@@ -9,7 +9,8 @@ namespace Snaplume.Core;
 /// Workspaces = the root capture folder ("Base"), its direct sub-folders, and workspaces whose folder the user chose
 /// anywhere else (<see cref="AppSettings.WorkspaceFolders"/>: another drive, a network share...). Captures and videos
 /// are saved into the active one. Names are folder names for the sub-folders, free names for the others; "" is Base.
-/// Methods are meant to be called on the UI thread, except <see cref="MoveFiles"/> and <see cref="MoveCaptures"/>.
+/// Methods are meant to be called on the UI thread, except the overloads of <see cref="MoveFiles(IEnumerable{string}, ResolvedWorkspace)"/>
+/// and <see cref="MoveCaptures(ResolvedWorkspace, string)"/> that take a workspace resolved beforehand.
 /// </summary>
 public static class Workspaces
 {
@@ -17,8 +18,6 @@ public static class Workspaces
     public static string Root => AppServices.Settings.WorkspaceFolder;
 
     private static Dictionary<string, string> CustomFolders => AppServices.Settings.WorkspaceFolders;
-
-    private static StringComparison PathComparison => OperatingSystem.IsWindows() ? StringComparison.OrdinalIgnoreCase : StringComparison.Ordinal;
 
     /// <summary>
     /// Active workspace name; "" for Base, also when the chosen folder no longer exists or cannot be reached (an
@@ -29,7 +28,7 @@ public static class Workspaces
         get
         {
             var name = AppServices.Settings.ActiveWorkspace;
-            return name.Length > 0 && IsPlainName(name) && IsAvailable(name) ? name : "";
+            return name.Length > 0 && IsPlainName(name) && !name.StartsWith('.') && IsAvailable(name) ? name : "";
         }
     }
 
@@ -112,7 +111,7 @@ public static class Workspaces
     public static IReadOnlyList<string> List()
     {
         var names = new List<string>(CustomFolders.Keys);
-        var customPaths = CustomFolders.Values.Select(Normalize).ToHashSet(OperatingSystem.IsWindows() ? StringComparer.OrdinalIgnoreCase : StringComparer.Ordinal);
+        var customPaths = CustomFolders.Values.Select(PathRules.Normalize).ToHashSet(PathRules.Comparer);
         try
         {
             var root = new DirectoryInfo(Root);
@@ -123,7 +122,7 @@ public static class Workspaces
                     // Hidden and system folders (annotations ".snaplume", "$RECYCLE.BIN"...) are not workspaces.
                     if ((folder.Attributes & (FileAttributes.Hidden | FileAttributes.System)) != 0) continue;
                     if (folder.Name.StartsWith('.')) continue;
-                    if (CustomFolders.ContainsKey(folder.Name) || customPaths.Contains(Normalize(folder.FullName))) continue;
+                    if (CustomFolders.ContainsKey(folder.Name) || customPaths.Contains(PathRules.Normalize(folder.FullName))) continue;
                     names.Add(folder.Name);
                 }
             }
@@ -202,10 +201,25 @@ public static class Workspaces
             var target = DefaultFolderOf(final);
             if (string.Equals(final, oldName, StringComparison.OrdinalIgnoreCase))
             {
-                // Only the case changes: go through a temporary name.
+                // Only the case changes: go through a temporary name, back to the old one if the second move fails.
                 var temp = Path.Combine(Root, "." + Guid.NewGuid().ToString("N"));
                 Directory.Move(source, temp);
-                Directory.Move(temp, target);
+                try
+                {
+                    Directory.Move(temp, target);
+                }
+                catch
+                {
+                    try
+                    {
+                        Directory.Move(temp, source);
+                    }
+                    catch (Exception ex)
+                    {
+                        ErrorLog.Write($"Retour au nom {oldName} après un renommage échoué ({temp})", ex);
+                    }
+                    throw;
+                }
             }
             else
             {
@@ -226,6 +240,10 @@ public static class Workspaces
     /// touched.
     /// </summary>
     /// <returns>False if nothing was deleted: Base, or the deletion failed or was cancelled.</returns>
+    /// <exception cref="ArgumentException">
+    /// The sub-folder holds the folder of a workspace of the user's choice (<see cref="NestedCustomWorkspaces"/>): it
+    /// would go to the trash with it (message ready to show).
+    /// </exception>
     public static bool Delete(string name)
     {
         if (string.IsNullOrEmpty(name)) return false;
@@ -235,6 +253,9 @@ public static class Workspaces
         }
         else
         {
+            var nested = NestedCustomWorkspaces(name);
+            if (nested.Count > 0)
+                throw new ArgumentException(Loc.T("Workspaces.Delete.Nested", DisplayName(name), string.Join(", ", nested)), nameof(name));
             var folder = FolderOf(name);
             if (Directory.Exists(folder) && !FileOps.MoveToTrash(new[] { folder })) return false;
         }
@@ -245,7 +266,8 @@ public static class Workspaces
 
     /// <summary>
     /// The folder a workspace may take, as a full path; refused (message ready to show) when it is not an absolute path,
-    /// is the root itself, or already the folder of another workspace.
+    /// is the root itself, already the folder of another workspace, or inside or around the folder of another one: the
+    /// root may only hold it as a direct, visible sub-folder (the folder of a workspace of its own).
     /// </summary>
     /// <param name="name">The workspace that would take it (its own folder is accepted).</param>
     /// <exception cref="ArgumentException">The folder cannot be used.</exception>
@@ -255,11 +277,33 @@ public static class Workspaces
             throw new ArgumentException(Loc.T("Workspaces.Folder.Invalid"), nameof(folder));
         var full = Path.TrimEndingDirectorySeparator(Path.GetFullPath(folder.Trim()));
         if (SamePath(full, Root)) throw new ArgumentException(Loc.T("Workspaces.Folder.IsBase"), nameof(folder));
+        // Around the root, or deeper in it than a workspace (in another one's sub-folder, in ".snaplume"...).
+        if (PathRules.IsInside(Root, full)
+            || (PathRules.IsInside(full, Root) && (!SamePath(Path.GetDirectoryName(full)!, Root) || Path.GetFileName(full).StartsWith('.'))))
+            throw new ArgumentException(Loc.T("Workspaces.Folder.Nested", DisplayName("")), nameof(folder));
         foreach (var other in List().Where(n => n.Length > 0 && !string.Equals(n, name, StringComparison.OrdinalIgnoreCase)))
         {
-            if (SamePath(full, FolderOf(other))) throw new ArgumentException(Loc.T("Workspaces.Folder.Used", other), nameof(folder));
+            var otherFolder = FolderOf(other);
+            if (SamePath(full, otherFolder)) throw new ArgumentException(Loc.T("Workspaces.Folder.Used", other), nameof(folder));
+            if (PathRules.IsInside(full, otherFolder) || PathRules.IsInside(otherFolder, full))
+                throw new ArgumentException(Loc.T("Workspaces.Folder.Nested", other), nameof(folder));
         }
         return full;
+    }
+
+    /// <summary>
+    /// The workspaces of the user's choice whose folder is that of <paramref name="name"/> or inside it: deleting the
+    /// folder of <paramref name="name"/> would delete theirs too.
+    /// </summary>
+    public static IReadOnlyList<string> NestedCustomWorkspaces(string name)
+    {
+        var folder = FolderOf(name);
+        return CustomFolders
+            .Where(pair => !string.Equals(pair.Key, name, StringComparison.OrdinalIgnoreCase)
+                           && (SamePath(pair.Value, folder) || PathRules.IsInside(pair.Value, folder)))
+            .Select(pair => pair.Key)
+            .Order(StringComparer.CurrentCultureIgnoreCase)
+            .ToList();
     }
 
     /// <summary>
@@ -300,37 +344,63 @@ public static class Workspaces
     /// Moves the captures of a workspace's folder (and their annotations) into another folder, on another drive too,
     /// renaming them when the name is taken; to be called before <see cref="SetFolder"/>. Other files are left. Its
     /// default sub-folder of the root, left empty, is removed so that it does not come back as a workspace; a folder of
-    /// the user's choice never is. Can run on any thread.
+    /// the user's choice never is. Reads the settings: on another thread, use
+    /// <see cref="MoveCaptures(ResolvedWorkspace, string)"/>.
     /// </summary>
     /// <returns>Captures moved, captures that could not be moved, and the first error.</returns>
-    public static (int Moved, int Failed, Exception? FirstError) MoveCaptures(string name, string toFolder)
+    public static (int Moved, int Failed, Exception? FirstError) MoveCaptures(string name, string toFolder) =>
+        MoveCaptures(Resolve(name), toFolder);
+
+    /// <summary>
+    /// <see cref="MoveCaptures(string, string)"/> for a workspace resolved beforehand (<see cref="Resolve"/>). Can run on
+    /// any thread.
+    /// </summary>
+    public static (int Moved, int Failed, Exception? FirstError) MoveCaptures(ResolvedWorkspace from, string toFolder)
     {
-        var fromFolder = FolderOf(name);
+        var fromFolder = from.Folder;
         if (!Directory.Exists(fromFolder) || SamePath(fromFolder, toFolder)) return (0, 0, null);
         SidecarFiles.MigrateLegacy(fromFolder);
         var result = MoveInto(Directory.EnumerateFiles(fromFolder).Where(ImageIO.IsCapture).ToList(), toFolder);
-        if (!IsCustom(name)) RemoveIfEmpty(fromFolder);
+        if (!from.IsCustom) RemoveIfEmpty(fromFolder);
         return result;
     }
 
     /// <summary>
     /// Moves captures (and their annotations) into another workspace, renaming them when the name is taken there. Files
-    /// already in that workspace are left alone. Its folder may be on another drive. Can run on any thread.
+    /// already in that workspace are left alone. Its folder may be on another drive. Reads the settings: on another
+    /// thread, use <see cref="MoveFiles(IEnumerable{string}, ResolvedWorkspace)"/>.
     /// </summary>
     /// <returns>A summary to show, e.g. "3 captures moved to « Project »".</returns>
     /// <exception cref="IOException">No file could be moved (message of the first error), or the folder of the workspace is missing.</exception>
-    public static string MoveFiles(IEnumerable<string> paths, string targetName)
+    public static string MoveFiles(IEnumerable<string> paths, string targetName) => MoveFiles(paths, Resolve(targetName));
+
+    /// <summary>
+    /// <see cref="MoveFiles(IEnumerable{string}, string)"/> into a workspace resolved beforehand (<see cref="Resolve"/>).
+    /// Can run on any thread.
+    /// </summary>
+    public static string MoveFiles(IEnumerable<string> paths, ResolvedWorkspace target)
     {
-        var target = FolderOf(targetName);
-        if (IsCustom(targetName) && !Directory.Exists(target))
-            throw new IOException(Loc.T("Workspaces.Folder.Missing", DisplayName(targetName), target));
-        var (moved, failed, firstError) = MoveInto(paths, target);
+        var display = DisplayName(target.Name);
+        if (target.IsCustom && !Directory.Exists(target.Folder))
+            throw new IOException(Loc.T("Workspaces.Folder.Missing", display, target.Folder));
+        var (moved, failed, firstError) = MoveInto(paths, target.Folder);
         if (moved == 0 && firstError != null) throw new IOException(firstError.Message, firstError);
 
-        var display = DisplayName(targetName);
-        var summary = Loc.T(moved == 1 || (moved == 0 && Loc.Code == "fr") ? "Workspaces.MovedOne" : "Workspaces.MovedMany", moved, display);
+        var summary = Loc.Plural(moved, "Workspaces.MovedOne", "Workspaces.MovedMany", display);
         if (failed > 0) summary += Environment.NewLine + Loc.T("Workspaces.MoveSomeFailed", failed, firstError!.Message);
         return summary;
+    }
+
+    /// <summary>
+    /// A workspace with its folder as the settings say now, for work done on another thread (the settings belong to the
+    /// UI thread): see <see cref="MoveCaptures(ResolvedWorkspace, string)"/> and
+    /// <see cref="MoveFiles(IEnumerable{string}, ResolvedWorkspace)"/>.
+    /// </summary>
+    /// <exception cref="ArgumentException">The name is not a plain folder name.</exception>
+    public static ResolvedWorkspace Resolve(string name)
+    {
+        name ??= "";
+        return new ResolvedWorkspace(name, FolderOf(name), IsCustom(name));
     }
 
     private static (int Moved, int Failed, Exception? FirstError) MoveInto(IEnumerable<string> paths, string target)
@@ -360,13 +430,22 @@ public static class Workspaces
         return (moved, failed, firstError);
     }
 
-    /// <summary>Removes a folder holding no file at all (empty annotation folders aside).</summary>
+    /// <summary>
+    /// Removes a folder left empty (its empty annotation folder aside). Nothing is deleted recursively: a file that
+    /// appears meanwhile keeps the folder.
+    /// </summary>
     private static void RemoveIfEmpty(string folder)
     {
         try
         {
-            var options = new EnumerationOptions { RecurseSubdirectories = true, IgnoreInaccessible = false, AttributesToSkip = 0 };
-            if (!Directory.EnumerateFiles(folder, "*", options).Any()) Directory.Delete(folder, recursive: true);
+            var sidecars = Path.Combine(folder, SidecarFiles.Folder);
+            if (Directory.EnumerateFileSystemEntries(folder).Any(entry => !SamePath(entry, sidecars))) return;
+            if (Directory.Exists(sidecars))
+            {
+                if (Directory.EnumerateFileSystemEntries(sidecars).Any()) return;
+                Directory.Delete(sidecars, recursive: false);
+            }
+            Directory.Delete(folder, recursive: false);
         }
         catch (Exception ex)
         {
@@ -382,20 +461,8 @@ public static class Workspaces
         name.Length > 0 && name.Trim() == name && name is not "." and not ".."
         && !FileOps.HasInvalidNameChars(name);
 
-    /// <summary>Same folder, separators at the end and (on Windows) case aside.</summary>
-    internal static bool SamePath(string a, string b) => string.Equals(Normalize(a), Normalize(b), PathComparison);
-
-    private static string Normalize(string path)
-    {
-        try
-        {
-            return Path.TrimEndingDirectorySeparator(Path.GetFullPath(path));
-        }
-        catch (Exception)
-        {
-            return path;
-        }
-    }
+    /// <inheritdoc cref="PathRules.SamePath"/>
+    internal static bool SamePath(string a, string b) => PathRules.SamePath(a, b);
 
     /// <summary>Folder name typed by the user, made valid.</summary>
     private static string Clean(string? name)
@@ -419,9 +486,14 @@ public static class Workspaces
 
     private static bool IsTaken(string name, string? ignore)
     {
-        if (ignore != null && string.Equals(name, ignore, StringComparison.OrdinalIgnoreCase)) return false;
-        if (CustomFolders.ContainsKey(name)) return true;
         var path = DefaultFolderOf(name);
+        if (ignore != null && string.Equals(name, ignore, StringComparison.OrdinalIgnoreCase))
+        {
+            // Only the case changes. Linux tells folders apart by case: another one may have exactly the new name.
+            return !OperatingSystem.IsWindows() && !string.Equals(name, ignore, StringComparison.Ordinal) && !IsCustom(ignore)
+                   && (Directory.Exists(path) || File.Exists(path));
+        }
+        if (CustomFolders.ContainsKey(name)) return true;
         return Directory.Exists(path) || File.Exists(path);
     }
 
@@ -445,3 +517,8 @@ public static class Workspaces
         else Dispatcher.UIThread.Post(() => Changed?.Invoke());
     }
 }
+
+/// <summary>A workspace and its folder, read beforehand (see <see cref="Workspaces.Resolve"/>).</summary>
+/// <param name="Name">"" for Base.</param>
+/// <param name="IsCustom">Its folder was chosen by the user (<see cref="Workspaces.IsCustom"/>).</param>
+public sealed record ResolvedWorkspace(string Name, string Folder, bool IsCustom);
