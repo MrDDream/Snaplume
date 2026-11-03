@@ -3,8 +3,8 @@
 <head>
   <meta charset="utf-8">
   <meta name="viewport" content="width=device-width, initial-scale=1">
-  <title>Snaplume: free screenshot, annotation and screen recording app for Windows</title>
-  <meta name="description" content="Snaplume is a free, open-source (MIT) screenshot, annotation and screen-recording app for Windows 10 and 11. Smart capture, scrolling capture, OCR, QR codes, a full editor, MP4 recording, GIF export. 100% offline: no account, no cloud, no telemetry.">
+  <title>Snaplume: free screenshot, annotation and screen recording app for Windows and Linux</title>
+  <meta name="description" content="Snaplume is a free, open-source (MIT) screenshot, annotation and screen-recording app for Windows 10, 11 and Linux. Smart capture, scrolling capture, OCR, QR codes, a full editor, screen recording, compression to H.265, AV1 or WebM, GIF and WebP export. 100% offline: no account, no cloud, no telemetry.">
   <meta name="color-scheme" content="light dark">
   <meta name="theme-color" content="#1E1B2E">
   <link rel="canonical" href="https://mrddream.github.io/Snaplume/">
@@ -13,8 +13,8 @@
   <link rel="alternate" hreflang="x-default" href="https://mrddream.github.io/Snaplume/">
   <link rel="icon" type="image/svg+xml" href="branding/snaplume.svg">
   <meta property="og:type" content="website">
-  <meta property="og:title" content="Snaplume: screenshots, annotations and screen recording for Windows">
-  <meta property="og:description" content="Free, open source and 100% offline. No account, no cloud, no telemetry.">
+  <meta property="og:title" content="Snaplume: screenshots, annotations and screen recording for Windows and Linux">
+  <meta property="og:description" content="Free, open source and 100% offline, on Windows and Linux. No account, no cloud, no telemetry.">
   <meta property="og:url" content="https://mrddream.github.io/Snaplume/">
   <link rel="stylesheet" href="assets/site.css">
   <script src="assets/site.js" defer></script>
@@ -54,12 +54,12 @@
     <div class="wrap hero-grid">
       <img class="hero-logo" src="branding/snaplume.svg" alt="Snaplume logo" width="88" height="88">
       <h1>Capture, annotate and record your screen<span class="spark">.</span></h1>
-      <p class="lead">Snaplume is a free, open-source screenshot and screen-recording app for Windows. Smart capture, a full editor, OCR, QR codes, MP4 recording and GIF export. <strong>100% offline</strong>: no account, no cloud, no telemetry.</p>
+      <p class="lead">Snaplume is a free, open-source screenshot and screen-recording app for Windows and Linux. Smart capture, a full editor, OCR, QR codes, video recording and compression, GIF export. <strong>100% offline</strong>: no account, no cloud, no telemetry.</p>
       <div class="hero-actions">
-        <a class="btn btn-primary" href="https://github.com/MrDDream/Snaplume/releases/latest"><svg aria-hidden="true"><use href="#i-download"/></svg>Download for Windows</a>
+        <a class="btn btn-primary" href="https://github.com/MrDDream/Snaplume/releases/latest"><svg aria-hidden="true"><use href="#i-download"/></svg>Download for Windows or Linux</a>
         <a class="btn btn-ghost" href="https://github.com/MrDDream/Snaplume"><svg aria-hidden="true"><use href="#i-github"/></svg>View on GitHub</a>
       </div>
-      <p class="hero-meta"><span>Windows 10 (2004+) and 11, x64</span><span>Installer or portable</span><span>MIT license</span></p>
+      <p class="hero-meta"><span>Windows 10 (2004+) and 11, x64</span><span>Linux, x64 and ARM64</span><span>MIT license</span></p>
       <div class="hero-shot">
         <img src="assets/hero.svg" width="1400" height="820" alt="The Snaplume editor showing a screenshot annotated with an arrow, numbered steps, a highlighter, a pixelated e-mail address and an APPROVED stamp, with the dark My screenshots panel in front of it">
       </div>
@@ -107,7 +107,7 @@
         </figure>
         <figure id="shot-workspace" role="tabpanel" aria-labelledby="tab-workspace">
           <img src="assets/workspace.svg" width="1320" height="890" loading="lazy" alt="The workspace window with the workspaces sidebar (Base, Project Atlas, Bug reports, Documentation, Release 1.0, Tutorials) and two captures being dragged onto a workspace">
-          <figcaption><strong>Workspaces.</strong> One sub-folder per project; drag captures between them.</figcaption>
+          <figcaption><strong>Workspaces.</strong> One folder per project, wherever you like; drag captures between them.</figcaption>
         </figure>
         <figure id="shot-player" role="tabpanel" aria-labelledby="tab-player">
           <img src="assets/player.svg" width="1320" height="828" loading="lazy" alt="The built-in video player showing a recording with a webcam overlay and a highlighted click, a trim selection on the timeline, and Trim, GIF and Frame export buttons">
@@ -115,7 +115,7 @@
         </figure>
         <figure id="shot-themes" role="tabpanel" aria-labelledby="tab-themes">
           <img src="assets/themes.svg" width="1320" height="992" loading="lazy" alt="The Settings window split diagonally between the light theme and the dark theme">
-          <figcaption><strong>Light and dark.</strong> Or automatic, following Windows.</figcaption>
+          <figcaption><strong>Light and dark.</strong> Or automatic, following your system.</figcaption>
         </figure>
       </div>
     </div>
@@ -126,7 +126,7 @@
       <div class="section-head">
         <span class="eyebrow">Features</span>
         <h2 id="features-title">From a quick snip to a step-by-step guide</h2>
-        <p>Everything below works offline, out of the box.</p>
+        <p>Everything below works offline, on Windows and Linux. Only the AV1, WebM and animated WebP video formats need the optional ffmpeg module.</p>
       </div>
       <div class="features">
         <article class="card">
@@ -137,6 +137,7 @@
             <li>Full screen, all screens, active window, repeat last area</li>
             <li>Timer for menus and tooltips</li>
             <li>Scrolling capture with automatic stitching</li>
+            <li>Option: <kbd>Win</kbd>+<kbd>Shift</kbd>+<kbd>S</kbd> opens Snaplume instead of the Snipping Tool</li>
           </ul>
         </article>
         <article class="card">
@@ -146,7 +147,7 @@
             <li>Capture text (OCR) straight to the clipboard</li>
             <li>Read the text of any existing capture</li>
             <li>QR code and barcode reading</li>
-            <li>Windows OCR engine, fully offline</li>
+            <li>Windows OCR engine, or Tesseract on Linux, fully offline</li>
           </ul>
         </article>
         <article class="card">
@@ -155,27 +156,30 @@
           <ul>
             <li>Arrows, lines, shapes, pen, text, step numbers</li>
             <li>54 vector stamps, highlighter, pixelate, spotlight, magnifier</li>
-            <li>Crop, resize, shadow, border, rounded corners, torn edge</li>
-            <li>Presets per tool, undo / redo, always-editable annotations</li>
-            <li>PNG, JPEG, BMP, print, e-mail</li>
+            <li>Insert images: paste, open, drag and drop or capture</li>
+            <li>Borders in one click: outline, frame, shadow, rounded corners, torn edges, with transparent corners</li>
+            <li>Crop, resize, presets per tool, undo / redo, always-editable annotations</li>
+            <li>PNG, JPEG, WebP, BMP, print, e-mail</li>
           </ul>
         </article>
         <article class="card">
           <div class="ico" aria-hidden="true"><svg><use href="#i-video"/></svg></div>
           <h3>Video</h3>
           <ul>
-            <li>MP4 recording of a region, a window's area or a screen</li>
-            <li>System audio and microphone</li>
-            <li>Click highlighting and webcam overlay</li>
+            <li>Record a region, a window's area or a screen</li>
+            <li>Options bar before recording: microphone, system sound, webcam, zoom on clicks, area size</li>
+            <li>MP4 H.264 or H.265, AV1, WebM, with a quality or a maximum size</li>
+            <li>Export / compress to H.265, AV1, WebM or animated WebP under a size, like Discord's 10 MB</li>
             <li>Built-in player: trim, GIF and frame export</li>
+            <li>Optional ffmpeg module for the web formats, downloaded on demand</li>
           </ul>
         </article>
         <article class="card">
           <div class="ico" aria-hidden="true"><svg><use href="#i-workspace"/></svg></div>
           <h3>Organize and share</h3>
           <ul>
-            <li>"My screenshots" panel and workspace window</li>
-            <li>Workspaces as sub-folders, drag and drop</li>
+            <li>"My screenshots" panel with the workspaces in a side panel</li>
+            <li>Workspaces in any folder: another drive, a project, a network share</li>
             <li>Drag captures into mail, chat and documents</li>
             <li>Document generator: PDF, Word (DOCX), HTML</li>
             <li>Print or e-mail a selection of captures</li>
@@ -185,9 +189,11 @@
           <div class="ico" aria-hidden="true"><svg><use href="#i-globe"/></svg></div>
           <h3>Made for everyone</h3>
           <ul>
+            <li>Windows and Linux (X11 or Wayland)</li>
             <li>6 languages, including Arabic (right to left)</li>
             <li>Light, dark or automatic theme</li>
-            <li>Installer or portable, configurable hotkeys</li>
+            <li>Installer, portable, MSI, .deb or .rpm; configurable hotkeys</li>
+            <li>In-app updates, verified by SHA-256</li>
             <li>Scriptable command line</li>
           </ul>
         </article>
@@ -201,12 +207,14 @@
         <div>
           <div class="big">100%</div>
           <h2 id="privacy-title">offline. For real.</h2>
-          <p>Snaplume never talks to a server. Your screenshots, recordings and settings are plain files on your PC, in folders you choose.</p>
+          <p>Your screenshots, recordings and settings are plain files on your PC, in folders you choose. Snaplume goes online only when you ask, and only to GitHub.</p>
         </div>
         <ul class="checks">
           <li><svg aria-hidden="true"><use href="#i-check"/></svg><span>No account and no sign-in</span></li>
           <li><svg aria-hidden="true"><use href="#i-check"/></svg><span>No cloud upload, no sharing links</span></li>
           <li><svg aria-hidden="true"><use href="#i-check"/></svg><span>No telemetry, no analytics, no ads</span></li>
+          <li><svg aria-hidden="true"><use href="#i-check"/></svg><span>Network only on request, only with GitHub: update check, update download, optional ffmpeg module</span></li>
+          <li><svg aria-hidden="true"><use href="#i-check"/></svg><span>Every download verified by SHA-256 before use</span></li>
           <li><svg aria-hidden="true"><use href="#i-check"/></svg><span>OCR and QR decoding run locally</span></li>
           <li><svg aria-hidden="true"><use href="#i-check"/></svg><span>E-mail goes through your own mail client</span></li>
           <li><svg aria-hidden="true"><use href="#i-check"/></svg><span>Open source: read every line on GitHub</span></li>
@@ -219,8 +227,8 @@
     <div class="wrap">
       <div class="section-head">
         <span class="eyebrow">Languages and themes</span>
-        <h2 id="languages-title">Speaks your language, matches your Windows</h2>
-        <p>The interface follows the Windows language automatically, or the one you pick.</p>
+        <h2 id="languages-title">Speaks your language, matches your system</h2>
+        <p>The interface follows the system language automatically, or the one you pick, and the theme can follow the system's light or dark mode.</p>
       </div>
       <ul class="langs">
         <li lang="en">English</li>
@@ -241,8 +249,9 @@
       <div class="section-head">
         <span class="eyebrow">Download</span>
         <h2 id="download-title">Get Snaplume</h2>
-        <p>Windows 10 version 2004 or later, or Windows 11, 64-bit. No .NET installation needed.</p>
+        <p>Windows 10 version 2004 or later, or Windows 11, 64-bit; or a recent Linux distribution, x64 or ARM64. No .NET installation needed.</p>
       </div>
+      <h3 class="dl-platform">Windows</h3>
       <div class="downloads">
         <article class="card">
           <h3>Installer</h3>
@@ -259,6 +268,22 @@
       </div>
       <p class="note"><strong>Deploying to many PCs?</strong> Each release also ships <code>Snaplume-&lt;version&gt;-x64.msi</code>, an all-users MSI package for Intune, Group Policy or <code>msiexec /qn</code>.</p>
       <p class="note"><strong>Windows SmartScreen warning?</strong> The builds are not code-signed yet, so Windows may say it "protected your PC" the first time. Click <strong>More info › Run anyway</strong>. Each release ships a <code>SHA256SUMS.txt</code> file to verify your download.</p>
+      <h3 class="dl-platform">Linux</h3>
+      <div class="downloads">
+        <article class="card">
+          <h3>Debian, Ubuntu…</h3>
+          <p><code>snaplume_&lt;version&gt;-1_amd64.deb</code> (or <code>arm64</code>)</p>
+          <p>Install it with <code>sudo apt install ./snaplume_&lt;version&gt;-1_amd64.deb</code>. GStreamer, ffmpeg and Tesseract come with it.</p>
+          <a class="btn btn-primary" href="https://github.com/MrDDream/Snaplume/releases/latest"><svg aria-hidden="true"><use href="#i-download"/></svg>Download the .deb</a>
+        </article>
+        <article class="card">
+          <h3>Fedora…</h3>
+          <p><code>snaplume-&lt;version&gt;-1.x86_64.rpm</code> (or <code>aarch64</code>)</p>
+          <p>Install it with <code>sudo dnf install ./snaplume-&lt;version&gt;-1.x86_64.rpm</code>. Its dependencies come with it too.</p>
+          <a class="btn btn-outline" href="https://github.com/MrDDream/Snaplume/releases/latest"><svg aria-hidden="true"><use href="#i-download"/></svg>Download the .rpm</a>
+        </article>
+      </div>
+      <p class="note"><strong>Using Wayland?</strong> (the default on Ubuntu and Fedora) Captures and recordings go through the system's portals, which ask for your permission once. Windows are not detected under the mouse (drag to select) and clicks are not highlighted in videos. Global shortcuts need KDE or GNOME 48+ (elsewhere, bind a system shortcut to <code>snaplume --capture region</code>), and on GNOME the tray icon needs the AppIndicator extension. An X11 session has every feature. Verify your download with <code>SHA256SUMS-linux.txt</code>.</p>
     </div>
   </section>
 
@@ -279,10 +304,11 @@
             <tr><td>Repeat last region</td><td><kbd>Ctrl</kbd> + <kbd>Print Screen</kbd></td></tr>
             <tr><td>Region with timer</td><td><kbd>Ctrl</kbd> + <kbd>Shift</kbd> + <kbd>Print Screen</kbd></td></tr>
             <tr><td>Start / stop a video</td><td><kbd>Ctrl</kbd> + <kbd>Alt</kbd> + <kbd>Print Screen</kbd></td></tr>
+            <tr><td>Region, instead of the Snipping Tool (Windows, option in Settings › Hotkeys)</td><td><kbd>Win</kbd> + <kbd>Shift</kbd> + <kbd>S</kbd></td></tr>
           </tbody>
         </table>
       </div>
-<pre><code><span class="c"># Scriptable command line</span>
+<pre><code><span class="c"># Scriptable command line (snaplume on Linux)</span>
 Snaplume.exe --capture screen --exit
 Snaplume.exe --capture region --delay 5 --workspace "Bug reports"
 Snaplume.exe --capture scrolling
@@ -302,8 +328,20 @@ Snaplume.exe --record screen --duration 30 --exit</code></pre>
           <div><p>Yes. Snaplume is open source under the MIT license: free for personal and commercial use, with no ads, no trial and no premium tier.</p></div>
         </details>
         <details>
-          <summary>Does Snaplume send anything over the internet?</summary>
-          <div><p>No. There is no account, no cloud, no telemetry. The only request it can send is the update check, when you ask for it (or turn on its daily check, off by default). Text recognition uses the OCR engine built into Windows and QR codes are decoded locally.</p></div>
+          <summary>Is Snaplume still 100% offline?</summary>
+          <div><p>Yes. There is no account, no cloud, no telemetry. Snaplume goes online only when you ask, and only to GitHub: to check for a new version (from Settings › About, or daily if you turn that on; off by default), to download an update, or to fetch the optional ffmpeg module. Each download is checked against a SHA-256 before it is used. Text recognition (the Windows OCR engine, or Tesseract on Linux) and QR codes run locally.</p></div>
+        </details>
+        <details>
+          <summary>Does Snaplume run on Linux?</summary>
+          <div><p>Yes, since version 1.2: a <code>.deb</code> package for Debian and Ubuntu and an <code>.rpm</code> for Fedora, on x64 and ARM64. An X11 session has every feature.</p><p>Under Wayland, the system's portals ask for your permission the first time; windows are not detected under the mouse (drag to select) and clicks are not highlighted in videos; global shortcuts need KDE or GNOME 48+ (elsewhere, bind a system shortcut to <code>snaplume --capture region</code>); on GNOME, the tray icon needs the AppIndicator extension.</p></div>
+        </details>
+        <details>
+          <summary>What is the optional ffmpeg module, and why is it not included?</summary>
+          <div><p>It adds the web video formats: AV1, WebM and animated WebP (and H.265 when Windows has no encoder for it). Recording, MP4 H.264, compression to a maximum size and GIF export work without it, so it stays out of the download: about 81 MB that most people never need.</p><p>On Windows, install it from Settings › Video: Snaplume downloads an LGPL build and checks it against a SHA-256 written in the app before installing it. An ffmpeg already in your PATH is used as is. On Linux, the system's ffmpeg is used.</p></div>
+        </details>
+        <details>
+          <summary>How do I update Snaplume?</summary>
+          <div><p>Settings › About checks for a new version. <strong>Download and install</strong> fetches the package that fits your installation (installer, MSI, portable zip, .deb or .rpm) into a folder of your own, checks its SHA-256 against the published list, and checks it again right before installing it.</p></div>
         </details>
         <details>
           <summary>Why does Windows show a SmartScreen warning?</summary>
@@ -311,19 +349,19 @@ Snaplume.exe --record screen --duration 30 --exit</code></pre>
         </details>
         <details>
           <summary>The Print Screen key opens another tool. What can I do?</summary>
-          <div><p>A hotkey can belong to only one application, and Snaplume tells you when one is taken. Quit the other tool or pick other shortcuts in Snaplume's settings. On Windows 11, also turn off <em>Settings › Accessibility › Keyboard › Use the Print screen key to open screen capture</em>.</p></div>
+          <div><p>A hotkey can belong to only one application, and Snaplume tells you when one is taken. Quit the other tool or pick other shortcuts in Snaplume's settings. On Windows 11, also turn off <em>Settings › Accessibility › Keyboard › Use the Print screen key to open screen capture</em>. To use <kbd>Win</kbd>+<kbd>Shift</kbd>+<kbd>S</kbd> for Snaplume, turn on the option in Settings › Hotkeys.</p></div>
         </details>
         <details>
           <summary>Where are my captures saved?</summary>
-          <div><p>In <code>Pictures\Snaplume</code> by default (you can change it), as regular PNG, JPEG or MP4 files. Each workspace is a sub-folder. Annotations are kept beside them in a hidden <code>.snaplume</code> folder so they stay editable.</p></div>
+          <div><p>In <code>Pictures\Snaplume</code> by default (you can change it), as regular PNG, JPEG, WebP or MP4 files. Each workspace is a sub-folder, or any folder you choose: another drive, a project folder, a network share. Removing a workspace that has its own folder never deletes your files. Annotations are kept beside them in a hidden <code>.snaplume</code> folder so they stay editable.</p></div>
         </details>
         <details>
           <summary>What is the portable version?</summary>
           <div><p>A zip you can run from anywhere, including a USB stick, without installing anything. An empty file named <code>portable</code> next to <code>Snaplume.exe</code> keeps the settings in that folder.</p></div>
         </details>
         <details>
-          <summary>Which Windows versions are supported?</summary>
-          <div><p>Windows 10 version 2004 (May 2020 Update) or later and Windows 11, on 64-bit (x64) PCs.</p></div>
+          <summary>Which systems are supported?</summary>
+          <div><p>Windows 10 version 2004 (May 2020 Update) or later and Windows 11, on 64-bit (x64) PCs; and recent Linux distributions, in an X11 or Wayland session, on x64 or ARM64.</p></div>
         </details>
         <details>
           <summary>How can I help?</summary>
