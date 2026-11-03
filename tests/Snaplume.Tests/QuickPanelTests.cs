@@ -14,6 +14,7 @@ using Snaplume.Workspace;
 namespace Snaplume.Tests;
 
 /// <summary>The quick panel opened without a screen, with the application's themes; the mouse is the headless one.</summary>
+[Collection(ApplicationState.Name)]
 public class QuickPanelTests
 {
     [AvaloniaFact]

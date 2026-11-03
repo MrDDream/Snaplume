@@ -16,6 +16,7 @@ using PixelRect = Snaplume.Capturing.PixelRect;
 namespace Snaplume.Tests;
 
 /// <summary>The video options bar opened without a screen, with the application's themes; the mouse is the headless one.</summary>
+[Collection(ApplicationState.Name)]
 public class RecordingControlBarTests
 {
     private static readonly PixelRect Area = new(100, 100, 800, 600);

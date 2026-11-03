@@ -23,6 +23,7 @@ namespace Snaplume.Tests;
 /// The editor window opened without a screen (Avalonia headless, Skia): layout, drawing with the mouse, keyboard
 /// shortcuts, insertion and the close confirmation. The input goes to the headless window, never to the desktop.
 /// </summary>
+[Collection(ApplicationState.Name)]
 public class EditorWindowTests
 {
     private static (EditorWindow Window, AnnotationCanvas Canvas, TempFolder Folder) Open(int width = 400, int height = 260)

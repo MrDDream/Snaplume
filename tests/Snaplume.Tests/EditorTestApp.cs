@@ -111,3 +111,13 @@ internal sealed class TempFolder : IDisposable
         catch (IOException) { /* left for the system to clean */ }
     }
 }
+
+/// <summary>
+/// Tests that add the application's themes or replace <see cref="AppServices.Settings"/> while they run: they must not
+/// run at the same time as one another.
+/// </summary>
+[CollectionDefinition(Name)]
+public sealed class ApplicationState
+{
+    public const string Name = "Application state";
+}
