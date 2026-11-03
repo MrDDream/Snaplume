@@ -1003,5 +1003,20 @@
   "Video.OriginalKept": "Das Originalvideo bleibt erhalten: {0}",
   "App.ImageFileTooLarge": "Diese Datei ist für ein Bild zu groß ({0} MB): Die Grenze liegt bei 1 GB.",
   "Workspaces.Delete.Nested": "Der Arbeitsbereich „{0}“ kann nicht gelöscht werden: Sein Ordner enthält den von {1}. Geben Sie diesen Arbeitsbereichen zuerst einen anderen Ordner oder entfernen Sie sie aus der Liste.",
-  "Workspaces.Folder.Nested": "Dieser Ordner liegt im Ordner des Arbeitsbereichs „{0}“ oder enthält ihn: Ordner von Arbeitsbereichen können nicht verschachtelt werden."
+  "Workspaces.Folder.Nested": "Dieser Ordner liegt im Ordner des Arbeitsbereichs „{0}“ oder enthält ihn: Ordner von Arbeitsbereichen können nicht verschachtelt werden.",
+  "App.QuitWhileExporting": "Ein Video wird gerade exportiert. Trotzdem beenden? Der Export wird abgebrochen.",
+  "Capture.AfterSaveFailed": "{0} wurde gespeichert, aber der nächste Schritt ist fehlgeschlagen:\n{1}",
+  "Editor.CopyTooLarge": "Das Bild ist zu groß zum Kopieren ({0} × {1} Pixel). Exportieren Sie es stattdessen.",
+  "Editor.FontSizeValue": "{0} pt",
+  "Editor.Insert.CaptureBusy": "Eine andere Aufnahme läuft gerade. Beenden Sie sie und versuchen Sie es dann erneut.",
+  "Player.Export.Ok": "Exportieren",
+  "Player.Export.Range": "Teil des Videos",
+  "Player.Export.RangeAll": "Ganzes Video ({0})",
+  "Player.Export.RangeSelection": "Ausschnitt: {0} → {1}",
+  "Player.ExportFailed": "Das Video kann nicht exportiert werden:\n{0}",
+  "Recording.FrameTitle": "Aufgenommener Bereich",
+  "Recording.GripTitle": "Aufgenommenen Bereich verschieben",
+  "Video.OriginalNotMoved": "{0} wurde konvertiert, aber das Originalvideo konnte nicht in den Arbeitsbereich verschoben werden. Es wurde hier aufbewahrt: {1}",
+  "Video.OriginalNotMovedTitle": "Originalvideo nicht verschoben",
+  "Video.StopTimeout": "Die Aufnahme hat das Video nicht abgeschlossen."
 }

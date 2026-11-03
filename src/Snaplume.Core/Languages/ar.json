@@ -1003,5 +1003,20 @@
   "Video.OriginalKept": "الفيديو الأصلي محفوظ: {0}",
   "App.ImageFileTooLarge": "هذا الملف كبير جدًا بالنسبة لصورة ({0} ميغابايت): الحد الأقصى 1 غيغابايت.",
   "Workspaces.Delete.Nested": "لا يمكن حذف مساحة العمل «{0}»: مجلدها يحتوي على مجلد {1}. امنح هذه المساحات مجلدًا آخر أولًا، أو أزلها من القائمة.",
-  "Workspaces.Folder.Nested": "هذا المجلد موجود داخل مجلد مساحة العمل «{0}» أو يحتويه: لا يمكن أن تتداخل مجلدات مساحات العمل."
+  "Workspaces.Folder.Nested": "هذا المجلد موجود داخل مجلد مساحة العمل «{0}» أو يحتويه: لا يمكن أن تتداخل مجلدات مساحات العمل.",
+  "App.QuitWhileExporting": "يجري تصدير فيديو. هل تريد الإنهاء على أي حال؟ سيتم إلغاء التصدير.",
+  "Capture.AfterSaveFailed": "تم حفظ {0}، لكن ما تلا ذلك فشل:\n{1}",
+  "Editor.CopyTooLarge": "الصورة كبيرة جدًا بحيث لا يمكن نسخها ({0} × {1} بكسل). قم بتصديرها بدلًا من ذلك.",
+  "Editor.FontSizeValue": "{0} نقطة",
+  "Editor.Insert.CaptureBusy": "هناك لقطة أخرى قيد التنفيذ. أنهِها ثم حاول مرة أخرى.",
+  "Player.Export.Ok": "تصدير",
+  "Player.Export.Range": "جزء الفيديو",
+  "Player.Export.RangeAll": "الفيديو كاملًا ({0})",
+  "Player.Export.RangeSelection": "المقطع: {0} ← {1}",
+  "Player.ExportFailed": "تعذر تصدير الفيديو:\n{0}",
+  "Recording.FrameTitle": "المنطقة المسجلة",
+  "Recording.GripTitle": "تحريك المنطقة المسجلة",
+  "Video.OriginalNotMoved": "تم تحويل {0}، لكن تعذر نقل الفيديو الأصلي إلى مساحة العمل. تم الاحتفاظ به هنا: {1}",
+  "Video.OriginalNotMovedTitle": "لم يتم نقل الفيديو الأصلي",
+  "Video.StopTimeout": "لم يُنهِ المسجّل الفيديو."
 }

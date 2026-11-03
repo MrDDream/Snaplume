@@ -1003,5 +1003,20 @@
   "Video.OriginalKept": "La vidéo d'origine est conservée : {0}",
   "App.ImageFileTooLarge": "Ce fichier est trop volumineux pour une image ({0} Mo) : la limite est de 1 Go.",
   "Workspaces.Delete.Nested": "L'espace de travail « {0} » ne peut pas être supprimé : son dossier contient celui de {1}. Donnez d'abord un autre dossier à ces espaces de travail, ou retirez-les de la liste.",
-  "Workspaces.Folder.Nested": "Ce dossier est à l'intérieur de celui de l'espace de travail « {0} », ou le contient : les dossiers des espaces de travail ne peuvent pas être imbriqués."
+  "Workspaces.Folder.Nested": "Ce dossier est à l'intérieur de celui de l'espace de travail « {0} », ou le contient : les dossiers des espaces de travail ne peuvent pas être imbriqués.",
+  "App.QuitWhileExporting": "Une vidéo est en cours d'exportation. Quitter quand même ? L'exportation sera annulée.",
+  "Capture.AfterSaveFailed": "{0} est enregistrée, mais la suite a échoué :\n{1}",
+  "Editor.CopyTooLarge": "L'image est trop grande pour être copiée ({0} × {1} pixels). Exportez-la plutôt.",
+  "Editor.FontSizeValue": "{0} pt",
+  "Editor.Insert.CaptureBusy": "Une autre capture est en cours. Terminez-la, puis réessayez.",
+  "Player.Export.Ok": "Exporter",
+  "Player.Export.Range": "Partie de la vidéo",
+  "Player.Export.RangeAll": "Toute la vidéo ({0})",
+  "Player.Export.RangeSelection": "Extrait : {0} → {1}",
+  "Player.ExportFailed": "Impossible d'exporter la vidéo :\n{0}",
+  "Recording.FrameTitle": "Zone enregistrée",
+  "Recording.GripTitle": "Déplacer la zone enregistrée",
+  "Video.OriginalNotMoved": "{0} est convertie, mais sa vidéo d'origine n'a pas pu être déplacée dans l'espace de travail. Elle est conservée ici : {1}",
+  "Video.OriginalNotMovedTitle": "Vidéo d'origine non déplacée",
+  "Video.StopTimeout": "L'enregistreur n'a pas terminé la vidéo."
 }

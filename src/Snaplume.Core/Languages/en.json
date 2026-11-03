@@ -1003,5 +1003,20 @@
   "Video.OriginalKept": "The original video is kept: {0}",
   "App.ImageFileTooLarge": "This file is too large for an image ({0} MB): the limit is 1 GB.",
   "Workspaces.Delete.Nested": "The workspace “{0}” cannot be deleted: its folder contains the one of {1}. First give these workspaces another folder, or remove them from the list.",
-  "Workspaces.Folder.Nested": "This folder is inside the one of the workspace “{0}”, or contains it: workspace folders cannot be nested."
+  "Workspaces.Folder.Nested": "This folder is inside the one of the workspace “{0}”, or contains it: workspace folders cannot be nested.",
+  "App.QuitWhileExporting": "A video is being exported. Quit anyway? The export will be cancelled.",
+  "Capture.AfterSaveFailed": "{0} was saved, but what followed failed:\n{1}",
+  "Editor.CopyTooLarge": "The image is too large to be copied ({0} × {1} pixels). Export it instead.",
+  "Editor.FontSizeValue": "{0} pt",
+  "Editor.Insert.CaptureBusy": "Another capture is in progress. Finish it, then try again.",
+  "Player.Export.Ok": "Export",
+  "Player.Export.Range": "Part of the video",
+  "Player.Export.RangeAll": "Whole video ({0})",
+  "Player.Export.RangeSelection": "Extract: {0} → {1}",
+  "Player.ExportFailed": "Couldn't export the video:\n{0}",
+  "Recording.FrameTitle": "Recorded area",
+  "Recording.GripTitle": "Move the recorded area",
+  "Video.OriginalNotMoved": "{0} is converted, but its original video couldn't be moved into the workspace. It was kept here: {1}",
+  "Video.OriginalNotMovedTitle": "Original video not moved",
+  "Video.StopTimeout": "The recorder did not finish the video."
 }

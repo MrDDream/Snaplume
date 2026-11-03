@@ -1003,5 +1003,20 @@
   "Video.OriginalKept": "Se conserva el vídeo original: {0}",
   "App.ImageFileTooLarge": "Este archivo es demasiado grande para una imagen ({0} MB): el límite es de 1 GB.",
   "Workspaces.Delete.Nested": "El espacio de trabajo «{0}» no se puede eliminar: su carpeta contiene la de {1}. Primero asigne otra carpeta a esos espacios de trabajo, o quítelos de la lista.",
-  "Workspaces.Folder.Nested": "Esta carpeta está dentro de la del espacio de trabajo «{0}», o la contiene: las carpetas de los espacios de trabajo no se pueden anidar."
+  "Workspaces.Folder.Nested": "Esta carpeta está dentro de la del espacio de trabajo «{0}», o la contiene: las carpetas de los espacios de trabajo no se pueden anidar.",
+  "App.QuitWhileExporting": "Se está exportando un video. ¿Salir de todos modos? La exportación se cancelará.",
+  "Capture.AfterSaveFailed": "{0} se guardó, pero lo que seguía falló:\n{1}",
+  "Editor.CopyTooLarge": "La imagen es demasiado grande para copiarla ({0} × {1} píxeles). Expórtela en su lugar.",
+  "Editor.FontSizeValue": "{0} pt",
+  "Editor.Insert.CaptureBusy": "Hay otra captura en curso. Termínela y vuelva a intentarlo.",
+  "Player.Export.Ok": "Exportar",
+  "Player.Export.Range": "Parte del vídeo",
+  "Player.Export.RangeAll": "Todo el vídeo ({0})",
+  "Player.Export.RangeSelection": "Fragmento: {0} → {1}",
+  "Player.ExportFailed": "No se puede exportar el video:\n{0}",
+  "Recording.FrameTitle": "Zona grabada",
+  "Recording.GripTitle": "Mover la zona grabada",
+  "Video.OriginalNotMoved": "{0} está convertido, pero su video original no se pudo mover al espacio de trabajo. Se conservó aquí: {1}",
+  "Video.OriginalNotMovedTitle": "Video original no movido",
+  "Video.StopTimeout": "La grabadora no terminó el video."
 }
