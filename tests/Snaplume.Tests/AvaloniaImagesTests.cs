@@ -39,4 +39,21 @@ public class AvaloniaImagesTests
         // Premultiplied storage keeps the colours of translucent pixels within one step.
         foreach (int i in new[] { 4, 5, 6, 12, 13, 14 }) Assert.InRange(back[i] - image.Pixels[i], -1, 1);
     }
+
+    [Fact]
+    public void Premultiplied_pixels_go_back_to_the_nearest_straight_value()
+    {
+        // 200 rows: several bands, done in parallel.
+        var image = new PixelBuffer(2, 200);
+        for (int i = 0; i < image.Pixels.Length; i += 8)
+        {
+            // 100, 50 and 1 out of 128 are 199.2, 99.6 and 2.0 in straight alpha; 200 out of 100 is clamped.
+            new byte[] { 100, 50, 1, 128, 200, 0, 0, 100 }.CopyTo(image.Pixels, i);
+        }
+
+        AvaloniaImages.Unpremultiply(image);
+
+        for (int i = 0; i < image.Pixels.Length; i += 8)
+            Assert.Equal(new byte[] { 199, 100, 2, 128, 255, 0, 0, 100 }, image.Pixels[i..(i + 8)]);
+    }
 }

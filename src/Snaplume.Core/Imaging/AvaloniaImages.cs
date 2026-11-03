@@ -10,7 +10,7 @@ public static class AvaloniaImages
 {
     public static readonly Vector Dpi = new(96, 96);
 
-    /// <summary>Rows per parallel chunk when premultiplying a big image.</summary>
+    /// <summary>Rows per parallel chunk when premultiplying a big image, or back.</summary>
     private const int RowsPerChunk = 64;
 
     /// <summary>
@@ -20,7 +20,7 @@ public static class AvaloniaImages
     /// </summary>
     public static WriteableBitmap ToBitmap(PixelBuffer image)
     {
-        bool opaque = IsOpaque(image);
+        bool opaque = image.IsOpaque();
         var bitmap = new WriteableBitmap(new PixelSize(image.Width, image.Height), Dpi, PixelFormat.Bgra8888,
             opaque ? AlphaFormat.Opaque : AlphaFormat.Premul);
         using var locked = bitmap.Lock();
@@ -41,16 +41,6 @@ public static class AvaloniaImages
             });
         }
         return bitmap;
-    }
-
-    /// <summary>True when every pixel has an alpha of 255.</summary>
-    public static bool IsOpaque(PixelBuffer image)
-    {
-        foreach (uint pixel in MemoryMarshal.Cast<byte, uint>(image.Pixels.AsSpan(0, image.Stride * image.Height)))
-        {
-            if (pixel < 0xFF000000) return false;
-        }
-        return true;
     }
 
     /// <summary>One row of straight-alpha BGRA to premultiplied, rounded as Skia does.</summary>
@@ -91,21 +81,29 @@ public static class AvaloniaImages
             handle.Free();
         }
         // Rendered bitmaps are premultiplied: back to straight alpha, as everywhere else.
-        if (bitmap.AlphaFormat == AlphaFormat.Premul) Unpremultiply(image.Pixels);
+        if (bitmap.AlphaFormat == AlphaFormat.Premul) Unpremultiply(image);
         if (bitmap.Format is { } format && format == PixelFormat.Rgba8888) SwapRedBlue(image.Pixels);
         return image;
     }
 
-    private static void Unpremultiply(byte[] p)
+    /// <summary>Premultiplied pixels back to straight alpha, rounded to the nearest value; in parallel bands of rows.</summary>
+    internal static void Unpremultiply(PixelBuffer image)
     {
-        for (int i = 0; i < p.Length; i += 4)
+        var p = image.Pixels;
+        int stride = image.Stride, height = image.Height;
+        Parallel.For(0, (height + RowsPerChunk - 1) / RowsPerChunk, chunk =>
         {
-            int a = p[i + 3];
-            if (a is 0 or 255) continue;
-            p[i] = (byte)Math.Min(255, p[i] * 255 / a);
-            p[i + 1] = (byte)Math.Min(255, p[i + 1] * 255 / a);
-            p[i + 2] = (byte)Math.Min(255, p[i + 2] * 255 / a);
-        }
+            int end = Math.Min(height, (chunk + 1) * RowsPerChunk) * stride;
+            for (int i = chunk * RowsPerChunk * stride; i < end; i += 4)
+            {
+                int a = p[i + 3];
+                if (a is 0 or 255) continue;
+                int half = a / 2;
+                p[i] = (byte)Math.Min(255, (p[i] * 255 + half) / a);
+                p[i + 1] = (byte)Math.Min(255, (p[i + 1] * 255 + half) / a);
+                p[i + 2] = (byte)Math.Min(255, (p[i + 2] * 255 + half) / a);
+            }
+        });
     }
 
     private static void SwapRedBlue(byte[] p)

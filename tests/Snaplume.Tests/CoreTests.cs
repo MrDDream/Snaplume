@@ -18,6 +18,7 @@ public class CoreTests
     [InlineData("v1.2.3<script>", false, "")]
     [InlineData("", false, "")]
     [InlineData("v1.2.3.4", false, "")]
+    [InlineData("v\u0661.\u0662.\u0663", false, "")]
     public void UpdateChecker_parses_release_tags(string tag, bool ok, string expected)
     {
         Assert.Equal(ok, UpdateChecker.TryParseVersion(tag, out var version, out _));
@@ -205,5 +206,119 @@ public class CoreTests
         {
             File.Delete(path);
         }
+    }
+
+    [Theory]
+    [InlineData(0xC0, 8, true)]
+    [InlineData(0xC2, 8, true)]
+    [InlineData(0xC3, 8, false)]  // lossless
+    [InlineData(0xC9, 8, false)]  // arithmetic coding
+    [InlineData(0xC1, 12, false)] // 12-bit samples
+    public void Only_jpegs_a_pdf_reader_decodes_are_embedded_as_they_are(int marker, int precision, bool embedded)
+    {
+        var header = new byte[] { 0xFF, 0xD8, 0xFF, (byte)marker, 0x00, 0x11, (byte)precision, 0x00, 0x15, 0x00, 0x21, 0x03, 0, 0, 0, 0, 0, 0, 0, 0 };
+        (int, int, int)? expected = embedded ? (33, 21, 3) : null;
+        Assert.Equal(expected, PdfDocumentWriter.JpegInfo(header));
+    }
+
+    [Fact]
+    public void A_pre_release_is_older_than_its_final_version()
+    {
+        UpdateChecker.Release Release(string tag)
+        {
+            Assert.True(UpdateChecker.TryParseVersion(tag, out var version, out var display));
+            return new UpdateChecker.Release(version, display, UpdateChecker.ReleasesPage, Array.Empty<ReleaseAsset>());
+        }
+
+        Assert.True(Release("1.2.0-beta.1").IsPreRelease);
+        Assert.False(Release("1.2.0-beta.1").IsNewerThan(new Version(1, 2, 0), currentIsPreRelease: false));
+        Assert.True(Release("1.2.0-beta.1").IsNewerThan(new Version(1, 1, 9), currentIsPreRelease: false));
+        Assert.True(Release("1.2.0").IsNewerThan(new Version(1, 2, 0), currentIsPreRelease: true));
+        Assert.False(Release("1.2.0").IsNewerThan(new Version(1, 2, 0), currentIsPreRelease: false));
+        Assert.False(Release("1.1.0").IsNewerThan(new Version(1, 2, 0), currentIsPreRelease: true));
+    }
+
+    [Fact]
+    public void CommandLine_full_paths_follow_what_the_options_take()
+    {
+        var args = new[] { "--delay", "a.png", "--delay", "5", "b.png", "--workspace", "c.png", "--capture" };
+        var full = CommandLine.WithFullPaths(args);
+        // "--delay" takes a number only: "a.png" is a file, as Parse reads it.
+        Assert.Equal(Path.GetFullPath("a.png"), full[1]);
+        Assert.Equal("5", full[3]);
+        Assert.Equal(Path.GetFullPath("b.png"), full[4]);
+        Assert.Equal("c.png", full[6]);
+        Assert.Equal("--capture", full[7]);
+    }
+
+    [Fact]
+    public void Plural_texts_take_more_values()
+    {
+        var text = Loc.Plural(3, "Workspaces.MovedOne", "Workspaces.MovedMany", "Projet");
+        Assert.Contains("3", text);
+        Assert.Contains("Projet", text);
+    }
+
+    [Fact]
+    public void An_invalid_path_is_not_sent_to_the_trash() =>
+        Assert.False(FileOps.MoveToTrash(new[] { "bad\0name" }));
+
+    [Fact]
+    public void Word_text_loses_the_characters_xml_cannot_hold()
+    {
+        Assert.Equal("abc\U0001F600d", DocxDocumentWriter.XmlSafe("a\u0001b\uD800c\U0001F600\uDC00d"));
+        Assert.Equal("plain", DocxDocumentWriter.XmlSafe("plain"));
+
+        using var folder = new TempFolder();
+        var png = folder.File("a.png");
+        ImageIO.Save(Gradient(40, 30), png);
+        var output = folder.File("doc.docx");
+        var options = new DocumentOptions { Kind = DocumentKind.Docx, Title = "Rapport\u0001 \uD800" };
+        DocumentGenerator.Generate(new[] { png }, options, output, cancellation: TestContext.Current.CancellationToken);
+        using var document = DocumentFormat.OpenXml.Packaging.WordprocessingDocument.Open(output, false);
+        Assert.Contains("Rapport", document.MainDocumentPart!.Document!.Body!.InnerText);
+        Assert.Empty(Directory.EnumerateFiles(folder.Path, "*.tmp"));
+    }
+
+    [Fact]
+    public void Word_size_counts_the_pixels_of_a_webp_and_the_temporary_file_is_hidden()
+    {
+        Assert.Equal(4_000_000, new DocumentImage("a.webp", 1000, 1000, DateTime.Now, 5_000).DocxBytes);
+        Assert.Equal(5_000, new DocumentImage("a.png", 1000, 1000, DateTime.Now, 5_000).DocxBytes);
+
+        var output = Path.Combine(Path.GetTempPath(), "report.pdf");
+        var temp = DocumentGenerator.TempPathOf(output);
+        Assert.Equal(Path.GetDirectoryName(output), Path.GetDirectoryName(temp));
+        Assert.StartsWith(".report.pdf.", Path.GetFileName(temp));
+        Assert.Equal(temp, DocumentGenerator.TempPathOf(output));
+    }
+
+    [Fact]
+    public void Bmp_is_a_file_header_and_the_dib()
+    {
+        var image = new PixelBuffer(3, 2, new byte[]
+        {
+            10, 20, 30, 255, 200, 100, 50, 128, 0, 0, 0, 0,
+            1, 2, 3, 255, 4, 5, 6, 255, 7, 8, 9, 255,
+        });
+        var bmp = ImageIO.EncodeBmp(image);
+        Assert.Equal("BM"u8.ToArray(), bmp[..2]);
+        Assert.Equal(bmp.Length, BitConverter.ToInt32(bmp, 2));
+        Assert.Equal(54, BitConverter.ToInt32(bmp, 10));
+        Assert.Equal(DibEncoder.Encode(image), bmp[14..]);
+        var back = ImageIO.Decode(bmp);
+        Assert.Equal((3, 2), (back.Width, back.Height));
+        Assert.Equal(new byte[] { 255, 255, 255, 255 }, back.Pixels[8..12]);
+        Assert.False(image.IsOpaque());
+        Assert.True(back.IsOpaque());
+    }
+
+    [Fact]
+    public void Long_words_are_cut_between_whole_characters()
+    {
+        var word = string.Concat(Enumerable.Repeat("\U0001F600e\u0301", 120));
+        var (path, height) = TextOutline.Layout(word, 10, true, 0, 0, 60, TextAlign.Start, 3, false);
+        Assert.False(path.IsEmpty);
+        Assert.InRange(height, 20, 60); // three lines
     }
 }

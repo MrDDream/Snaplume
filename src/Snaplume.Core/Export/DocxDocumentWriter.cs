@@ -1,3 +1,5 @@
+using System.Text;
+using System.Xml;
 using DocumentFormat.OpenXml;
 using DocumentFormat.OpenXml.Packaging;
 using DocumentFormat.OpenXml.Wordprocessing;
@@ -32,7 +34,7 @@ internal static class DocxDocumentWriter
         // the total size of the images of a Word document (MaxDocxImageBytes).
         using var stream = new FileStream(path, FileMode.Create, FileAccess.ReadWrite, FileShare.None);
         using var document = WordprocessingDocument.Create(stream, WordprocessingDocumentType.Document);
-        document.PackageProperties.Title = options.Title;
+        document.PackageProperties.Title = XmlSafe(options.Title);
         document.PackageProperties.Creator = "Snaplume";
         document.PackageProperties.Created = DateTime.UtcNow;
 
@@ -121,6 +123,7 @@ internal static class DocxDocumentWriter
 
     private static Paragraph TextParagraph(string text, string style, JustificationValues? justification)
     {
+        text = XmlSafe(text);
         bool rtl = DocumentGenerator.IsRightToLeftText(text);
         var properties = new ParagraphProperties(new ParagraphStyleId { Val = style });
         if (rtl) properties.Append(new BiDi());
@@ -128,6 +131,29 @@ internal static class DocxDocumentWriter
         var run = new Run(new Text(text) { Space = SpaceProcessingModeValues.Preserve });
         if (rtl) run.PrependChild(new RunProperties(new RightToLeftText()));
         return new Paragraph(properties, run);
+    }
+
+    /// <summary>
+    /// The text without the characters XML cannot hold (control characters, a half of a surrogate pair alone...): a
+    /// title or a file name with one would make the whole document unreadable, or its writing fail.
+    /// </summary>
+    internal static string XmlSafe(string text)
+    {
+        if (text.All(XmlConvert.IsXmlChar)) return text;
+        var safe = new StringBuilder(text.Length);
+        for (int i = 0; i < text.Length; i++)
+        {
+            if (i + 1 < text.Length && XmlConvert.IsXmlSurrogatePair(text[i + 1], text[i]))
+            {
+                safe.Append(text, i, 2);
+                i++;
+            }
+            else if (XmlConvert.IsXmlChar(text[i]))
+            {
+                safe.Append(text[i]);
+            }
+        }
+        return safe.ToString();
     }
 
     private static SectionProperties Section(DocumentOptions options, bool landscape)
@@ -156,6 +182,7 @@ internal static class DocxDocumentWriter
     /// <summary>Picture placed in the text line, sized in EMU (1 point = 12700 EMU).</summary>
     private static DW.Inline Inline(string relationshipId, uint id, string name, double width, double height)
     {
+        name = XmlSafe(name);
         long cx = (long)Math.Round(width * EmuPerPoint);
         long cy = (long)Math.Round(height * EmuPerPoint);
         return new DW.Inline(

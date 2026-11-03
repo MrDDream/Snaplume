@@ -1,3 +1,4 @@
+using System.Globalization;
 using SkiaSharp;
 using SkiaSharp.HarfBuzz;
 
@@ -17,6 +18,11 @@ public static class TextOutline
 
     private static readonly Dictionary<(bool Bold, int Character), SKTypeface> Cache = new();
 
+    /// <summary>One shaper per typeface (HarfBuzz font made once; shaping with it is safe from several threads).</summary>
+    private static readonly Dictionary<SKTypeface, SKShaper> Shapers = new();
+
+    private static readonly SKFontStyle BoldStyle = new(SKFontStyleWeight.SemiBold, SKFontStyleWidth.Normal, SKFontStyleSlant.Upright);
+
     /// <summary>The outline of the text laid out in a box at (<paramref name="x"/>, <paramref name="y"/>), y downwards.</summary>
     /// <param name="rightToLeft">Lines start at the right edge (Start = right).</param>
     /// <returns>The outline (nonzero winding) and the height taken.</returns>
@@ -29,7 +35,7 @@ public static class TextOutline
 
         var typeface = TypefaceFor(text, bold);
         using var font = new SKFont(typeface, (float)size) { Subpixel = true, Edging = SKFontEdging.Antialias };
-        using var shaper = new SKShaper(typeface);
+        var shaper = ShaperFor(typeface);
         var metrics = font.Metrics;
         double lineHeight = (-metrics.Ascent + metrics.Descent + metrics.Leading) * 1.15;
 
@@ -80,11 +86,11 @@ public static class TextOutline
                 }
                 if (current.Length > 0) lines.Add(current);
                 current = word;
-                // A single word wider than the line: cut it.
-                while (Width(current) > width && current.Length > 1)
+                // A single word wider than the line: cut it between text elements (never inside a surrogate pair, nor
+                // between a letter and its accent).
+                while (Width(current) > width && StringInfo.ParseCombiningCharacters(current) is { Length: > 1 } starts)
                 {
-                    int cut = current.Length - 1;
-                    while (cut > 1 && Width(current[..cut]) > width) cut--;
+                    int cut = LongestFit(current, starts, 1, starts.Length - 1, start => Width(start) <= width);
                     lines.Add(current[..cut]);
                     current = current[cut..];
                 }
@@ -95,15 +101,45 @@ public static class TextOutline
 
         var kept = lines.Take(maxLines).ToList();
         var last = kept[^1];
-        while (last.Length > 0 && Width(last.TrimEnd() + "…") > width) last = last[..^1];
-        kept[^1] = last.TrimEnd() + "…";
+        var elements = StringInfo.ParseCombiningCharacters(last);
+        int end = LongestFit(last, elements, 0, elements.Length, start => Width(start.TrimEnd() + "…") <= width);
+        kept[^1] = last[..end].TrimEnd() + "…";
         return kept;
     }
 
-    /// <summary>The interface font if it has every character of the text, else a font of the system that has the first missing one.</summary>
-    public static SKTypeface TypefaceFor(string text, bool bold)
+    /// <summary>
+    /// Where to cut <paramref name="text"/>: after the most text elements, from <paramref name="fewest"/> to
+    /// <paramref name="most"/>, whose start still <paramref name="fits"/>; found by halving, the width growing with the
+    /// text. <paramref name="fewest"/> elements when none fits.
+    /// </summary>
+    /// <param name="starts">Index of each text element (<see cref="StringInfo.ParseCombiningCharacters"/>).</param>
+    /// <returns>Length of the start kept, in characters.</returns>
+    private static int LongestFit(string text, int[] starts, int fewest, int most, Func<string, bool> fits)
     {
-        var style = bold ? new SKFontStyle(SKFontStyleWeight.SemiBold, SKFontStyleWidth.Normal, SKFontStyleSlant.Upright) : SKFontStyle.Normal;
+        int End(int count) => count < starts.Length ? starts[count] : text.Length;
+        int low = fewest, high = most;
+        while (low < high)
+        {
+            int middle = (low + high + 1) / 2;
+            if (fits(text[..End(middle)])) low = middle;
+            else high = middle - 1;
+        }
+        return End(low);
+    }
+
+    private static SKShaper ShaperFor(SKTypeface typeface)
+    {
+        lock (Shapers)
+        {
+            if (!Shapers.TryGetValue(typeface, out var shaper)) Shapers[typeface] = shaper = new SKShaper(typeface);
+            return shaper;
+        }
+    }
+
+    /// <summary>The interface font if it has every character of the text, else a font of the system that has the first missing one.</summary>
+    private static SKTypeface TypefaceFor(string text, bool bold)
+    {
+        var style = bold ? BoldStyle : SKFontStyle.Normal;
         int missing = 0;
         var primary = Interface(bold, style);
         using (var probe = new SKFont(primary))
