@@ -30,6 +30,8 @@ public sealed class SingleInstance : ISingleInstance
     private readonly string _pipeName;
     private Mutex? _mutex;
     private bool _owned;
+    /// <summary>A first <see cref="TryAcquire"/> was made: only that one waits for the previous instance.</summary>
+    private bool _tried;
     private EventWaitHandle? _showEvent;
     private RegisteredWaitHandle? _showWait;
     private CancellationTokenSource? _pipeCancel;
@@ -52,17 +54,19 @@ public sealed class SingleInstance : ISingleInstance
     }
 
     /// <summary>
-    /// Takes the mutex. After a restart (language change: "--restarted" on the command line), waits up to 10 s for
-    /// the previous instance to quit. Call it on the thread that will dispose this object (a mutex belongs to a thread).
+    /// Takes the mutex. After a restart (language change: "--restarted" on the command line), the first call waits up
+    /// to 10 s for the previous instance to quit; later calls (the caller's own retries) do not wait. Call it on the
+    /// thread that will dispose this object (a mutex belongs to a thread).
     /// </summary>
     public bool TryAcquire()
     {
         if (_owned) return true;
         _mutex ??= new Mutex(false, _mutexName);
-        bool restarted = Environment.GetCommandLineArgs().Contains("--restarted");
+        bool wait = !_tried && Environment.GetCommandLineArgs().Contains("--restarted");
+        _tried = true;
         try
         {
-            _owned = _mutex.WaitOne(restarted ? TimeSpan.FromSeconds(10) : TimeSpan.Zero);
+            _owned = _mutex.WaitOne(wait ? TimeSpan.FromSeconds(10) : TimeSpan.Zero);
         }
         catch (AbandonedMutexException)
         {
@@ -121,12 +125,14 @@ public sealed class SingleInstance : ISingleInstance
     private async Task ListenForCommandLinesAsync(Action<string[]> received, CancellationToken token)
     {
         int failures = 0;
+        // The instance awaiting the next client: created while the previous one is still open (see below), else
+        // a first instance of the pipe.
+        NamedPipeServerStream? server = null;
         while (!token.IsCancellationRequested)
         {
-            NamedPipeServerStream? server = null;
             try
             {
-                server = CreatePipeServer();
+                server ??= CreatePipeServer(firstInstance: true);
                 _pipeServer = server;
                 await server.WaitForConnectionAsync(token);
                 failures = 0;
@@ -134,19 +140,38 @@ public sealed class SingleInstance : ISingleInstance
             catch (Exception ex)
             {
                 ClosePipeServer(server);
+                server = null;
                 if (token.IsCancellationRequested) return;
-                ErrorLog.Write("Réception d'une ligne de commande", ex);
-                // The pipe cannot be created (name taken...): the Show event still works.
-                if (++failures >= 3) return;
+                // The pipe cannot be created (name still held by the previous instance after a restart, or taken by
+                // another process): tried again, less and less often; the Show event works meanwhile.
+                if (++failures <= 3) ErrorLog.Write("Réception d'une ligne de commande", ex);
                 try
                 {
-                    await Task.Delay(TimeSpan.FromSeconds(1), token);
+                    await Task.Delay(TimeSpan.FromSeconds(Math.Min(30, 1 << Math.Min(failures - 1, 5))), token);
                 }
                 catch (OperationCanceledException)
                 {
                     return;
                 }
                 continue;
+            }
+
+            // The next instance exists before this one is closed: the name is never free for another process to
+            // take, and a client arriving meanwhile finds an instance to connect to.
+            NamedPipeServerStream? next = null;
+            try
+            {
+                next = CreatePipeServer(firstInstance: false);
+                _pipeServer = next;
+            }
+            catch (Exception ex) when (!token.IsCancellationRequested)
+            {
+                // A first instance is created again once this one is closed.
+                ErrorLog.Write("Réception d'une ligne de commande", ex);
+            }
+            catch (Exception)
+            {
+                // Stopping.
             }
 
             try
@@ -162,13 +187,15 @@ public sealed class SingleInstance : ISingleInstance
             }
             catch (Exception)
             {
-                return;
+                // Stopping: the loop ends below.
             }
             finally
             {
                 ClosePipeServer(server);
             }
+            server = next;
         }
+        ClosePipeServer(server);
     }
 
     private void ClosePipeServer(NamedPipeServerStream? server)
@@ -178,15 +205,20 @@ public sealed class SingleInstance : ISingleInstance
         server.Dispose();
     }
 
-    /// <summary>Pipe only this user can open; FirstPipeInstance fails if another process already took the name.</summary>
-    private NamedPipeServerStream CreatePipeServer()
+    /// <summary>
+    /// Pipe only this user can open. A first instance (FirstPipeInstance) fails if another process already took the
+    /// name; the second one, created while the first is open, joins this process's pipe (at most two instances).
+    /// </summary>
+    private NamedPipeServerStream CreatePipeServer(bool firstInstance)
     {
         var user = User ?? throw new InvalidOperationException("No user SID");
         var security = new PipeSecurity();
         security.SetOwner(user);
-        security.AddAccessRule(new PipeAccessRule(user, PipeAccessRights.ReadWrite, AccessControlType.Allow));
-        return NamedPipeServerStreamAcl.Create(_pipeName, PipeDirection.In, 1, PipeTransmissionMode.Byte,
-            PipeOptions.Asynchronous | PipeOptions.FirstPipeInstance, 0, 0, security);
+        // CreateNewInstance: needed to add the second instance to the pipe.
+        security.AddAccessRule(new PipeAccessRule(user, PipeAccessRights.ReadWrite | PipeAccessRights.CreateNewInstance,
+            AccessControlType.Allow));
+        var options = PipeOptions.Asynchronous | (firstInstance ? PipeOptions.FirstPipeInstance : PipeOptions.None);
+        return NamedPipeServerStreamAcl.Create(_pipeName, PipeDirection.In, 2, PipeTransmissionMode.Byte, options, 0, 0, security);
     }
 
     /// <returns>The arguments, or null if there are none or they are not a list of texts (e.g. "null", [null]).</returns>

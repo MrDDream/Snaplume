@@ -24,6 +24,9 @@
          snaplume_<version>-1_amd64.deb     snaplume-<version>-1.x86_64.rpm
          snaplume_<version>-1_arm64.deb     snaplume-<version>-1.aarch64.rpm
          SHA256SUMS
+       A pre-release 1.2.3-beta.1 keeps that spelling in the file names (snaplume_1.2.3-beta.1-1_amd64.deb...), the
+       ones Snaplume's update check expects and GitHub keeps as they are; inside the packages its version is
+       1.2.3~beta.1, the Debian and RPM spelling that sorts before 1.2.3.
 
 .EXAMPLE
     pwsh build/build-linux.ps1
@@ -38,7 +41,7 @@ param(
     [string]$Root,
     # Project to publish, relative to -Root or absolute.
     [string]$Project = 'src/Snaplume.App/Snaplume.App.csproj',
-    # Version (e.g. 1.2.0 or v1.2.0); read from Directory.Build.props when omitted.
+    # Version (e.g. 1.2.0, v1.2.0 or 1.2.0-beta.1); read from Directory.Build.props when omitted.
     [string]$Version,
     [ValidateSet('x64', 'arm64')]
     [string[]]$Architectures = @('x64', 'arm64'),
@@ -128,7 +131,13 @@ if (-not $Version) {
     $Version = $node.InnerText.Trim()
 }
 $Version = $Version.TrimStart('v', 'V')
-if ($Version -notmatch '^\d+\.\d+\.\d+$') { throw "Invalid version '$Version' (expected 1.2.3)." }
+if ($Version -notmatch '^(\d+\.\d+\.\d+)(-([0-9A-Za-z][0-9A-Za-z.-]*))?$') {
+    throw "Invalid version '$Version' (expected 1.2.3 or 1.2.3-beta.1)."
+}
+# A pre-release goes to nfpm's "prerelease" field, which makes the package version 1.2.3~beta.1: deb and rpm both
+# sort it before 1.2.3.
+$PackageVersion = $Matches[1]
+$Prerelease = "$($Matches[3])"
 
 # The AppStream release list must announce this version, or software centres show an outdated changelog.
 [xml]$metainfo = Get-Content -LiteralPath (Join-Path $Packaging 'io.github.mrddream.Snaplume.metainfo.xml') -Raw -Encoding UTF8
@@ -220,20 +229,30 @@ or anywhere in PATH, or pass -NfpmPath. Then run this script again.
 Write-Host "   nfpm: $nfpm"
 
 $debArch = @{ 'x64' = 'amd64'; 'arm64' = 'arm64' }
+$rpmArch = @{ 'x64' = 'x86_64'; 'arm64' = 'aarch64' }
 # Packages of an earlier run would end up in SHA256SUMS next to the new ones.
 Get-ChildItem -LiteralPath $OutputDir -File | Where-Object { $_.Extension -in '.deb', '.rpm' -or $_.Name -eq 'SHA256SUMS' } |
     Remove-Item -Force
 $previousVersion = $env:SNAPLUME_VERSION
+$previousPrerelease = $env:SNAPLUME_PRERELEASE
 $previousArch = $env:SNAPLUME_ARCH
 try {
     foreach ($arch in $Architectures) {
-        $env:SNAPLUME_VERSION = $Version
+        $env:SNAPLUME_VERSION = $PackageVersion
+        $env:SNAPLUME_PRERELEASE = $Prerelease
         $env:SNAPLUME_ARCH = $debArch[$arch]
         Push-Location (Join-Path $Staging $arch)
         try {
+            # The names nfpm would choose for a release ("-1": the release of nfpm.yaml), with the version as given:
+            # nfpm's own names of a pre-release have a '~', which GitHub changes in the names of release files.
+            $targets = @{
+                'deb' = "snaplume_$Version-1_$($debArch[$arch]).deb"
+                'rpm' = "snaplume-$Version-1.$($rpmArch[$arch]).rpm"
+            }
             foreach ($packager in @('deb', 'rpm')) {
                 Write-Step "Packaging $packager ($arch)"
-                Invoke-Native $nfpm @('package', '--config', $NfpmConfig, '--packager', $packager, '--target', $OutputDir)
+                Invoke-Native $nfpm @('package', '--config', $NfpmConfig, '--packager', $packager,
+                    '--target', (Join-Path $OutputDir $targets[$packager]))
             }
         }
         finally {
@@ -243,6 +262,7 @@ try {
 }
 finally {
     $env:SNAPLUME_VERSION = $previousVersion
+    $env:SNAPLUME_PRERELEASE = $previousPrerelease
     $env:SNAPLUME_ARCH = $previousArch
 }
 

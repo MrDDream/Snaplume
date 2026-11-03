@@ -28,8 +28,23 @@
            Language="1033">
     <SummaryInformation Description="Snaplume $(Version) installer" />
 
-    <MajorUpgrade DowngradeErrorMessage="A newer version of [ProductName] is already installed." />
+    <!--
+      Same version too: MSI versions are numeric, so a pre-release (1.2.0-beta.1) and its release (1.2.0) share one;
+      without it, the release would install next to the pre-release instead of replacing it.
+    -->
+    <MajorUpgrade AllowSameVersionUpgrades="yes" DowngradeErrorMessage="A newer version of [ProductName] is already installed." />
     <MediaTemplate EmbedCab="yes" CompressionLevel="high" />
+
+    <!--
+      Windows 10 version 2004 (build 19041) or later, like the application. The build number read from the registry,
+      not VersionNT or WindowsBuild: Windows Installer reports the values of Windows 8.1 on Windows 10 and 11.
+    -->
+    <Property Id="WINDOWSBUILDNUMBER">
+      <RegistrySearch Root="HKLM" Key="SOFTWARE\Microsoft\Windows NT\CurrentVersion" Name="CurrentBuildNumber"
+                      Type="raw" Bitness="always64" />
+    </Property>
+    <Launch Condition="Installed OR WINDOWSBUILDNUMBER &gt;= 19041"
+            Message="[ProductName] requires Windows 10 version 2004 (build 19041) or later." />
 
     <Icon Id="AppIcon" SourceFile="$(IconFile)" />
     <Property Id="ARPPRODUCTICON" Value="AppIcon" />

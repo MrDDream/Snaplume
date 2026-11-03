@@ -3,6 +3,7 @@ using System.Runtime.InteropServices;
 using Snaplume.Core;
 using Snaplume.Imaging;
 using Snaplume.Platform.Windows.Native;
+using static Snaplume.Platform.Windows.Native.NativeMethods;
 
 namespace Snaplume.Platform.Windows.Shell;
 
@@ -94,11 +95,10 @@ internal static class ImagePrinter
     }
 
     /// <summary>Draws the pages into the printer's device context (synchronously).</summary>
-    /// <param name="output">A file instead of the printer (to check the pages with a PDF printer).</param>
-    private static void Spool(PrintJob job, string title, List<(string Path, bool Landscape)> images, string? output = null)
+    private static void Spool(PrintJob job, string title, List<(string Path, bool Landscape)> images)
     {
         var hdc = job.Hdc;
-        var document = new DOCINFO { cbSize = Marshal.SizeOf<DOCINFO>(), lpszDocName = title, lpszOutput = output };
+        var document = new DOCINFO { cbSize = Marshal.SizeOf<DOCINFO>(), lpszDocName = title };
         if (StartDoc(hdc, ref document) <= 0) throw new Win32Exception(Marshal.GetLastPInvokeError());
         try
         {
@@ -166,7 +166,7 @@ internal static class ImagePrinter
             fixed (byte* bits = dib)
             {
                 if (StretchDIBits(hdc, left, top, Math.Max(1, right - left), Math.Max(1, bottom - top), 0, 0, width, height,
-                        bits + DibEncoder.HeaderSize, bits, DIB_RGB_COLORS, NativeMethods.SRCCOPY) == 0)
+                        bits + DibEncoder.HeaderSize, bits, DIB_RGB_COLORS, SRCCOPY) == 0)
                     throw new Win32Exception(Marshal.GetLastPInvokeError());
             }
         }
@@ -233,7 +233,6 @@ internal static class ImagePrinter
     private const int PHYSICALOFFSETX = 112;
     private const int PHYSICALOFFSETY = 113;
     private const int HALFTONE = 4;
-    private const uint DIB_RGB_COLORS = 0;
 
     [StructLayout(LayoutKind.Sequential, CharSet = CharSet.Unicode)]
     private struct PRINTDLGEX
@@ -305,21 +304,4 @@ internal static class ImagePrinter
     [DllImport("gdi32.dll", SetLastError = true)]
     private static extern unsafe int StretchDIBits(IntPtr hdc, int x, int y, int width, int height, int sourceX, int sourceY,
         int sourceWidth, int sourceHeight, byte* bits, byte* info, uint usage, uint operation);
-
-    [DllImport("gdi32.dll")]
-    [return: MarshalAs(UnmanagedType.Bool)]
-    private static extern bool DeleteDC(IntPtr hdc);
-
-    [DllImport("kernel32.dll")]
-    private static extern IntPtr GlobalLock(IntPtr handle);
-
-    [DllImport("kernel32.dll")]
-    [return: MarshalAs(UnmanagedType.Bool)]
-    private static extern bool GlobalUnlock(IntPtr handle);
-
-    [DllImport("kernel32.dll")]
-    private static extern UIntPtr GlobalSize(IntPtr handle);
-
-    [DllImport("kernel32.dll")]
-    private static extern IntPtr GlobalFree(IntPtr handle);
 }

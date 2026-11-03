@@ -1,8 +1,9 @@
 # nfpm configuration of the Snaplume .deb and .rpm packages (https://nfpm.goreleaser.com, MIT).
 #
 # Run by build/build-linux.ps1 from a staging folder (artifacts/linux/staging/<arch>), which is why every "src"
-# is relative: nfpm resolves them against its working directory. The script sets SNAPLUME_VERSION (from
-# Directory.Build.props) and SNAPLUME_ARCH (amd64 or arm64; nfpm turns them into x86_64 / aarch64 for rpm).
+# is relative: nfpm resolves them against its working directory. The script sets SNAPLUME_VERSION (1.2.3, from
+# Directory.Build.props or -Version), SNAPLUME_PRERELEASE (beta.1 for 1.2.3-beta.1, empty for a release; nfpm
+# writes 1.2.3~beta.1, sorted before 1.2.3) and SNAPLUME_ARCH (amd64 or arm64; nfpm turns them into x86_64 / aarch64 for rpm).
 #
 # File modes are always given: the staging folder may come from Windows, whose files have no Unix modes.
 
@@ -10,6 +11,7 @@ name: snaplume
 arch: ${SNAPLUME_ARCH}
 platform: linux
 version: ${SNAPLUME_VERSION}
+prerelease: ${SNAPLUME_PRERELEASE}
 release: 1
 section: graphics
 priority: optional

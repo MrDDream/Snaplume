@@ -10,8 +10,8 @@ on:
         required: true
         type: string
 
-permissions:
-  contents: write
+# Granted per job, to the jobs that need them.
+permissions: {}
 
 concurrency:
   group: release-${{ github.ref }}
@@ -19,8 +19,10 @@ concurrency:
 
 jobs:
   release:
-    name: Build and publish the release
+    name: Build the Windows packages and create the draft release
     runs-on: windows-latest
+    permissions:
+      contents: write   # creates the release and uploads its files
     outputs:
       version: ${{ steps.version.outputs.version }}
       tag: ${{ steps.version.outputs.tag }}
@@ -57,18 +59,23 @@ jobs:
 
       - uses: actions/setup-dotnet@67a3573c9a986a3f9c594539f4ab511d57bb3ce9 # v4.3.1
         with:
-          dotnet-version: 10.0.x
+          dotnet-version: 10.0.4xx   # the feature band of global.json, latest patch
 
+      # Always this version, even when the runner image has another one: the installer is built the same way each time.
       - name: Install Inno Setup
+        id: inno
+        env:
+          INNO_VERSION: '6.7.1'
         run: |
+          choco install innosetup --version $env:INNO_VERSION --force --allow-downgrade -y --no-progress
+          if ($LASTEXITCODE -ne 0) { throw "choco install innosetup failed ($LASTEXITCODE)." }
           $iscc = @("${env:ProgramFiles(x86)}\Inno Setup 6\ISCC.exe", "$env:ProgramFiles\Inno Setup 6\ISCC.exe") |
             Where-Object { Test-Path $_ } | Select-Object -First 1
-          if ($iscc) {
-            Write-Host "Inno Setup already installed: $iscc"
-          } else {
-            choco install innosetup --version 6.7.1 -y --no-progress
-            if ($LASTEXITCODE -ne 0) { throw "choco install innosetup failed ($LASTEXITCODE)." }
-          }
+          if (-not $iscc) { throw 'ISCC.exe not found after installing Inno Setup.' }
+          $installed = (Get-Item -LiteralPath $iscc).VersionInfo.ProductVersion
+          if (-not "$installed".StartsWith($env:INNO_VERSION)) { throw "Inno Setup $installed found at $iscc, expected $env:INNO_VERSION." }
+          Write-Host "Inno Setup $installed ($iscc)"
+          "iscc=$iscc" >> $env:GITHUB_OUTPUT
 
       - name: Install WiX Toolset 5
         run: |
@@ -79,8 +86,9 @@ jobs:
         id: build
         env:
           VERSION: ${{ steps.version.outputs.version }}
+          ISCC: ${{ steps.inno.outputs.iscc }}
         # AppLocal: the MSI needs the Visual C++ runtime DLLs next to Snaplume.exe (fails if Visual Studio has none).
-        run: ./build/build-release.ps1 -Version $env:VERSION -VCRuntime AppLocal
+        run: ./build/build-release.ps1 -Version $env:VERSION -VCRuntime AppLocal -IsccPath $env:ISCC
 
       - name: Check the packages
         env:
@@ -107,7 +115,9 @@ jobs:
             ${{ steps.build.outputs.sums }}
           if-no-files-found: error
 
-      - name: Create the GitHub release
+      # A draft: published by the linux job once its packages are attached too, so that no one (nor Snaplume's update
+      # check) sees a release without its Linux files.
+      - name: Create the draft GitHub release
         env:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
           VERSION: ${{ steps.version.outputs.version }}
@@ -121,9 +131,13 @@ jobs:
           $files = @($env:SETUP_FILE, $env:MSI_FILE, $env:ZIP_FILE, $env:SUMS_FILE)
           if (@($files | Where-Object { -not $_ }).Count -gt 0) { throw "A release file path is empty: $($files -join ', ')" }
 
-          # The release already exists (workflow run again for the same tag): replace its files.
-          gh release view $env:TAG *> $null
+          # The release already exists (workflow run again for the same tag): replace the files of the draft. A
+          # published release is never changed: users may have downloaded its files, which their checksums vouch for.
+          $isDraft = gh release view $env:TAG --json isDraft --jq .isDraft 2> $null
           if ($LASTEXITCODE -eq 0) {
+            if ("$isDraft".Trim() -ne 'true') {
+              throw "The release $env:TAG is already published: its files are not replaced. Release a new version, or delete the release first to build it again."
+            }
             gh release upload $env:TAG @files --clobber
             if ($LASTEXITCODE -ne 0) { throw "gh release upload failed ($LASTEXITCODE)." }
             return
@@ -140,25 +154,30 @@ jobs:
           ) + $files + @(
             '--title', "Snaplume $env:VERSION",
             '--notes-file', $notesFile,
-            '--generate-notes'
+            '--generate-notes',
+            '--draft'
           )
           if ($env:GITHUB_EVENT_NAME -eq 'push') {
             $ghArgs += '--verify-tag'          # the pushed tag
           } else {
-            $ghArgs += @('--target', $env:GITHUB_SHA)   # creates the tag on this commit if needed
+            $ghArgs += @('--target', $env:GITHUB_SHA)   # the tag is created on this commit when the draft is published
           }
           if ($env:PRERELEASE -eq 'true') { $ghArgs += '--prerelease' }
           gh @ghArgs
           if ($LASTEXITCODE -ne 0) { throw "gh release create failed ($LASTEXITCODE)." }
 
   linux:
-    name: Build the Linux packages and add them to the release
+    name: Build the Linux packages, add them to the release and publish it
     needs: release
     runs-on: ubuntu-latest
+    permissions:
+      contents: write   # uploads the packages and publishes the release
     env:
       DOTNET_CLI_TELEMETRY_OPTOUT: '1'
       DOTNET_NOLOGO: '1'
       NFPM_VERSION: '2.47.0'
+      # SHA-256 of nfpm_2.47.0_Linux_x86_64.tar.gz, from the release's checksums.txt; update both together.
+      NFPM_SHA256: '0660ca602b2d2d2ae4781a06c692b3eeb9d437ffea05b831d76e41f4a3188783'
     defaults:
       run:
         shell: pwsh
@@ -169,19 +188,18 @@ jobs:
 
       - uses: actions/setup-dotnet@67a3573c9a986a3f9c594539f4ab511d57bb3ce9 # v4.3.1
         with:
-          dotnet-version: 10.0.x
+          dotnet-version: 10.0.4xx   # the feature band of global.json, latest patch
 
-      - name: Install nfpm (checksum checked)
+      - name: Install nfpm (pinned checksum)
         run: |
           $base = "https://github.com/goreleaser/nfpm/releases/download/v$env:NFPM_VERSION"
           $archive = "nfpm_$($env:NFPM_VERSION)_Linux_x86_64.tar.gz"
           $tools = Join-Path $env:RUNNER_TEMP 'nfpm'
           New-Item -ItemType Directory -Force -Path $tools | Out-Null
           Invoke-WebRequest "$base/$archive" -OutFile (Join-Path $tools $archive)
-          Invoke-WebRequest "$base/checksums.txt" -OutFile (Join-Path $tools 'checksums.txt')
-          $expected = (Get-Content (Join-Path $tools 'checksums.txt') | Where-Object { $_ -match "  $([regex]::Escape($archive))$" }) -replace '\s.*$', ''
+          # Checked against the sum written here, not against a checksums.txt fetched from the same place.
           $actual = (Get-FileHash (Join-Path $tools $archive) -Algorithm SHA256).Hash.ToLowerInvariant()
-          if (-not $expected -or $expected -ne $actual) { throw "nfpm checksum mismatch ($actual, expected $expected)." }
+          if ($actual -ne $env:NFPM_SHA256) { throw "nfpm checksum mismatch ($actual, expected $env:NFPM_SHA256)." }
           tar -xzf (Join-Path $tools $archive) -C $tools nfpm
           "$tools" >> $env:GITHUB_PATH
 
@@ -190,14 +208,23 @@ jobs:
           VERSION: ${{ needs.release.outputs.version }}
         run: ./build/build-linux.ps1 -Version $env:VERSION
 
-      - name: Add them to the release
+      - name: Add them to the release and publish it
         env:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
           TAG: ${{ needs.release.outputs.tag }}
         run: |
           $files = @(Get-ChildItem artifacts/linux -File | Where-Object { $_.Extension -in '.deb', '.rpm' })
           if ($files.Count -lt 2) { throw "Linux packages missing: $($files.Name -join ', ')" }
+          # Only into the draft created by the release job: a published release keeps its files.
+          $isDraft = gh release view $env:TAG --json isDraft --jq .isDraft
+          if ($LASTEXITCODE -ne 0) { throw "gh release view $env:TAG failed ($LASTEXITCODE)." }
+          if ("$isDraft".Trim() -ne 'true') {
+            throw "The release $env:TAG is already published: its files are not replaced. Release a new version, or delete the release first to build it again."
+          }
           # Next to the Windows SHA256SUMS.txt of the release.
           Copy-Item artifacts/linux/SHA256SUMS artifacts/linux/SHA256SUMS-linux.txt
           gh release upload $env:TAG @($files.FullName) artifacts/linux/SHA256SUMS-linux.txt --clobber
           if ($LASTEXITCODE -ne 0) { throw "gh release upload failed ($LASTEXITCODE)." }
+          # Every file is there: the release is published (the tag is created now for a workflow_dispatch run).
+          gh release edit $env:TAG --draft=false
+          if ($LASTEXITCODE -ne 0) { throw "gh release edit --draft=false failed ($LASTEXITCODE)." }
