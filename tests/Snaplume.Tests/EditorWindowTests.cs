@@ -1,13 +1,17 @@
 using System.Reflection;
 using Avalonia;
 using Avalonia.Controls;
+using Avalonia.Controls.Primitives;
 using Avalonia.Headless;
 using Avalonia.Headless.XUnit;
 using Avalonia.Input;
 using Avalonia.Interactivity;
 using Avalonia.LogicalTree;
+using Avalonia.Markup.Xaml.Styling;
 using Avalonia.Media;
+using Avalonia.Styling;
 using Avalonia.Threading;
+using Avalonia.VisualTree;
 using Snaplume.Core;
 using Snaplume.Editor;
 using Snaplume.Imaging;
@@ -228,6 +232,109 @@ public class EditorWindowTests
             Assert.Equal("Ligne", ((TextAnnotation)canvas.Document.Annotations[1]).Text);
             ForceClose(window);
         }
+    }
+
+    [AvaloniaFact]
+    public void Border_preset_applies_in_one_undo_step_and_shows_as_selected()
+    {
+        // The application's themes, so that the gallery is drawn as in the application.
+        var app = Application.Current!;
+        var colors = new ResourceInclude(new Uri("avares://Snaplume/")) { Source = new Uri("avares://Snaplume/Themes/Colors.axaml") };
+        var icons = new ResourceInclude(new Uri("avares://Snaplume/")) { Source = new Uri("avares://Snaplume/Themes/Icons.axaml") };
+        var styles = new StyleInclude(new Uri("avares://Snaplume/")) { Source = new Uri("avares://Snaplume/Themes/Styles.axaml") };
+        app.Resources.MergedDictionaries.Add(colors);
+        app.Resources.MergedDictionaries.Add(icons);
+        app.Styles.Add(styles);
+        var (window, canvas, folder) = Open();
+        try
+        {
+            using (folder)
+            {
+                var document = canvas.Document!;
+                document.Annotations.Add(new ArrowAnnotation { Start = new(40, 200), End = new(300, 60), Color = Colors.Red, Thickness = 6 });
+                var before = ImageEffects.None with { Background = Color.FromRgb(0x1F, 0x29, 0x37), Shadow = true, ShadowBlur = 30 };
+                document.SetEffects(before);
+                Dispatcher.UIThread.RunJobs();
+
+                var button = window.FindControl<ToggleButton>("BordersButton")!;
+                var popup = window.FindControl<Popup>("BordersPopup")!;
+                var center = button.TranslatePoint(new Point(button.Bounds.Width / 2, button.Bounds.Height / 2), window)!.Value;
+                window.MouseDown(center, MouseButton.Left);
+                window.MouseUp(center, MouseButton.Left);
+                Dispatcher.UIThread.RunJobs();
+                Assert.True(popup.IsOpen);
+                Assert.True(button.IsChecked);
+
+                var tiles = window.FindControl<WrapPanel>("BordersPanel")!.Children.OfType<Button>().ToList();
+                Assert.Equal(BorderPresets.All.Count, tiles.Count);
+                // Custom effects: no preset is outlined; every sample is drawn.
+                Assert.DoesNotContain(tiles, t => t.Classes.Contains("selected"));
+                Assert.All(tiles, t => Assert.True(t.GetVisualDescendants().OfType<DrawingPreview>().Single().Bounds.Width > 0));
+                SaveRendering(popup, "editor-borders.png");
+
+                // One click: the effects of the preset, the background of the image kept, as one undo step.
+                int index = BorderPresets.All.ToList().FindIndex(p => p.Id == "WhiteFrame");
+                var preset = BorderPresets.All[index];
+                tiles[index].RaiseEvent(new RoutedEventArgs(Button.ClickEvent));
+                Dispatcher.UIThread.RunJobs();
+                Assert.Equal(preset.Effects with { Background = before.Background }, document.Effects);
+                Assert.Same(preset, BorderPresets.Find(document.Effects));
+                Assert.True(popup.IsOpen);
+                Assert.Equal(new[] { index }, tiles.Select((t, i) => (t, i)).Where(x => x.t.Classes.Contains("selected")).Select(x => x.i));
+                SaveRendering(popup, "editor-borders-selected.png");
+
+                // Clicked again: nothing changes, no new undo step.
+                long version = document.Version;
+                tiles[index].RaiseEvent(new RoutedEventArgs(Button.ClickEvent));
+                Assert.Equal(version, document.Version);
+
+                window.KeyPress(Key.Z, RawInputModifiers.Control, PhysicalKey.Z, "z");
+                Dispatcher.UIThread.RunJobs();
+                Assert.Equal(before, document.Effects);
+                tiles = window.FindControl<WrapPanel>("BordersPanel")!.Children.OfType<Button>().ToList();
+                Assert.DoesNotContain(tiles, t => t.Classes.Contains("selected"));
+
+                // "None", then the advanced settings open the effects panel in place of the gallery.
+                tiles[0].RaiseEvent(new RoutedEventArgs(Button.ClickEvent));
+                Assert.True(document.Effects.IsEmpty);
+                Assert.Contains("selected", tiles[0].Classes);
+                window.FindControl<Button>("BordersAdvancedButton")!.RaiseEvent(new RoutedEventArgs(Button.ClickEvent));
+                Dispatcher.UIThread.RunJobs();
+                Assert.False(popup.IsOpen);
+                Assert.False(button.IsChecked);
+                Assert.True(window.FindControl<Popup>("EffectsPopup")!.IsOpen);
+                window.FindControl<ToggleButton>("EffectsButton")!.IsChecked = false;
+
+                // Kept with the test results to look at the gallery in dark mode and right to left; never committed.
+                app.RequestedThemeVariant = ThemeVariant.Dark;
+                window.FlowDirection = FlowDirection.RightToLeft;
+                document.SetEffects(preset.Effects);
+                button.IsChecked = true;
+                Dispatcher.UIThread.RunJobs();
+                SaveRendering(popup, "editor-borders-dark-rtl.png");
+                SaveRendering(window, "editor-window-dark-rtl.png");
+                button.IsChecked = false;
+                Dispatcher.UIThread.RunJobs();
+                ForceClose(window);
+            }
+        }
+        finally
+        {
+            app.RequestedThemeVariant = ThemeVariant.Default;
+            app.Styles.Remove(styles);
+            app.Resources.MergedDictionaries.Remove(icons);
+            app.Resources.MergedDictionaries.Remove(colors);
+        }
+    }
+
+    /// <summary>The window, or what a popup shows, saved with the test results to look at it.</summary>
+    private static void SaveRendering(object shown, string name)
+    {
+        var topLevel = shown is Popup popup ? TopLevel.GetTopLevel(popup.Child) : shown as TopLevel;
+        Assert.NotNull(topLevel);
+        var frame = topLevel!.CaptureRenderedFrame();
+        Assert.NotNull(frame);
+        ImageIO.Save(AvaloniaImages.ToPixelBuffer(frame!), Path.Combine(AppContext.BaseDirectory, name));
     }
 
     /// <summary>Closes without the save question (the document is left unsaved on purpose).</summary>

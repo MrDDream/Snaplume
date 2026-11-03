@@ -34,6 +34,18 @@
             <Setter Property="Margin" Value="6,4" />
             <Setter Property="Fill" Value="{DynamicResource LineBrush}" />
         </Style>
+        <!-- Samples of the border presets; the one matching the effects of the image is outlined -->
+        <Style Selector="Button.border-preset">
+            <Setter Property="Width" Value="120" />
+            <Setter Property="Margin" Value="0,0,6,6" />
+            <!-- 108 px left for the sample (see BorderSampleWidth) -->
+            <Setter Property="Padding" Value="5,6,5,4" />
+            <Setter Property="VerticalContentAlignment" Value="Top" />
+        </Style>
+        <Style Selector="Button.border-preset.selected">
+            <Setter Property="Background" Value="{DynamicResource CheckedBrush}" />
+            <Setter Property="BorderBrush" Value="{DynamicResource AccentBrush}" />
+        </Style>
         <Style Selector="Slider.effect">
             <Setter Property="VerticalAlignment" Value="Center" />
             <Setter Property="Margin" Value="0,-6" />
@@ -84,6 +96,12 @@
                                 </MenuFlyout>
                             </Button.Flyout>
                         </Button>
+                        <ToggleButton x:Name="BordersButton" Classes="flat" ToolTip.Tip="{l:T Borders.ButtonTip}">
+                            <StackPanel Orientation="Horizontal">
+                                <Path Classes="icon" Data="{DynamicResource IconBorders}" />
+                                <TextBlock Classes="button-label" Text="{l:T Borders.Button}" />
+                            </StackPanel>
+                        </ToggleButton>
                         <ToggleButton x:Name="EffectsButton" Classes="flat" ToolTip.Tip="{l:T Effects.ButtonTip}">
                             <StackPanel Orientation="Horizontal">
                                 <Path Classes="icon" Data="{DynamicResource IconEffects}" />
@@ -350,6 +368,23 @@
                             </StackPanel>
                         </Button>
                     </DockPanel>
+                </StackPanel>
+            </Border>
+        </Popup>
+
+        <!-- Border presets: each sample is the capture with the preset; a click replaces the effects (one undo step) -->
+        <Popup x:Name="BordersPopup" Placement="Bottom" IsLightDismissEnabled="True">
+            <Border Classes="popup" Padding="12,10,12,8" TextElement.Foreground="{DynamicResource TextBrush}">
+                <StackPanel Width="636">
+                    <TextBlock Text="{l:T Borders.Title}" FontWeight="SemiBold" FontSize="13" Margin="2,0,0,8" />
+                    <WrapPanel x:Name="BordersPanel" />
+                    <Button x:Name="BordersAdvancedButton" Classes="flat" HorizontalAlignment="Left" Margin="0,2,0,0"
+                            ToolTip.Tip="{l:T Borders.AdvancedTip}">
+                        <StackPanel Orientation="Horizontal">
+                            <Path Classes="icon" Data="{DynamicResource IconEffects}" />
+                            <TextBlock Classes="button-label" Text="{l:T Borders.Advanced}" />
+                        </StackPanel>
+                    </Button>
                 </StackPanel>
             </Border>
         </Popup>

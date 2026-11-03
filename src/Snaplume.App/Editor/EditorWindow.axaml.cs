@@ -1,4 +1,5 @@
 using Avalonia;
+using Avalonia.Automation;
 using Avalonia.Controls;
 using Avalonia.Input;
 using Avalonia.Interactivity;
@@ -116,6 +117,24 @@ public partial class EditorWindow : Window
         [EditorTool.Magnifier] = Loc.T("Preset.Title.Magnifier"),
     };
 
+    /// <summary>Names of the border presets in the gallery, by <see cref="BorderPreset.Id"/>.</summary>
+    private static readonly Dictionary<string, string> BorderPresetNames = new()
+    {
+        ["None"] = Loc.T("Borders.None"),
+        ["ThinBlack"] = Loc.T("Borders.ThinBlack"),
+        ["ThickBlack"] = Loc.T("Borders.ThickBlack"),
+        ["Gray"] = Loc.T("Borders.Gray"),
+        ["WhiteFrame"] = Loc.T("Borders.WhiteFrame"),
+        ["Shadow"] = Loc.T("Borders.Shadow"),
+        ["RoundedShadow"] = Loc.T("Borders.RoundedShadow"),
+        ["RoundedBorder"] = Loc.T("Borders.RoundedBorder"),
+        ["TornBottom"] = Loc.T("Borders.TornBottom"),
+        ["TornTopBottom"] = Loc.T("Borders.TornTopBottom"),
+    };
+
+    /// <summary>Size of a sample in the border gallery; the capture is reduced to twice that, for high-density screens.</summary>
+    private const double BorderSampleWidth = 108, BorderSampleHeight = 68;
+
     private readonly EditorDocument _document = null!;
     /// <summary>Last color used with each tool (yellow highlighter, red arrows...).</summary>
     private readonly Dictionary<EditorTool, Color> _toolColors = new() { [EditorTool.Highlight] = Palette[2].Color };
@@ -148,6 +167,12 @@ public partial class EditorWindow : Window
     /// <summary>Last slider move not applied yet: the moves are applied once per idle moment, not at each tick.</summary>
     private (string Slider, Func<ImageEffects, ImageEffects> Change)? _pendingSlider;
     private readonly List<(Border Dot, bool IsBorder)> _effectColorDots = new();
+
+    // Border gallery: its tiles, the reduced capture they are drawn from, and the document state they show
+    // (the samples keep the background and the torn shape of the current effects, see BorderPreset.ApplyTo).
+    private readonly List<(Button Tile, BorderPreset Preset)> _borderTiles = new();
+    private Bitmap? _borderSample;
+    private (long Version, Color Background, int Seed)? _bordersShown;
 
     /// <summary>Size of the capture when the image was inserted: the view is fitted again if placing it made the capture grow.</summary>
     private (int Width, int Height) _sizeBeforeInsert;
@@ -267,6 +292,20 @@ public partial class EditorWindow : Window
             else EffectsPopup.IsOpen = false;
         };
         EffectsPopup.Closed += (_, _) => OnEffectsClosed();
+        BordersPopup.PlacementTarget = BordersButton;
+        BordersPopup.OverlayInputPassThroughElement = BordersButton;
+        BordersButton.IsCheckedChanged += (_, _) =>
+        {
+            if (BordersButton.IsChecked == true) OpenBorders();
+            else BordersPopup.IsOpen = false;
+        };
+        BordersPopup.Closed += (_, _) => OnBordersClosed();
+        // The detailed settings of the effects, from the preset shown.
+        BordersAdvancedButton.Click += (_, _) =>
+        {
+            BordersPopup.IsOpen = false;
+            EffectsButton.IsChecked = true;
+        };
         // A slider released: its last move is applied, its next move starts a new undo step.
         EffectsPanel.AddHandler(PointerReleasedEvent, (_, _) =>
         {
@@ -700,6 +739,7 @@ public partial class EditorWindow : Window
         // The shadow of the effects replaces the decorative one of the page.
         ImagePage.IsVisible = _document.PreviewLayout?.Effects.Shadow != true;
         if (EffectsPopup.IsOpen) ShowEffects();
+        if (BordersPopup.IsOpen) RefreshBorders();
         if (DeleteSection.IsVisible != hasSelection) UpdateContext();
     }
 
@@ -825,6 +865,7 @@ public partial class EditorWindow : Window
         EndPendingEdits();
         AnnotCanvas.CancelOperation();
         PresetPopup.IsOpen = false;
+        BordersPopup.IsOpen = false;
         ShowEffects();
         EffectsPopup.IsOpen = true;
     }
@@ -937,6 +978,127 @@ public partial class EditorWindow : Window
                    | (TornRightCheck.IsChecked == true ? TornEdges.Right : TornEdges.None);
         bool shadow = ShadowCheck.IsChecked == true, border = BorderCheck.IsChecked == true;
         ChangeEffects(null, fx => fx with { Shadow = shadow, Border = border, TornEdges = torn });
+    }
+
+    // ---- Border presets ----
+
+    private void OpenBorders()
+    {
+        EndPendingEdits();
+        AnnotCanvas.CancelOperation();
+        PresetPopup.IsOpen = false;
+        EffectsPopup.IsOpen = false;
+        BuildBordersPanel();
+        BordersPopup.IsOpen = true;
+    }
+
+    private void OnBordersClosed()
+    {
+        BordersButton.IsChecked = false;
+        // The samples hold a reduced copy of the capture and their shadows: made again at the next opening.
+        BordersPanel.Children.Clear();
+        _borderTiles.Clear();
+        _borderSample?.Dispose();
+        _borderSample = null;
+        _bordersShown = null;
+    }
+
+    /// <summary>One sample per preset: the capture (annotations included) reduced once, with the effects of the preset.</summary>
+    private void BuildBordersPanel()
+    {
+        BordersPanel.Children.Clear();
+        _borderTiles.Clear();
+        _borderSample?.Dispose();
+        _borderSample = null;
+        var effects = _document.Effects;
+        _bordersShown = (_document.Version, effects.Background, effects.TornSeed);
+        try
+        {
+            _borderSample = AvaloniaImages.ToBitmap(_document.Thumbnail((int)(2 * BorderSampleWidth), (int)(2 * BorderSampleHeight)));
+        }
+        catch (Exception ex)
+        {
+            // The presets stay usable, shown by their names only.
+            ErrorLog.Write("Aperçu des bordures", ex);
+        }
+        foreach (var preset in BorderPresets.All)
+        {
+            var tile = CreateBorderTile(preset, preset.ApplyTo(effects));
+            _borderTiles.Add((tile, preset));
+            BordersPanel.Children.Add(tile);
+        }
+        ShowBorderSelection();
+    }
+
+    private Button CreateBorderTile(BorderPreset preset, ImageEffects effects)
+    {
+        var sample = new DrawingPreview { Width = BorderSampleWidth, Height = BorderSampleHeight };
+        RenderOptions.SetBitmapInterpolationMode(sample, BitmapInterpolationMode.HighQuality);
+        if (_borderSample is { } image)
+        {
+            try
+            {
+                var bounds = new Rect(0, 0, image.PixelSize.Width, image.PixelSize.Height);
+                if (EffectsRenderer.Sample(effects, image.PixelSize.Width, image.PixelSize.Height) is { } layout)
+                    sample.SetDrawing(dc => layout.Render(dc, d => d.DrawImage(image, bounds)), new Size(layout.OutputWidth, layout.OutputHeight));
+                else
+                    sample.SetDrawing(dc => dc.DrawImage(image, bounds), bounds.Size);
+            }
+            catch (Exception ex)
+            {
+                ErrorLog.Write("Aperçu d'une bordure", ex);
+            }
+        }
+        var name = new TextBlock
+        {
+            Text = BorderPresetNames[preset.Id],
+            FontSize = 11.5,
+            // Room for two lines, so that the tiles of a row have the same height.
+            LineHeight = 15,
+            Height = 30,
+            Margin = new Thickness(0, 5, 0, 0),
+            TextAlignment = TextAlignment.Center,
+            TextWrapping = TextWrapping.Wrap,
+            TextTrimming = TextTrimming.CharacterEllipsis,
+            MaxLines = 2,
+        };
+        var tile = new Button { Content = new StackPanel { Children = { sample, name } } };
+        tile.Classes.Add("flat");
+        tile.Classes.Add("border-preset");
+        AutomationProperties.SetName(tile, name.Text);
+        tile.Click += (_, _) => ApplyBorderPreset(preset);
+        return tile;
+    }
+
+    /// <summary>Outlines the preset that the effects of the image look like, if any.</summary>
+    private void ShowBorderSelection()
+    {
+        var selected = BorderPresets.Find(_document.Effects);
+        foreach (var (tile, preset) in _borderTiles) tile.Classes.Set("selected", preset == selected);
+    }
+
+    /// <summary>After a change of the document, gallery open: the samples are drawn again only when what they show changed.</summary>
+    private void RefreshBorders()
+    {
+        var effects = _document.Effects;
+        if (_bordersShown is not { } shown) return;
+        bool sameLook = shown.Background == effects.Background && shown.Seed == effects.TornSeed;
+        if (sameLook && (_document.IsEffectsChange || shown.Version == _document.Version))
+        {
+            _bordersShown = (_document.Version, effects.Background, effects.TornSeed);
+            ShowBorderSelection();
+        }
+        else
+        {
+            BuildBordersPanel();
+        }
+    }
+
+    /// <summary>Replaces the effects of the image by the preset, as one undo step; the gallery stays open to try another.</summary>
+    private void ApplyBorderPreset(BorderPreset preset)
+    {
+        if (preset.Matches(_document.Effects)) return;
+        ChangeEffects(null, preset.ApplyTo);
     }
 
     // ---- Inserting an image ----
