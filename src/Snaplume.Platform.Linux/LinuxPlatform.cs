@@ -88,6 +88,7 @@ public static class LinuxPlatform
         public IImageClipboard Clipboard { get; }
         public INativeWindows NativeWindows { get; }
         public ISingleInstance SingleInstance { get; } = new UnixSingleInstance();
+        public IUpdateInstaller Updates { get; } = new LinuxUpdateInstaller();
 
         public ITray CreateTray(string tooltip) => new LinuxTray(tooltip);
     }

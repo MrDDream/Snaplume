@@ -500,8 +500,13 @@
                                     <StackPanel>
                                         <TextBlock Classes="row-title" Text="{l:T Update.Title}" />
                                         <TextBlock Name="UpdateStatus" Classes="row-description" Text="{l:T Update.NotChecked}" />
-                                        <Button Name="OpenUpdateButton" IsVisible="False" HorizontalAlignment="Left" Margin="0,8,0,0"
-                                                Content="{l:T Update.Open}" Classes="accent" Padding="12,4" Click="OnOpenUpdate" />
+                                        <WrapPanel Name="UpdateActions" IsVisible="False" Margin="0,8,0,0">
+                                            <!-- Shown when this kind of installation can be updated from here (see UpdateWindow). -->
+                                            <Button Name="InstallUpdateButton" Content="{l:T Update.Install}" Classes="accent" Padding="12,4"
+                                                    Margin="0,0,8,0" Click="OnInstallUpdate" />
+                                            <Button Name="OpenUpdateButton" Content="{l:T Update.Open}" Classes="flat outlined" Padding="12,4"
+                                                    Click="OnOpenUpdate" />
+                                        </WrapPanel>
                                     </StackPanel>
                                 </DockPanel>
                             </Border>
