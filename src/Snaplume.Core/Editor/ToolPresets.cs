@@ -237,16 +237,17 @@ public static class ToolPresets
 
     private static void Save()
     {
+        var temp = FilePath + ".tmp";
         try
         {
             Directory.CreateDirectory(Path.GetDirectoryName(FilePath)!);
-            var temp = FilePath + ".tmp";
             File.WriteAllText(temp, JsonSerializer.Serialize(All.Select(ToStored).ToList(), AnnotationJson.Options));
             File.Move(temp, FilePath, overwrite: true);
         }
         catch (Exception ex)
         {
             ErrorLog.Write("Enregistrement des préréglages", ex);
+            SidecarFiles.DeleteQuietly(temp);
         }
     }
 

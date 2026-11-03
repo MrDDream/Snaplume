@@ -13,8 +13,17 @@ public static class SidecarFiles
     public const string BaseSuffix = ".base.png";
     public const string JsonSuffix = ".json";
 
+    /// <summary>Ending of the files being written (renamed into place once complete).</summary>
+    public const string TempSuffix = ".tmp";
+
+    /// <summary>A temporary file older than this was left by an interrupted save: <see cref="CleanOrphans"/> deletes it.</summary>
+    private static readonly TimeSpan StaleTempAge = TimeSpan.FromHours(1);
+
     /// <summary>Folders whose legacy sidecar folder was already looked for in this session.</summary>
     private static readonly HashSet<string> MigratedFolders = new(StringComparer.OrdinalIgnoreCase);
+
+    /// <summary>Folders already cleaned in this session (see <see cref="CleanOrphans"/>).</summary>
+    private static readonly HashSet<string> CleanedFolders = new(StringComparer.OrdinalIgnoreCase);
 
     public static (string BasePath, string JsonPath) PathsOf(string file)
     {
@@ -44,16 +53,30 @@ public static class SidecarFiles
         catch (Exception ex) { ErrorLog.Write("Migration des annotations", ex); }
     }
 
-    /// <summary>Deletes the sidecar files whose capture no longer exists (deleted or renamed outside Snaplume).</summary>
+    /// <summary>
+    /// Deletes the sidecar files whose capture no longer exists (deleted or renamed outside Snaplume), and the
+    /// temporary files of saves interrupted more than an hour ago; once per folder and session.
+    /// </summary>
     public static void CleanOrphans(string dir)
     {
+        lock (CleanedFolders)
+        {
+            if (!CleanedFolders.Add(Path.GetFullPath(dir))) return;
+        }
         try
         {
             var folder = Path.Combine(dir, Folder);
             if (!Directory.Exists(folder)) return;
+            var staleBefore = DateTime.UtcNow - StaleTempAge;
             foreach (var file in Directory.EnumerateFiles(folder))
             {
                 var name = Path.GetFileName(file);
+                if (name.EndsWith(TempSuffix, StringComparison.OrdinalIgnoreCase))
+                {
+                    // A save in progress (another window) is younger than that.
+                    if (File.GetLastWriteTimeUtc(file) < staleBefore) File.Delete(file);
+                    continue;
+                }
                 string? capture = name.EndsWith(BaseSuffix, StringComparison.OrdinalIgnoreCase) ? name[..^BaseSuffix.Length]
                     : name.EndsWith(JsonSuffix, StringComparison.OrdinalIgnoreCase) ? name[..^JsonSuffix.Length]
                     : null;
@@ -64,6 +87,19 @@ public static class SidecarFiles
         catch (Exception ex)
         {
             ErrorLog.Write("Nettoyage des annotations orphelines", ex);
+        }
+    }
+
+    /// <summary>Deletes a file left by a failed write; a failure is only logged (the write's own error matters more).</summary>
+    internal static void DeleteQuietly(string path)
+    {
+        try
+        {
+            if (File.Exists(path)) File.Delete(path);
+        }
+        catch (Exception ex)
+        {
+            ErrorLog.Write("Suppression d'un fichier temporaire", ex);
         }
     }
 

@@ -281,7 +281,12 @@ public sealed class ScrollingCapture
                 // Scrolled too far for the frames to overlap: scroll back up and go on with smaller steps.
                 recoveries++;
                 if (!await WaitAtPointAsync(mouseAtPoint, bar, stopRequested)) return;
-                _pointer.Scroll(notches);
+                if (!_pointer.Scroll(notches))
+                {
+                    // Not scrolled back: the next frame would not overlap the image either.
+                    ErrorLog.Write("Capture défilante", "Le système a refusé la molette pour revenir en arrière (entrée bloquée ?)");
+                    return;
+                }
                 notches = Math.Max(1, notches / 3);
                 if (!await WaitAsync(Timing.StepDelayMs, stopRequested)) return;
                 if (await grabSettled(stopRequested) is null) return;

@@ -78,7 +78,7 @@ public sealed class SelectionModel
         X = x;
         Y = y;
         if (_down && !IsDragging && (Math.Abs(X - _sx) >= DragThreshold || Math.Abs(Y - _sy) >= DragThreshold)) IsDragging = true;
-        if (!_down) _candidates = _windows.FindAt(X, Y);
+        if (!_down) SetCandidates(_windows.FindAt(X, Y));
         Changed?.Invoke();
     }
 
@@ -101,7 +101,7 @@ public sealed class SelectionModel
             if (rect.Width >= 2 && rect.Height >= 2) Complete(rect);
             else
             {
-                _candidates = _windows.FindAt(X, Y);
+                SetCandidates(_windows.FindAt(X, Y));
                 Changed?.Invoke();
             }
         }
@@ -117,7 +117,7 @@ public sealed class SelectionModel
         if (_down)
         {
             _down = IsDragging = false;
-            _candidates = _windows.FindAt(X, Y);
+            SetCandidates(_windows.FindAt(X, Y));
             Changed?.Invoke();
         }
         else
@@ -153,6 +153,17 @@ public sealed class SelectionModel
             case SelectionKey.Down: Nudge(0, step); return true;
             default: return false;
         }
+    }
+
+    /// <summary>
+    /// The windows and controls under the crosshair. The wheel level is kept while they stay the same (the mouse
+    /// moving inside a control) and goes back to the innermost one when they change: a level chosen over one window
+    /// would otherwise select a parent of the next.
+    /// </summary>
+    private void SetCandidates(IReadOnlyList<PixelRect> candidates)
+    {
+        if (!candidates.SequenceEqual(_candidates)) _level = 0;
+        _candidates = candidates;
     }
 
     /// <summary>Moves the crosshair (keyboard); the overlay also moves the real pointer when the system allows it.</summary>

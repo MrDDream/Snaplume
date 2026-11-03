@@ -185,6 +185,90 @@ public class EditorSidecarTests
         Assert.Equal(Colors.SteelBlue, At(document.BaseImage.Pixels, 10, 10));
     }
 
+    public static TheoryData<string, int> TooMuch => new()
+    {
+        { """{ "type": "line", "Start": [1, 2], "End": [3, 4], "Color": "#FF00FF00", "Thickness": 2 }""", 10_001 },
+        { """{ "type": "magnifier", "LensCenter": [80, 40], "Zoom": 2, "Shape": "Circle", "Start": [1, 1], "End": [21, 21], "Color": "#FF000000", "Thickness": 2 }""", 101 },
+        { $$"""{ "type": "text", "Position": [0, 0], "Text": "{{new string('x', 100_000)}}", "FontSize": 20, "Color": "#FF000000", "Thickness": 4 }""", 11 },
+    };
+
+    [Theory]
+    [MemberData(nameof(TooMuch))]
+    public void Sidecar_with_more_than_the_editor_makes_is_ignored(string entry, int count)
+    {
+        using var folder = new TempFolder();
+        var path = WriteCapture(folder, "[" + string.Join(",", Enumerable.Repeat(entry, count)) + "]");
+        var document = EditorDocument.Load(path);
+        Assert.Empty(document.Annotations);
+        // The capture itself is opened.
+        Assert.Equal(Colors.SteelBlue, At(document.BaseImage.Pixels, 10, 10));
+
+        // One less is accepted.
+        var limit = JsonSerializer.Deserialize<List<Annotation?>>("[" + string.Join(",", Enumerable.Repeat(entry, count - 1)) + "]", AnnotationJson.Options)!;
+        Assert.Null(EditorDocument.TooMuchToEdit(limit));
+    }
+
+    [AvaloniaFact]
+    public void Save_failing_on_the_capture_keeps_the_base_and_the_annotation_file()
+    {
+        using var folder = new TempFolder();
+        var path = WriteCapture(folder, Annotations111);
+        var document = EditorDocument.Load(path);
+        var (basePath, jsonPath) = SidecarFiles.PathsOf(path);
+        document.Crop(new PixelRect(0, 0, 60, 40));
+        document.Save();
+        Assert.Equal((60, 40), (ImageIO.Load(basePath).Width, ImageIO.Load(basePath).Height));
+        Assert.Empty(Directory.GetFiles(Path.GetDirectoryName(basePath)!, "*.tmp"));
+        var reloaded = EditorDocument.Load(path);
+        Assert.Equal((60, 40), (reloaded.BaseImage.Width, reloaded.BaseImage.Height));
+        Assert.NotEmpty(reloaded.Annotations);
+
+        // The capture cannot be written (locked by another program): the base and the annotation file stay as they were.
+        var baseBefore = File.ReadAllBytes(basePath);
+        var jsonBefore = File.ReadAllBytes(jsonPath);
+        var locked = new FileStream(path, FileMode.Open, FileAccess.Read, FileShare.None);
+        try
+        {
+            reloaded.Crop(new PixelRect(0, 0, 30, 20));
+            if (OperatingSystem.IsWindows()) Assert.ThrowsAny<Exception>(() => reloaded.Save());
+        }
+        finally
+        {
+            locked.Dispose();
+        }
+        if (OperatingSystem.IsWindows())
+        {
+            Assert.Equal(baseBefore, File.ReadAllBytes(basePath));
+            Assert.Equal(jsonBefore, File.ReadAllBytes(jsonPath));
+            Assert.Empty(Directory.GetFiles(Path.GetDirectoryName(basePath)!, "*.tmp"));
+        }
+    }
+
+    [Fact]
+    public void Orphans_and_stale_temporary_files_are_cleaned_once_per_folder()
+    {
+        using var folder = new TempFolder();
+        var path = WriteCapture(folder, Annotations111);
+        var sidecars = Path.GetDirectoryName(SidecarFiles.PathsOf(path).JsonPath)!;
+        var stale = Path.Combine(sidecars, "capture.png.base.png.tmp");
+        var recent = Path.Combine(sidecars, "capture.png.json.tmp");
+        var orphan = Path.Combine(sidecars, "gone.png.json");
+        File.WriteAllText(stale, "");
+        File.SetLastWriteTimeUtc(stale, DateTime.UtcNow.AddHours(-2));
+        File.WriteAllText(recent, "");
+        File.WriteAllText(orphan, "{}");
+
+        SidecarFiles.CleanOrphans(folder.Path);
+        Assert.False(File.Exists(stale));
+        Assert.True(File.Exists(recent));
+        Assert.False(File.Exists(orphan));
+
+        // Once per session: a second call does not enumerate the folder again.
+        File.WriteAllText(orphan, "{}");
+        SidecarFiles.CleanOrphans(folder.Path);
+        Assert.True(File.Exists(orphan));
+    }
+
     [Fact]
     public void Annotations_written_then_read_are_the_same()
     {
