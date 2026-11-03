@@ -31,14 +31,6 @@
             <Setter Property="Background" Value="{DynamicResource CheckedBrush}" />
             <Setter Property="BorderBrush" Value="{DynamicResource AccentBrush}" />
         </Style>
-
-        <Style Selector="ProgressBar.thin">
-            <Setter Property="Height" Value="6" />
-            <Setter Property="MinHeight" Value="6" />
-            <Setter Property="Background" Value="{DynamicResource TileBrush}" />
-            <Setter Property="Foreground" Value="{DynamicResource AccentBrush}" />
-            <Setter Property="CornerRadius" Value="3" />
-        </Style>
     </Window.Styles>
 
     <DockPanel>

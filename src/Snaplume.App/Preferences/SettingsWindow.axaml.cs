@@ -30,7 +30,8 @@ public partial class SettingsWindow : Window
     /// <summary>The camera list is filled: until then, the saved camera is kept as is.</summary>
     private bool _webcamsLoaded;
     private bool _saved;
-    private string? _updatePage;
+    /// <summary>The newer version found by "Check for updates".</summary>
+    private UpdateChecker.Release? _update;
 
     public AppSettings Result { get; }
 
@@ -273,7 +274,7 @@ public partial class SettingsWindow : Window
     private async void OnCheckUpdates(object? sender, RoutedEventArgs e)
     {
         CheckUpdateButton.IsEnabled = false;
-        OpenUpdateButton.IsVisible = false;
+        UpdateActions.IsVisible = false;
         UpdateStatus.Text = Loc.T("Update.Checking");
         try
         {
@@ -284,9 +285,10 @@ public partial class SettingsWindow : Window
             if (release.IsNewer)
             {
                 settings.UpdateNotifiedVersion = release.DisplayVersion;
-                _updatePage = release.Page;
+                _update = release;
                 UpdateStatus.Text = Loc.T("Update.Available", release.DisplayVersion, UpdateChecker.CurrentVersion.ToString(3));
-                OpenUpdateButton.IsVisible = true;
+                InstallUpdateButton.IsVisible = UpdateWindow.Plan(release) != null;
+                UpdateActions.IsVisible = true;
             }
             else
             {
@@ -308,7 +310,13 @@ public partial class SettingsWindow : Window
         }
     }
 
-    private void OnOpenUpdate(object? sender, RoutedEventArgs e) => OpenOrWarn(_updatePage ?? UpdateChecker.ReleasesPage);
+    private void OnOpenUpdate(object? sender, RoutedEventArgs e) => OpenOrWarn(_update?.Page ?? UpdateChecker.ReleasesPage);
+
+    /// <summary>Downloads the package that fits this copy and installs it (see <see cref="UpdateWindow"/>).</summary>
+    private void OnInstallUpdate(object? sender, RoutedEventArgs e)
+    {
+        if (_update != null) UpdateWindow.Show(this, _update, offer: false);
+    }
 
     private void OnOpenKeyboardSettings(object? sender, RoutedEventArgs e) => OpenOrWarn("ms-settings:easeofaccess-keyboard");
 

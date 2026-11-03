@@ -50,6 +50,7 @@ public interface IPlatform
     IImageClipboard Clipboard { get; }
     INativeWindows NativeWindows { get; }
     ISingleInstance SingleInstance { get; }
+    IUpdateInstaller Updates { get; }
 
     /// <summary>Notification-area icon with its menu and notifications.</summary>
     ITray CreateTray(string tooltip);
@@ -332,6 +333,42 @@ public interface ISingleInstance : IDisposable
 
     /// <summary>Receives the command lines of later launches (on any thread).</summary>
     void Listen(Action<string[]> received);
+}
+
+// ---- Updates ----
+
+/// <summary>
+/// Replaces this copy of Snaplume with a downloaded and verified package (see <see cref="UpdatePackages"/> and
+/// <see cref="UpdateDownloader"/>). Portable copies need nothing from the system (<see cref="PortableUpdate"/>).
+/// </summary>
+public interface IUpdateInstaller
+{
+    /// <summary>How the running copy was installed; <see cref="InstallKind.Unknown"/> offers only the release page.</summary>
+    InstallKind InstallKind { get; }
+
+    /// <summary>
+    /// Windows installers (<see cref="InstallKind.InnoSetup"/>, <see cref="InstallKind.Msi"/>): starts the installer of
+    /// the package. Snaplume must quit right after, so that its files can be replaced.
+    /// </summary>
+    /// <exception cref="NotSupportedException">Not a Windows installer.</exception>
+    void StartInstaller(string package);
+
+    /// <summary>True when the installer started by <see cref="StartInstaller"/> starts Snaplume again once it is done.</summary>
+    bool InstallerRestartsSnaplume { get; }
+
+    /// <summary>
+    /// Linux packages (<see cref="InstallKind.Deb"/>, <see cref="InstallKind.Rpm"/>): has the package manager install
+    /// the package, the system asking for the administrator password. Snaplume keeps running (the new version is
+    /// used after a restart).
+    /// </summary>
+    /// <returns>
+    /// False when it could not be done here (no graphical password prompt, refused, package manager busy or failing):
+    /// the reason is logged and the user is shown <see cref="ManualInstallCommand"/>.
+    /// </returns>
+    Task<bool> InstallPackageAsync(string package);
+
+    /// <summary>Command that installs the package by hand, in a terminal.</summary>
+    string ManualInstallCommand(string package);
 }
 
 // ---- Notification area ----

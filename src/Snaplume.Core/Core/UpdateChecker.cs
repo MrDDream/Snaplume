@@ -6,10 +6,11 @@ using System.Text.RegularExpressions;
 namespace Snaplume.Core;
 
 /// <summary>
-/// Asks GitHub for the latest published version of Snaplume. It is the only request Snaplume ever sends: when the
-/// user clicks "Check for updates", or once a day if they turned on <see cref="AppSettings.CheckForUpdates"/>.
+/// Asks GitHub for the latest published version of Snaplume. It is the only request Snaplume sends on its own: when
+/// the user clicks "Check for updates", or once a day if they turned on <see cref="AppSettings.CheckForUpdates"/>.
 /// It carries nothing about the user besides what any HTTPS request does (address, "Snaplume/x.y.z" user agent).
-/// Nothing is downloaded or installed: the release page is opened in the browser.
+/// Nothing is downloaded here: the user then opens the release page, or lets <see cref="UpdateDownloader"/> fetch
+/// the package that fits this copy (see <see cref="UpdatePackages"/>).
 /// </summary>
 public static partial class UpdateChecker
 {
@@ -23,7 +24,8 @@ public static partial class UpdateChecker
     /// <param name="Version">Compared with <see cref="CurrentVersion"/> (major.minor.build).</param>
     /// <param name="DisplayVersion">As published, e.g. "1.2.0".</param>
     /// <param name="Page">Release page to open.</param>
-    public sealed record Release(Version Version, string DisplayVersion, string Page)
+    /// <param name="Assets">Files of the release that may be downloaded (see <see cref="UpdatePackages"/>).</param>
+    public sealed record Release(Version Version, string DisplayVersion, string Page, IReadOnlyList<ReleaseAsset> Assets)
     {
         public bool IsNewer => Version > CurrentVersion;
     }
@@ -62,7 +64,15 @@ public static partial class UpdateChecker
             }
         }
 
-        using var json = JsonDocument.Parse(body.ToArray());
+        return ParseRelease(body.ToArray());
+    }
+
+    /// <summary>Reads the answer of the GitHub API about a release.</summary>
+    /// <exception cref="InvalidDataException">The answer is not a release Snaplume understands.</exception>
+    /// <exception cref="JsonException">The answer is not JSON.</exception>
+    internal static Release ParseRelease(byte[] body)
+    {
+        using var json = JsonDocument.Parse(body);
         var root = json.RootElement;
         if (root.ValueKind != JsonValueKind.Object) throw new InvalidDataException("Réponse de GitHub inattendue");
         var tag = StringProperty(root, "tag_name");
@@ -70,7 +80,29 @@ public static partial class UpdateChecker
         var page = StringProperty(root, "html_url");
         if (page == null || !page.StartsWith(ReleasePagePrefix, StringComparison.Ordinal) || !Uri.IsWellFormedUriString(page, UriKind.Absolute))
             page = ReleasesPage;
-        return new Release(version, display, page);
+        return new Release(version, display, page, ParseAssets(root));
+    }
+
+    /// <summary>
+    /// The files of the release. Only plain file names served by the project's own release downloads are kept
+    /// (<see cref="UpdatePackages.IsAllowedDownload"/>), whatever else the answer lists.
+    /// </summary>
+    private static List<ReleaseAsset> ParseAssets(JsonElement root)
+    {
+        var assets = new List<ReleaseAsset>();
+        if (!root.TryGetProperty("assets", out var list) || list.ValueKind != JsonValueKind.Array) return assets;
+        foreach (var item in list.EnumerateArray())
+        {
+            if (item.ValueKind != JsonValueKind.Object) continue;
+            var name = StringProperty(item, "name");
+            var url = StringProperty(item, "browser_download_url");
+            if (name == null || url == null || !UpdatePackages.IsPlainFileName(name)) continue;
+            if (!Uri.TryCreate(url, UriKind.Absolute, out var uri) || !UpdatePackages.IsAllowedDownload(uri)) continue;
+            long size = item.TryGetProperty("size", out var value) && value.ValueKind == JsonValueKind.Number && value.TryGetInt64(out var bytes) ? bytes : 0;
+            if (size <= 0 || size > UpdatePackages.MaxPackageBytes) continue;
+            assets.Add(new ReleaseAsset(name, uri, size));
+        }
+        return assets;
     }
 
     private static string? StringProperty(JsonElement element, string name) =>
@@ -94,3 +126,8 @@ public static partial class UpdateChecker
     [GeneratedRegex(@"^[vV]?(\d{1,5})\.(\d{1,5})(?:\.(\d{1,5}))?(?:-[0-9A-Za-z.-]{1,30})?$")]
     private static partial Regex VersionPattern();
 }
+
+/// <summary>A file attached to a release.</summary>
+/// <param name="Url">Under https://github.com/MrDDream/Snaplume/releases/download/ (checked when the release is read).</param>
+/// <param name="Size">In bytes, as announced by GitHub.</param>
+public sealed record ReleaseAsset(string Name, Uri Url, long Size);

@@ -78,7 +78,7 @@ public sealed class AppSettings
         ? AppContext.BaseDirectory
         : Path.Combine(Environment.GetFolderPath(Environment.SpecialFolder.ApplicationData), "Snaplume");
 
-    private static bool IsPortable => File.Exists(Path.Combine(AppContext.BaseDirectory, "portable"));
+    internal static bool IsPortable => File.Exists(Path.Combine(AppContext.BaseDirectory, PortableUpdate.Marker));
 
     private static string SettingsFile => Path.Combine(SettingsFolder, "settings.json");
 

@@ -204,7 +204,7 @@ Snaplume.exe --record screen --duration 30 --exit                 # 30-second sc
 Snaplume works **100% offline**:
 
 - no account, no sign-in, no cloud upload, no telemetry, no analytics, no ads;
-- the only network request is the **update check**, and only when you ask for it (Settings › About) or turn on its daily check (off by default); it asks GitHub for the latest version and sends nothing else;
+- the only network request is the **update check**, and only when you ask for it (Settings › About) or turn on its daily check (off by default); it asks GitHub for the latest version and sends nothing else. When a new version is out, "Download and install" fetches the package that fits your installation (installer, MSI, portable zip, .deb or .rpm) from the project's GitHub releases only, and checks its SHA-256 against the published list before using it;
 - OCR uses the text recognition engine built into Windows (Tesseract on Linux), QR codes are decoded locally;
 - e-mail goes through **your** mail client, and the document generator writes local files;
 - captures are plain files in a folder you choose (default `Pictures\Snaplume`), settings are a JSON file in `%APPDATA%\Snaplume` (or next to the app in portable mode).

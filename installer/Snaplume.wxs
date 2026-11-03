@@ -36,6 +36,8 @@
     <Property Id="ARPURLINFOABOUT" Value="https://github.com/MrDDream/Snaplume" />
     <Property Id="ARPHELPLINK" Value="https://github.com/MrDDream/Snaplume/issues" />
     <Property Id="ARPURLUPDATEINFO" Value="https://github.com/MrDDream/Snaplume/releases" />
+    <!-- Recorded as the product's InstallLocation: Snaplume checks it to know that it was installed by this package. -->
+    <SetProperty Id="ARPINSTALLLOCATION" Value="[INSTALLFOLDER]" After="CostFinalize" />
 
     <StandardDirectory Id="ProgramFiles64Folder">
       <Directory Id="INSTALLFOLDER" Name="Snaplume" />

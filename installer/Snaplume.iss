@@ -131,6 +131,9 @@ Root: HKCU; Subkey: "Software\Microsoft\Windows\CurrentVersion\Run"; ValueType: 
 
 [Run]
 Filename: "{app}\{#AppExe}"; Description: "{cm:LaunchProgram,{#AppName}}"; Flags: nowait postinstall skipifsilent
+; Update started from Snaplume ("/SP- /SILENT /NOCANCEL /NORESTART /RELAUNCH=1", see UpdateInstaller.cs of
+; Snaplume.Platform.Windows): Snaplume quit to let its files be replaced, start it again, without elevation.
+Filename: "{app}\{#AppExe}"; Flags: nowait runasoriginaluser; Check: RelaunchAfterUpdate
 
 [Code]
 const
@@ -186,6 +189,12 @@ begin
        (Pos(Lowercase(AddBackslash(ExpandConstant('{app}'))), Lowercase(Value)) > 0) then
       RegDeleteValue(HKCU, RunKey, '{#AppName}');
   end;
+end;
+
+{ Silent update started by Snaplume itself (/RELAUNCH=1): the last page, and its "Launch" box, is skipped. }
+function RelaunchAfterUpdate: Boolean;
+begin
+  Result := WizardSilent and (ExpandConstant('{param:RELAUNCH|0}') = '1');
 end;
 
 #ifdef VCRedistExe

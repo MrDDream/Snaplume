@@ -30,6 +30,8 @@ public partial class App : Application
     private SettingsWindow? _settingsWindow;
     private bool _showingError;
     private bool _restartOnExit;
+    /// <summary>Starts an update just before quitting (see <see cref="QuitForUpdate"/>).</summary>
+    private Func<bool>? _launchOnExit;
     private bool _started;
 
     public static App Instance => (App)Current!;
@@ -189,8 +191,13 @@ public partial class App : Application
             if (release.IsNewer && release.DisplayVersion != Settings.UpdateNotifiedVersion)
             {
                 Settings.UpdateNotifiedVersion = release.DisplayVersion;
-                Tray?.ShowInfo(Loc.T("Update.AvailableTitle"), Loc.T("Update.AvailableText", release.DisplayVersion),
-                    OnUi(() => FileOps.OpenWithDefaultApp(release.Page)));
+                // A click offers to install it when this copy can be updated from here, else opens the release page.
+                if (UpdateWindow.Plan(release) != null)
+                    Tray?.ShowInfo(Loc.T("Update.AvailableTitle"), Loc.T("Update.AvailableTextInstall", release.DisplayVersion),
+                        OnUi(() => UpdateWindow.Show(null, release, offer: true)));
+                else
+                    Tray?.ShowInfo(Loc.T("Update.AvailableTitle"), Loc.T("Update.AvailableText", release.DisplayVersion),
+                        OnUi(() => FileOps.OpenWithDefaultApp(release.Page)));
             }
             Settings.Save();
         }
@@ -683,6 +690,18 @@ public partial class App : Application
     /// <summary>Quits and starts again (the interface language is applied at startup).</summary>
     public void Restart() => ExitApp(restart: true);
 
+    /// <summary>
+    /// Quits to let an update replace Snaplume. <paramref name="launch"/> starts the installer (or the new portable
+    /// copy) once the video and capture in progress are finished and every editor agreed to close, just before
+    /// quitting; Snaplume keeps running if an editor stays open or <paramref name="launch"/> returns false.
+    /// </summary>
+    public void QuitForUpdate(Func<bool> launch)
+    {
+        if (IsExiting) return;
+        _launchOnExit = launch;
+        ExitApp(restart: false);
+    }
+
     private void ExitApp(bool restart)
     {
         if (IsExiting) return;
@@ -707,8 +726,14 @@ public partial class App : Application
             if (editor.IsVisible)
             {
                 _restartOnExit = false;
+                _launchOnExit = null;
                 return;
             }
+        }
+        if (_launchOnExit is { } launch)
+        {
+            _launchOnExit = null;
+            if (!launch()) return;
         }
         IsExiting = true;
         if (_restartOnExit && Environment.ProcessPath is { } exe)

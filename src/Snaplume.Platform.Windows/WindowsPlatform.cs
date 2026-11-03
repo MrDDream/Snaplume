@@ -42,6 +42,7 @@ public static class WindowsPlatform
         public IImageClipboard Clipboard { get; } = new ImageClipboard();
         public INativeWindows NativeWindows { get; } = new NativeWindows();
         public ISingleInstance SingleInstance { get; } = new SingleInstance();
+        public IUpdateInstaller Updates { get; } = new UpdateInstaller();
 
         public ITray CreateTray(string tooltip) => new TrayIcon(tooltip);
     }
