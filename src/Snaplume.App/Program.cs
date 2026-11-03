@@ -29,10 +29,19 @@ internal static class Program
     }
 
     /// <summary>Also used by the visual designer.</summary>
-    public static AppBuilder BuildAvaloniaApp() => AppBuilder.Configure<App>().UsePlatformDetect().LogToTrace()
-        // Linux: the window class matches StartupWMClass of the .desktop file, so the dock groups the windows
-        // under the Snaplume launcher.
-        .With(new X11PlatformOptions { WmClass = "Snaplume" });
+    public static AppBuilder BuildAvaloniaApp()
+    {
+        var builder = AppBuilder.Configure<App>().UsePlatformDetect().LogToTrace()
+            // Linux: the window class matches StartupWMClass of the .desktop file, so the dock groups the windows
+            // under the Snaplume launcher.
+            .With(new X11PlatformOptions { WmClass = "Snaplume" });
+#if SNAPLUME_WINDOWS
+        // Without a GPU, Skia on the processor rather than ANGLE on Direct3D's software emulation (much slower).
+        if (Snaplume.Platform.Windows.WindowsPlatform.PreferSoftwareRendering())
+            builder = builder.With(new Win32PlatformOptions { RenderingMode = new[] { Win32RenderingMode.Software } });
+#endif
+        return builder;
+    }
 
     /// <summary>Exception on another thread: the process ends, at least keep a trace.</summary>
     private static void OnFatalException(object sender, UnhandledExceptionEventArgs e) =>

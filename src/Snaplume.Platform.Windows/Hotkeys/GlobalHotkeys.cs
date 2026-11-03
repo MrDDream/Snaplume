@@ -3,8 +3,8 @@ using System.Runtime.InteropServices;
 using Avalonia.Input;
 using Avalonia.Threading;
 using Snaplume.Core;
+using Snaplume.Platform.Windows.Native;
 using static Snaplume.Platform.Windows.Native.NativeMethods;
-using WinForms = System.Windows.Forms;
 
 namespace Snaplume.Platform.Windows.Hotkeys;
 
@@ -12,18 +12,19 @@ namespace Snaplume.Platform.Windows.Hotkeys;
 /// <remarks>
 /// The window belongs to the thread that creates this object, which must run a message loop: the Avalonia UI
 /// thread. Actions are posted to the Avalonia dispatcher rather than run inside the window procedure, so that
-/// their exceptions reach the application's handler instead of WinForms' own error dialog.
+/// their exceptions reach the application's handler instead of unwinding through the window procedure.
 /// </remarks>
 public sealed class GlobalHotkeys : IGlobalHotkeys
 {
-    private readonly MessageWindow _window;
+    /// <summary>Message-only window (HWND_MESSAGE): never shown, not enumerated, only receives WM_HOTKEY.</summary>
+    private readonly HiddenWindow _window;
     private readonly Dictionary<int, Action> _actions = new();
     private int _nextId = 1;
     private SnippingShortcutHook? _snippingHook;
 
     public GlobalHotkeys()
     {
-        _window = new MessageWindow(this);
+        _window = new HiddenWindow("Hotkeys", OnMessage, messageOnly: true);
     }
 
     public bool IsSupported => true;
@@ -75,38 +76,17 @@ public sealed class GlobalHotkeys : IGlobalHotkeys
         return _snippingHook != null;
     }
 
-    private void OnHotkey(int id)
+    private IntPtr? OnMessage(uint message, IntPtr wParam, IntPtr lParam)
     {
-        if (_actions.TryGetValue(id, out var action)) Dispatcher.UIThread.Post(action);
+        if (message != WM_HOTKEY) return null;
+        if (_actions.TryGetValue(wParam.ToInt32(), out var action)) Dispatcher.UIThread.Post(action);
+        return IntPtr.Zero;
     }
 
     public void Dispose()
     {
         UnregisterAll();
-        _window.DestroyHandle();
-    }
-
-    /// <summary>Message-only window (HWND_MESSAGE): never shown, not enumerated, only receives WM_HOTKEY.</summary>
-    private sealed class MessageWindow : WinForms.NativeWindow
-    {
-        private readonly GlobalHotkeys _owner;
-
-        public MessageWindow(GlobalHotkeys owner)
-        {
-            _owner = owner;
-            CreateHandle(new WinForms.CreateParams { Caption = "SnaplumeHotkeys", Parent = HWND_MESSAGE });
-        }
-
-        protected override void WndProc(ref WinForms.Message m)
-        {
-            if (m.Msg == WM_HOTKEY)
-            {
-                _owner.OnHotkey(m.WParam.ToInt32());
-                m.Result = IntPtr.Zero;
-                return;
-            }
-            base.WndProc(ref m);
-        }
+        _window.Dispose();
     }
 }
 

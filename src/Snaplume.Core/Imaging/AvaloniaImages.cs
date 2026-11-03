@@ -10,14 +10,70 @@ public static class AvaloniaImages
 {
     public static readonly Vector Dpi = new(96, 96);
 
-    /// <summary>A new Avalonia bitmap with the pixels (straight alpha, converted by Avalonia as needed).</summary>
+    /// <summary>Rows per parallel chunk when premultiplying a big image.</summary>
+    private const int RowsPerChunk = 64;
+
+    /// <summary>
+    /// A new Avalonia bitmap with the pixels, in the form Skia draws without converting them at every frame: opaque
+    /// when every pixel is (screen copies), premultiplied otherwise. A straight-alpha bitmap would be premultiplied
+    /// again each time it is drawn (about 15 ms per frame for a 2560 x 1440 image in software rendering).
+    /// </summary>
     public static WriteableBitmap ToBitmap(PixelBuffer image)
     {
-        var bitmap = new WriteableBitmap(new PixelSize(image.Width, image.Height), Dpi, PixelFormat.Bgra8888, AlphaFormat.Unpremul);
+        bool opaque = IsOpaque(image);
+        var bitmap = new WriteableBitmap(new PixelSize(image.Width, image.Height), Dpi, PixelFormat.Bgra8888,
+            opaque ? AlphaFormat.Opaque : AlphaFormat.Premul);
         using var locked = bitmap.Lock();
-        for (int y = 0; y < image.Height; y++)
-            Marshal.Copy(image.Pixels, y * image.Stride, locked.Address + y * locked.RowBytes, image.Stride);
+        if (opaque)
+        {
+            for (int y = 0; y < image.Height; y++)
+                Marshal.Copy(image.Pixels, y * image.Stride, locked.Address + y * locked.RowBytes, image.Stride);
+        }
+        else
+        {
+            var address = locked.Address;
+            int rowBytes = locked.RowBytes;
+            Parallel.For(0, (image.Height + RowsPerChunk - 1) / RowsPerChunk, chunk =>
+            {
+                int end = Math.Min(image.Height, (chunk + 1) * RowsPerChunk);
+                for (int y = chunk * RowsPerChunk; y < end; y++)
+                    Premultiply(image.Pixels.AsSpan(y * image.Stride, image.Stride), address + y * rowBytes);
+            });
+        }
         return bitmap;
+    }
+
+    /// <summary>True when every pixel has an alpha of 255.</summary>
+    public static bool IsOpaque(PixelBuffer image)
+    {
+        foreach (uint pixel in MemoryMarshal.Cast<byte, uint>(image.Pixels.AsSpan(0, image.Stride * image.Height)))
+        {
+            if (pixel < 0xFF000000) return false;
+        }
+        return true;
+    }
+
+    /// <summary>One row of straight-alpha BGRA to premultiplied, rounded as Skia does.</summary>
+    private static unsafe void Premultiply(ReadOnlySpan<byte> source, IntPtr target)
+    {
+        var p = (byte*)target;
+        for (int i = 0; i < source.Length; i += 4)
+        {
+            int a = source[i + 3];
+            if (a == 255)
+            {
+                p[i] = source[i];
+                p[i + 1] = source[i + 1];
+                p[i + 2] = source[i + 2];
+            }
+            else
+            {
+                p[i] = (byte)((source[i] * a + 127) / 255);
+                p[i + 1] = (byte)((source[i + 1] * a + 127) / 255);
+                p[i + 2] = (byte)((source[i + 2] * a + 127) / 255);
+            }
+            p[i + 3] = (byte)a;
+        }
     }
 
     /// <summary>The pixels of an Avalonia bitmap (rendered images, loaded files) as straight-alpha BGRA.</summary>

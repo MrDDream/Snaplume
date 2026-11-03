@@ -3,7 +3,6 @@ using System.Runtime.InteropServices;
 using Microsoft.Win32;
 using Snaplume.Core;
 using static Snaplume.Platform.Windows.Native.NativeMethods;
-using WinForms = System.Windows.Forms;
 
 namespace Snaplume.Platform.Windows.Shell;
 
@@ -92,9 +91,8 @@ public sealed class DesktopShell : IDesktopShell
             if (result is Mapi.Success or Mapi.UserAbort) return;
             ErrorLog.Write("Envoi par e-mail", $"MAPISendMail : {result}");
             // Shown from this thread: the platform has no window of its own to own the message.
-            var options = Loc.IsRightToLeft ? WinForms.MessageBoxOptions.RtlReading | WinForms.MessageBoxOptions.RightAlign : 0;
-            WinForms.MessageBox.Show(Loc.T("Share.Email.Failed"), Loc.T("Share.Email.Title"), WinForms.MessageBoxButtons.OK,
-                WinForms.MessageBoxIcon.Information, WinForms.MessageBoxDefaultButton.Button1, options);
+            uint options = MB_OK | MB_ICONINFORMATION | (Loc.IsRightToLeft ? MB_RTLREADING | MB_RIGHT : 0);
+            MessageBox(IntPtr.Zero, Loc.T("Share.Email.Failed"), Loc.T("Share.Email.Title"), options);
             ShowFilesForWebmail(files);
         })
         {

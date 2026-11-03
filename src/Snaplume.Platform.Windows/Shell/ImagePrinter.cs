@@ -1,29 +1,19 @@
-using System.Printing;
-using System.Printing.Interop;
+using System.ComponentModel;
 using System.Runtime.InteropServices;
-using System.Windows;
-using System.Windows.Documents;
-using System.Windows.Media;
-using System.Windows.Media.Imaging;
-using System.Windows.Xps;
 using Snaplume.Core;
 using Snaplume.Imaging;
-using WinForms = System.Windows.Forms;
+using Snaplume.Platform.Windows.Native;
 
 namespace Snaplume.Platform.Windows.Shell;
 
-/// <summary>Prints image files, one per page, through the XPS print path of WPF.</summary>
+/// <summary>Prints image files, one per page, through the Windows print dialog and GDI.</summary>
 /// <remarks>
-/// The print dialog is the WinForms one: unlike WPF's PrintDialog, it takes an owner window (here an Avalonia
-/// window), so it stays in front of it and modal to it. Its choices (printer, paper, copies...) come back as a
-/// DEVMODE, turned into a print ticket for the XPS writer. The pages are then spooled on a background STA thread:
-/// nothing here depends on a WPF dispatcher being pumped by the Avalonia message loop.
+/// The dialog (PrintDlgEx) takes an owner window (here an Avalonia window), so it stays in front of it and modal to
+/// it. It gives back a device context of the chosen printer with the chosen settings (paper, copies...); the pages
+/// are then drawn into it on a background thread, each one in the orientation of its image (ResetDC between pages).
 /// </remarks>
 internal static class ImagePrinter
 {
-    /// <summary>Margin kept around each image when printing, at least (1/96 inch units: 0.4 inch).</summary>
-    private const double MinPrintMargin = 38.4;
-
     /// <summary>
     /// Prints image files, one per page, after the print dialog. Each page takes the orientation of its
     /// image; images are reduced to fit the printable area (never enlarged), keeping their ratio.
@@ -36,62 +26,37 @@ internal static class ImagePrinter
         var images = new List<(string Path, bool Landscape)>();
         foreach (var path in paths.Where(ImageIO.IsImage))
         {
-            if (ProbeLandscape(path) is bool landscape) images.Add((path, landscape));
+            if (ImageIO.ReadSize(path) is var (width, height)) images.Add((path, width > height));
+            else ErrorLog.Write($"Impression de {path}", Loc.T("App.ImageUnreadable"));
         }
         if (images.Count == 0) throw new InvalidOperationException(Loc.T("Share.Print.NoImage"));
         if (string.IsNullOrWhiteSpace(title))
             title = images.Count == 1 ? Path.GetFileName(images[0].Path) : Loc.T("Share.Print.JobName", images.Count);
 
-        string printer;
-        byte[] devMode;
+        PrintJob? job;
         try
         {
-            using var dialog = new WinForms.PrintDialog
-            {
-                UseEXDialog = true,
-                AllowSomePages = false,
-                AllowCurrentPage = false,
-                AllowSelection = false,
-            };
-            var result = owner != IntPtr.Zero ? dialog.ShowDialog(new OwnerWindow(owner)) : dialog.ShowDialog();
-            if (result != WinForms.DialogResult.OK) return false;
-            printer = dialog.PrinterSettings.PrinterName;
-            devMode = ReadDevMode(dialog.PrinterSettings);
+            job = AskPrinter(owner);
         }
         catch (Exception ex)
         {
             // No printer installed, print spooler stopped...
             throw Failure(ex);
         }
+        if (job == null) return false;
 
-        var landscapes = images.Select(i => i.Landscape).ToArray();
-        var files = images.Select(i => i.Path).ToArray();
-        var done = new TaskCompletionSource(TaskCreationOptions.RunContinuationsAsynchronously);
-        var thread = new Thread(() =>
-        {
-            try
-            {
-                Spool(printer, devMode, title, landscapes, files);
-                done.SetResult();
-            }
-            catch (Exception ex)
-            {
-                done.SetException(ex);
-            }
-        })
-        {
-            IsBackground = true,
-            Name = "Snaplume printing",
-        };
-        thread.SetApartmentState(ApartmentState.STA);
-        thread.Start();
         try
         {
-            await done.Task;
+            // Some drivers take a while per page (and big images are decoded one at a time): never on the UI thread.
+            await Task.Run(() => Spool(job, title, images));
         }
         catch (Exception ex)
         {
             throw Failure(ex);
+        }
+        finally
+        {
+            job.Dispose();
         }
         return true;
     }
@@ -102,169 +67,248 @@ internal static class ImagePrinter
         return new InvalidOperationException(Loc.T("Share.Print.Failed", ex.Message), ex);
     }
 
-    /// <summary>Copy of the printer settings chosen in the dialog (DEVMODE structure).</summary>
-    private static byte[] ReadDevMode(System.Drawing.Printing.PrinterSettings settings)
+    /// <summary>The print dialog; null if cancelled.</summary>
+    private static PrintJob? AskPrinter(IntPtr owner)
     {
-        var handle = settings.GetHdevmode(settings.DefaultPageSettings);
+        // PrintDlgEx refuses to run without an owner window.
+        using var fallbackOwner = owner == IntPtr.Zero ? new HiddenWindow("Print", (_, _, _) => null, messageOnly: false) : null;
+        var dialog = new PRINTDLGEX
+        {
+            lStructSize = Marshal.SizeOf<PRINTDLGEX>(),
+            hwndOwner = fallbackOwner?.Handle ?? owner,
+            // No page range, selection or current page (one image per page, all printed); printing to a file was
+            // never offered either.
+            Flags = PD_RETURNDC | PD_NOPAGENUMS | PD_NOSELECTION | PD_NOCURRENTPAGE | PD_HIDEPRINTTOFILE
+                    | PD_USEDEVMODECOPIESANDCOLLATE,
+            nCopies = 1,
+            nStartPage = START_PAGE_GENERAL,
+        };
+        int result = PrintDlgEx(ref dialog);
+        // An HRESULT (e.g. E_OUTOFMEMORY, or the error of a missing print spooler).
+        if (result != 0) throw Marshal.GetExceptionForHR(result) ?? new Win32Exception(result);
+        var job = new PrintJob(dialog.hDC, dialog.hDevMode, dialog.hDevNames, (int)Math.Max(1, dialog.nCopies),
+            (dialog.Flags & PD_COLLATE) != 0);
+        if (dialog.dwResultAction == PD_RESULT_PRINT && dialog.hDC != IntPtr.Zero) return job;
+        job.Dispose();
+        return null;
+    }
+
+    /// <summary>Draws the pages into the printer's device context (synchronously).</summary>
+    /// <param name="output">A file instead of the printer (to check the pages with a PDF printer).</param>
+    private static void Spool(PrintJob job, string title, List<(string Path, bool Landscape)> images, string? output = null)
+    {
+        var hdc = job.Hdc;
+        var document = new DOCINFO { cbSize = Marshal.SizeOf<DOCINFO>(), lpszDocName = title, lpszOutput = output };
+        if (StartDoc(hdc, ref document) <= 0) throw new Win32Exception(Marshal.GetLastPInvokeError());
         try
         {
-            var pointer = GlobalLock(handle);
+            // Copies the driver cannot make itself are printed here: whole documents when collated.
+            int documents = job.Collate ? job.Copies : 1, pages = job.Collate ? 1 : job.Copies;
+            for (int copy = 0; copy < documents; copy++)
+            {
+                foreach (var (path, landscape) in images)
+                {
+                    job.SetOrientation(landscape);
+                    PixelBuffer? image = null;
+                    try
+                    {
+                        image = ImageIO.Load(path);
+                    }
+                    catch (Exception ex) when (ex is not OutOfMemoryException)
+                    {
+                        // Deleted or damaged meanwhile: a blank page keeps the others in order.
+                        ErrorLog.Write("Impression", ex);
+                    }
+                    var dib = image == null ? null : DibEncoder.Encode(image);
+                    for (int i = 0; i < pages; i++)
+                    {
+                        if (StartPage(hdc) <= 0) throw new Win32Exception(Marshal.GetLastPInvokeError());
+                        if (image != null && dib != null) DrawImage(hdc, image.Width, image.Height, dib);
+                        if (EndPage(hdc) <= 0) throw new Win32Exception(Marshal.GetLastPInvokeError());
+                    }
+                }
+            }
+            if (EndDoc(hdc) <= 0) throw new Win32Exception(Marshal.GetLastPInvokeError());
+        }
+        catch
+        {
+            AbortDoc(hdc);
+            throw;
+        }
+    }
+
+    /// <summary>Draws the image on the page, 1 pixel = 1/96 inch, reduced to fit inside the margins, centred.</summary>
+    private static void DrawImage(IntPtr hdc, int width, int height, byte[] dib)
+    {
+        double dpiX = Math.Max(1, GetDeviceCaps(hdc, LOGPIXELSX)), dpiY = Math.Max(1, GetDeviceCaps(hdc, LOGPIXELSY));
+        // Whole sheet and printable area, in device pixels; the device context's origin is the printable area's corner.
+        int physicalWidth = GetDeviceCaps(hdc, PHYSICALWIDTH), physicalHeight = GetDeviceCaps(hdc, PHYSICALHEIGHT);
+        int offsetX = GetDeviceCaps(hdc, PHYSICALOFFSETX), offsetY = GetDeviceCaps(hdc, PHYSICALOFFSETY);
+        int printableWidth = GetDeviceCaps(hdc, HORZRES), printableHeight = GetDeviceCaps(hdc, VERTRES);
+        if (physicalWidth <= 0 || physicalHeight <= 0)
+        {
+            (physicalWidth, physicalHeight, offsetX, offsetY) = (printableWidth, printableHeight, 0, 0);
+        }
+
+        // To 1/96 inch, the unit of the layout.
+        double pageWidth = physicalWidth * 96 / dpiX, pageHeight = physicalHeight * 96 / dpiY;
+        double margin = PrintLayout.Margin(pageWidth, pageHeight, offsetX * 96 / dpiX, offsetY * 96 / dpiY,
+            (physicalWidth - offsetX - printableWidth) * 96 / dpiX, (physicalHeight - offsetY - printableHeight) * 96 / dpiY);
+        var (x, y, w, h) = PrintLayout.Fit(width, height, pageWidth, pageHeight, margin);
+
+        int left = (int)Math.Round(x * dpiX / 96) - offsetX, top = (int)Math.Round(y * dpiY / 96) - offsetY;
+        int right = (int)Math.Round((x + w) * dpiX / 96) - offsetX, bottom = (int)Math.Round((y + h) * dpiY / 96) - offsetY;
+        // Smooth reduction (the brush origin must be set again after choosing HALFTONE).
+        SetStretchBltMode(hdc, HALFTONE);
+        SetBrushOrgEx(hdc, 0, 0, IntPtr.Zero);
+        unsafe
+        {
+            fixed (byte* bits = dib)
+            {
+                if (StretchDIBits(hdc, left, top, Math.Max(1, right - left), Math.Max(1, bottom - top), 0, 0, width, height,
+                        bits + DibEncoder.HeaderSize, bits, DIB_RGB_COLORS, NativeMethods.SRCCOPY) == 0)
+                    throw new Win32Exception(Marshal.GetLastPInvokeError());
+            }
+        }
+    }
+
+    /// <summary>The printer chosen in the dialog: its device context and settings (DEVMODE), freed together.</summary>
+    private sealed class PrintJob(IntPtr hdc, IntPtr devMode, IntPtr devNames, int copies, bool collate) : IDisposable
+    {
+        /// <summary>Offsets in DEVMODEW: dmFields after the 32-character name and four 16-bit fields, then dmOrientation.</summary>
+        private const int FieldsOffset = 72, OrientationOffset = 76;
+        private const int DM_ORIENTATION = 0x1;
+        private const short DMORIENT_PORTRAIT = 1, DMORIENT_LANDSCAPE = 2;
+
+        public IntPtr Hdc { get; } = hdc;
+        /// <summary>Copies the program prints itself (when the driver cannot).</summary>
+        public int Copies { get; } = copies;
+        public bool Collate { get; } = collate;
+
+        /// <summary>Changes the orientation of the next page (between pages only).</summary>
+        public void SetOrientation(bool landscape)
+        {
+            if (devMode == IntPtr.Zero) return;
+            var pointer = GlobalLock(devMode);
+            if (pointer == IntPtr.Zero) return;
             try
             {
-                var data = new byte[(int)GlobalSize(handle)];
-                Marshal.Copy(pointer, data, 0, data.Length);
-                return data;
+                if ((long)GlobalSize(devMode) < OrientationOffset + 2) return;
+                Marshal.WriteInt32(pointer, FieldsOffset, Marshal.ReadInt32(pointer, FieldsOffset) | DM_ORIENTATION);
+                Marshal.WriteInt16(pointer, OrientationOffset, landscape ? DMORIENT_LANDSCAPE : DMORIENT_PORTRAIT);
+                // Some drivers cannot: the page keeps the previous orientation, the image is still fitted to it.
+                if (ResetDC(Hdc, pointer) == IntPtr.Zero) ErrorLog.Write("Impression", "ResetDC a échoué (orientation de la page)");
             }
             finally
             {
-                GlobalUnlock(handle);
+                GlobalUnlock(devMode);
             }
         }
-        finally
+
+        public void Dispose()
         {
-            GlobalFree(handle);
+            if (Hdc != IntPtr.Zero) DeleteDC(Hdc);
+            if (devMode != IntPtr.Zero) GlobalFree(devMode);
+            if (devNames != IntPtr.Zero) GlobalFree(devNames);
         }
     }
 
-    /// <summary>Writes the pages to the printer's queue (synchronously, on the calling STA thread).</summary>
-    private static void Spool(string printer, byte[] devMode, string title, bool[] landscape, string[] files)
+    // ---- Win32 ----
+
+    private const uint PD_NOSELECTION = 0x4;
+    private const uint PD_NOPAGENUMS = 0x8;
+    private const uint PD_COLLATE = 0x10;
+    private const uint PD_RETURNDC = 0x100;
+    private const uint PD_USEDEVMODECOPIESANDCOLLATE = 0x40000;
+    private const uint PD_HIDEPRINTTOFILE = 0x100000;
+    private const uint PD_NOCURRENTPAGE = 0x800000;
+    private const uint START_PAGE_GENERAL = 0xFFFFFFFF;
+    private const uint PD_RESULT_PRINT = 1;
+    private const int HORZRES = 8;
+    private const int VERTRES = 10;
+    private const int LOGPIXELSX = 88;
+    private const int LOGPIXELSY = 90;
+    private const int PHYSICALWIDTH = 110;
+    private const int PHYSICALHEIGHT = 111;
+    private const int PHYSICALOFFSETX = 112;
+    private const int PHYSICALOFFSETY = 113;
+    private const int HALFTONE = 4;
+    private const uint DIB_RGB_COLORS = 0;
+
+    [StructLayout(LayoutKind.Sequential, CharSet = CharSet.Unicode)]
+    private struct PRINTDLGEX
     {
-        using var server = new LocalPrintServer();
-        using var queue = FindQueue(server, printer);
-        PrintTicket ticket;
-        using (var converter = new PrintTicketConverter(queue.FullName, queue.ClientPrintSchemaVersion))
-            ticket = converter.ConvertDevModeToPrintTicket(devMode);
-        queue.CurrentJobSettings.Description = title;
-
-        // Page size of the ticket, as portrait (1/96 inch units).
-        var capabilities = queue.GetPrintCapabilities(ticket);
-        double mediaWidth = ticket.PageMediaSize?.Width ?? capabilities.OrientedPageMediaWidth ?? 816;
-        double mediaHeight = ticket.PageMediaSize?.Height ?? capabilities.OrientedPageMediaHeight ?? 1056;
-        var portrait = new Size(Math.Min(mediaWidth, mediaHeight), Math.Max(mediaWidth, mediaHeight));
-        double margin = PrintMargin(capabilities, portrait);
-
-        var paginator = new ImagePaginator(landscape, index => Load(files[index]), portrait, margin);
-        var writer = PrintQueue.CreateXpsDocumentWriter(queue);
-        // Each page tells the printer its own orientation (page tickets are asked for in page order).
-        int page = 0;
-        writer.WritingPrintTicketRequired += (_, e) =>
-        {
-            if (e.CurrentPrintTicketLevel != System.Windows.Xps.Serialization.PrintTicketLevel.FixedPagePrintTicket) return;
-            int index = Math.Min(page++, landscape.Length - 1);
-            var pageTicket = ticket.Clone();
-            pageTicket.PageOrientation = landscape[index] ? PageOrientation.Landscape : PageOrientation.Portrait;
-            e.CurrentPrintTicket = pageTicket;
-        };
-        writer.Write(paginator, ticket);
+        public int lStructSize;
+        public IntPtr hwndOwner;
+        public IntPtr hDevMode;
+        public IntPtr hDevNames;
+        public IntPtr hDC;
+        public uint Flags;
+        public uint Flags2;
+        public uint ExclusionFlags;
+        public uint nPageRanges;
+        public uint nMaxPageRanges;
+        public IntPtr lpPageRanges;
+        public uint nMinPage;
+        public uint nMaxPage;
+        public uint nCopies;
+        public IntPtr hInstance;
+        public IntPtr lpPrintTemplateName;
+        public IntPtr lpCallback;
+        public uint nPropertyPages;
+        public IntPtr lphPropertyPages;
+        public uint nStartPage;
+        public uint dwResultAction;
     }
 
-    /// <summary>The queue of a local printer or of a printer connection (\\server\printer).</summary>
-    private static PrintQueue FindQueue(LocalPrintServer server, string printer)
+    [StructLayout(LayoutKind.Sequential, CharSet = CharSet.Unicode)]
+    private struct DOCINFO
     {
-        var queues = server.GetPrintQueues(new[] { EnumeratedPrintQueueTypes.Local, EnumeratedPrintQueueTypes.Connections });
-        var match = queues.FirstOrDefault(q => string.Equals(q.FullName, printer, StringComparison.OrdinalIgnoreCase)
-                                               || string.Equals(q.Name, printer, StringComparison.OrdinalIgnoreCase));
-        return match ?? new PrintQueue(server, printer);
+        public int cbSize;
+        public string lpszDocName;
+        public string? lpszOutput;
+        public string? lpszDatatype;
+        public uint fwType;
     }
 
-    /// <summary>Largest of the printer's unprintable margins, and at least <see cref="MinPrintMargin"/>.</summary>
-    private static double PrintMargin(PrintCapabilities capabilities, Size portrait)
-    {
-        double margin = MinPrintMargin;
-        try
-        {
-            if (capabilities.PageImageableArea is { } area)
-            {
-                margin = Math.Max(margin, Math.Max(area.OriginWidth, area.OriginHeight));
-                margin = Math.Max(margin, portrait.Width - area.OriginWidth - area.ExtentWidth);
-                margin = Math.Max(margin, portrait.Height - area.OriginHeight - area.ExtentHeight);
-            }
-        }
-        catch (Exception ex)
-        {
-            ErrorLog.Write("Marges de l'imprimante", ex);
-        }
-        // Never more than a quarter of the page.
-        return Math.Min(margin, Math.Min(portrait.Width, portrait.Height) / 4);
-    }
+    [DllImport("comdlg32.dll", CharSet = CharSet.Unicode, EntryPoint = "PrintDlgExW")]
+    private static extern int PrintDlgEx(ref PRINTDLGEX dialog);
 
-    /// <summary>Orientation of an image from its header, null if it is not readable.</summary>
-    private static bool? ProbeLandscape(string path)
-    {
-        try
-        {
-            using var stream = new FileStream(path, FileMode.Open, FileAccess.Read, FileShare.ReadWrite | FileShare.Delete);
-            var frame = BitmapDecoder.Create(stream, BitmapCreateOptions.DelayCreation | BitmapCreateOptions.IgnoreColorProfile,
-                BitmapCacheOption.None).Frames[0];
-            return frame.PixelWidth > frame.PixelHeight;
-        }
-        catch (Exception ex) when (ex is not OutOfMemoryException)
-        {
-            ErrorLog.Write($"Impression de {path}", ex);
-            return null;
-        }
-    }
+    [DllImport("gdi32.dll", CharSet = CharSet.Unicode, EntryPoint = "StartDocW", SetLastError = true)]
+    private static extern int StartDoc(IntPtr hdc, ref DOCINFO document);
 
-    /// <summary>Decodes an image file without locking it (first frame of a GIF).</summary>
-    private static BitmapSource Load(string path)
-    {
-        using var stream = new MemoryStream(File.ReadAllBytes(path));
-        var frame = BitmapDecoder.Create(stream, BitmapCreateOptions.IgnoreColorProfile, BitmapCacheOption.OnLoad).Frames[0];
-        ImageIO.CheckSize(frame.PixelWidth, frame.PixelHeight);
-        frame.Freeze();
-        return frame;
-    }
+    [DllImport("gdi32.dll", SetLastError = true)]
+    private static extern int StartPage(IntPtr hdc);
 
-    /// <summary>One image per page, decoded only when the page is spooled.</summary>
-    private sealed class ImagePaginator : DocumentPaginator
-    {
-        private readonly bool[] _landscape;
-        private readonly Func<int, BitmapSource> _load;
-        private readonly Size _portrait;
-        private readonly double _margin;
+    [DllImport("gdi32.dll", SetLastError = true)]
+    private static extern int EndPage(IntPtr hdc);
 
-        public ImagePaginator(bool[] landscape, Func<int, BitmapSource> load, Size portrait, double margin)
-        {
-            _landscape = landscape;
-            _load = load;
-            _portrait = portrait;
-            _margin = margin;
-        }
+    [DllImport("gdi32.dll", SetLastError = true)]
+    private static extern int EndDoc(IntPtr hdc);
 
-        public override DocumentPage GetPage(int pageNumber)
-        {
-            var size = _landscape[pageNumber] ? new Size(_portrait.Height, _portrait.Width) : _portrait;
-            var area = new Rect(_margin, _margin, Math.Max(1, size.Width - 2 * _margin), Math.Max(1, size.Height - 2 * _margin));
-            var visual = new DrawingVisual();
-            try
-            {
-                var image = _load(pageNumber);
-                // 1 pixel = 1/96 inch, reduced to fit, centred.
-                double scale = Math.Min(1, Math.Min(area.Width / image.PixelWidth, area.Height / image.PixelHeight));
-                double width = image.PixelWidth * scale, height = image.PixelHeight * scale;
-                var rect = new Rect(area.X + (area.Width - width) / 2, area.Y + (area.Height - height) / 2, width, height);
-                using var dc = visual.RenderOpen();
-                dc.DrawImage(image, rect);
-            }
-            catch (Exception ex) when (ex is not OutOfMemoryException)
-            {
-                // Deleted or damaged meanwhile: a blank page keeps the others in order.
-                ErrorLog.Write("Impression", ex);
-            }
-            return new DocumentPage(visual, size, new Rect(size), area);
-        }
+    [DllImport("gdi32.dll")]
+    private static extern int AbortDoc(IntPtr hdc);
 
-        public override bool IsPageCountValid => true;
-        public override int PageCount => _landscape.Length;
-        public override Size PageSize { get => _portrait; set { } }
-        public override IDocumentPaginatorSource? Source => null;
-    }
+    [DllImport("gdi32.dll", EntryPoint = "ResetDCW")]
+    private static extern IntPtr ResetDC(IntPtr hdc, IntPtr devMode);
 
-    /// <summary>A native window (Avalonia's) as the owner of a WinForms dialog.</summary>
-    private sealed class OwnerWindow(IntPtr handle) : WinForms.IWin32Window
-    {
-        public IntPtr Handle { get; } = handle;
-    }
+    [DllImport("gdi32.dll")]
+    private static extern int GetDeviceCaps(IntPtr hdc, int index);
+
+    [DllImport("gdi32.dll")]
+    private static extern int SetStretchBltMode(IntPtr hdc, int mode);
+
+    [DllImport("gdi32.dll")]
+    [return: MarshalAs(UnmanagedType.Bool)]
+    private static extern bool SetBrushOrgEx(IntPtr hdc, int x, int y, IntPtr previous);
+
+    [DllImport("gdi32.dll", SetLastError = true)]
+    private static extern unsafe int StretchDIBits(IntPtr hdc, int x, int y, int width, int height, int sourceX, int sourceY,
+        int sourceWidth, int sourceHeight, byte* bits, byte* info, uint usage, uint operation);
+
+    [DllImport("gdi32.dll")]
+    [return: MarshalAs(UnmanagedType.Bool)]
+    private static extern bool DeleteDC(IntPtr hdc);
 
     [DllImport("kernel32.dll")]
     private static extern IntPtr GlobalLock(IntPtr handle);
