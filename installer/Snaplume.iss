@@ -59,7 +59,7 @@ ArchitecturesInstallIn64BitMode=x64compatible
 ; Windows 10 version 2004 (20H1) or later, like the application.
 MinVersion=10.0.19041
 LicenseFile={#RepoRoot}\LICENSE
-SetupIconFile={#RepoRoot}\src\Snaplume\Assets\app.ico
+SetupIconFile={#RepoRoot}\src\Snaplume.App\Assets\app.ico
 UninstallDisplayIcon={app}\{#AppExe}
 UninstallDisplayName={#AppName}
 WizardStyle=modern
@@ -125,11 +125,15 @@ Name: "{autoprograms}\{#AppName}"; Filename: "{app}\{#AppExe}"; Comment: "{#AppN
 Name: "{autodesktop}\{#AppName}"; Filename: "{app}\{#AppExe}"; Tasks: desktopicon
 
 [Registry]
-; Same value as the application's own "Start with Windows" setting (Core/AppSettings.cs, ApplyStartWithWindows).
-; Always HKCU, even for an all-users installation, so that the application can change it afterwards.
-Root: HKCU; Subkey: "Software\Microsoft\Windows\CurrentVersion\Run"; ValueType: string; ValueName: "{#AppName}"; ValueData: """{app}\{#AppExe}"" --tray"; Tasks: startup
+; Same value as the application's own "Start with Windows" setting (DesktopShell.SetStartWithSession of
+; Snaplume.Platform.Windows). Always HKCU, even for an all-users installation, so that the application can change it
+; afterwards. Per-user installation only: an all-users one runs elevated, possibly as another account (the
+; administrator who typed the password), whose HKCU is not the user's; it is written by [Run] below instead.
+Root: HKCU; Subkey: "Software\Microsoft\Windows\CurrentVersion\Run"; ValueType: string; ValueName: "{#AppName}"; ValueData: """{app}\{#AppExe}"" --tray"; Tasks: startup; Check: not IsAdminInstallMode
 
 [Run]
+; All-users installation: the same value, written by reg.exe running as the user who started Setup.
+Filename: "{sys}\reg.exe"; Parameters: "add ""HKCU\Software\Microsoft\Windows\CurrentVersion\Run"" /v ""{#AppName}"" /t REG_SZ /d ""\""{app}\{#AppExe}\"" --tray"" /f"; Flags: runasoriginaluser runhidden waituntilterminated; Tasks: startup; Check: IsAdminInstallMode
 Filename: "{app}\{#AppExe}"; Description: "{cm:LaunchProgram,{#AppName}}"; Flags: nowait postinstall skipifsilent
 ; Update started from Snaplume ("/SP- /SILENT /NOCANCEL /NORESTART /RELAUNCH=1", see UpdateInstaller.cs of
 ; Snaplume.Platform.Windows): Snaplume quit to let its files be replaced, start it again, without elevation.
@@ -175,19 +179,34 @@ begin
     Sleep(1000);  { let Windows release the files }
 end;
 
-procedure CurUninstallStepChanged(CurUninstallStep: TUninstallStep);
+{ Removes "Start with Windows" from a Run key if it points to this installation, whether the installer task or the
+  application's own setting created it. }
+procedure RemoveRunValue(RootKey: Integer; const Key: String);
 var
   Value: String;
+begin
+  if RegQueryStringValue(RootKey, Key, '{#AppName}', Value) and
+     (Pos(Lowercase(AddBackslash(ExpandConstant('{app}'))), Lowercase(Value)) > 0) then
+    RegDeleteValue(RootKey, Key, '{#AppName}');
+end;
+
+procedure CurUninstallStepChanged(CurUninstallStep: TUninstallStep);
+var
+  Users: TArrayOfString;
+  I: Integer;
 begin
   if CurUninstallStep = usUninstall then
     CloseRunningSnaplume
   else if CurUninstallStep = usPostUninstall then
   begin
-    { Remove "Start with Windows" if it points to this installation, whether the installer task or
-      the application's own setting created it. Captures and %APPDATA%\Snaplume are kept. }
-    if RegQueryStringValue(HKCU, RunKey, '{#AppName}', Value) and
-       (Pos(Lowercase(AddBackslash(ExpandConstant('{app}'))), Lowercase(Value)) > 0) then
-      RegDeleteValue(HKCU, RunKey, '{#AppName}');
+    { Captures and %APPDATA%\Snaplume are kept. }
+    RemoveRunValue(HKCU, RunKey);
+    { All-users installation: the uninstaller runs elevated, possibly as another account than the user(s) whose Run
+      key starts Snaplume (written by [Run] as the user who installed, or by the application of each user). Every
+      user whose registry is loaded (logged on) is cleaned. }
+    if IsAdminInstallMode and RegGetSubkeyNames(HKEY_USERS, '', Users) then
+      for I := 0 to GetArrayLength(Users) - 1 do
+        RemoveRunValue(HKEY_USERS, Users[I] + '\' + RunKey);
   end;
 end;
 
