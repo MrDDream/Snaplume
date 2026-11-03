@@ -41,6 +41,9 @@ public partial class App : Application
     public ITray? Tray { get; private set; }
     public bool IsExiting { get; private set; }
 
+    /// <summary>New settings were saved from the settings window (<see cref="Settings"/> is a new object).</summary>
+    public event Action? SettingsApplied;
+
     private IClassicDesktopStyleApplicationLifetime? Desktop => ApplicationLifetime as IClassicDesktopStyleApplicationLifetime;
 
     /// <summary>The open windows of the application (editors, players, dialogs...).</summary>
@@ -583,13 +586,17 @@ public partial class App : Application
         return window;
     }
 
-    public void ShowSettings() => _ = ShowSettingsAsync();
+    public void ShowSettings() => _ = ShowSettingsAsync(null);
 
-    private async Task ShowSettingsAsync()
+    /// <param name="page">Page to show ("PageVideo"...), the one shown last when null.</param>
+    public void ShowSettings(string? page) => _ = ShowSettingsAsync(page);
+
+    private async Task ShowSettingsAsync(string? page)
     {
         if (IsExiting) return;
         if (_settingsWindow != null)
         {
+            if (page != null) _settingsWindow.ShowPage(page);
             BringToFront(_settingsWindow);
             return;
         }
@@ -602,7 +609,7 @@ public partial class App : Application
         {
             ErrorLog.Write("Raccourcis globaux", ex);
         }
-        _settingsWindow = new SettingsWindow(Settings.Clone());
+        _settingsWindow = new SettingsWindow(Settings.Clone(), page);
         try
         {
             if (await _settingsWindow.ShowAndWaitAsync()) await ApplySettingsAsync(_settingsWindow.Result);
@@ -663,6 +670,7 @@ public partial class App : Application
             Workspaces.OnRootChanged();
         }
         UpdateTrayTooltip();
+        SettingsApplied?.Invoke();
         if (languageChanged)
         {
             // Shown in the newly chosen language, so the user understands it.

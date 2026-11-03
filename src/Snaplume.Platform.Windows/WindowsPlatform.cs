@@ -28,7 +28,8 @@ public static class WindowsPlatform
         public PlatformFeatures Features =>
             PlatformFeatures.WindowDetection | PlatformFeatures.ScrollingCapture | PlatformFeatures.GlobalHotkeys
             | PlatformFeatures.ClickHighlight | PlatformFeatures.ExcludeFromCapture | PlatformFeatures.RecordAnyArea
-            | PlatformFeatures.StartWithSession | PlatformFeatures.ActiveWindow | PlatformFeatures.ReplaceSystemCapture;
+            | PlatformFeatures.StartWithSession | PlatformFeatures.ActiveWindow | PlatformFeatures.ReplaceSystemCapture
+            | PlatformFeatures.ClickZoom;
 
         public IScreenCapture Screen { get; } = new ScreenCapture();
         public IWindowLocator Windows { get; } = new WindowLocator();

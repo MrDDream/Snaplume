@@ -31,9 +31,18 @@ internal static class RecordingPipeline
     public static PixelRect EvenArea(PixelRect area) =>
         area with { Width = Math.Max(2, area.Width & ~1), Height = Math.Max(2, area.Height & ~1) };
 
+    /// <summary>Name of the videocrop element that zooms on clicks (its margins change while recording).</summary>
+    public const string ZoomElement = "zoom";
+    /// <summary>Name of the microphone source, whose device is set after parsing (the name comes from the sound server).</summary>
+    public const string MicrophoneElement = "mic";
+
     /// <param name="outputWidth">Width of the recording, to place the webcam (0 when unknown).</param>
+    /// <param name="clickZoom">
+    /// X11 only: the screen goes through a videocrop and is scaled back to the size of the area, so cropping it
+    /// while recording zooms in (the webcam, composited afterwards, is not zoomed).
+    /// </param>
     public static string Build(RecordingSource source, int framerate, string videoEncoder, string? audioEncoder,
-        bool systemAudio, bool microphone, WebcamPlacement? webcam, int outputWidth, int outputHeight)
+        bool systemAudio, bool microphone, WebcamPlacement? webcam, int outputWidth, int outputHeight, bool clickZoom = false)
     {
         var f = CultureInfo.InvariantCulture;
         framerate = Math.Clamp(framerate, 1, 120);
@@ -48,6 +57,9 @@ internal static class RecordingPipeline
         };
         // Screen frames arrive irregularly (only on change for PipeWire): videorate makes a constant frame rate.
         string screenChain = string.Create(f, $"{screen} ! videoconvert ! videorate ! video/x-raw,framerate={framerate}/1");
+        if (clickZoom && source is X11AreaSource zoomed)
+            // add-borders=false: a crop whose ratio is a pixel off is stretched, never framed with black.
+            screenChain += string.Create(f, $" ! videocrop name={ZoomElement} ! videoscale add-borders=false ! video/x-raw,width={zoomed.Area.Width},height={zoomed.Area.Height},pixel-aspect-ratio=1/1");
         if (source is PipeWireSource { Width: > 0, Height: > 0 } pw && webcam != null)
             // The webcam position is computed on the size the portal announced: the stream is scaled to it.
             screenChain += string.Create(f, $" ! videoscale ! video/x-raw,width={pw.Width & ~1},height={pw.Height & ~1}");
@@ -71,7 +83,7 @@ internal static class RecordingPipeline
             const string normalize = "audioconvert ! audioresample ! audio/x-raw,rate=48000,channels=2";
             // provide-clock=false: the pipeline keeps the system clock, which the screen source follows too.
             const string system = "pulsesrc device=@DEFAULT_MONITOR@ provide-clock=false do-timestamp=true";
-            const string mic = "pulsesrc provide-clock=false do-timestamp=true";
+            const string mic = "pulsesrc provide-clock=false do-timestamp=true name=" + MicrophoneElement;
             if (systemAudio && microphone)
             {
                 d.Append(f, $"audiomixer name=mix ! audioconvert ! {audioEncoderChain} ! queue ! mux. ");

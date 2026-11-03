@@ -44,7 +44,11 @@ public sealed class AppSettings
 
     public bool VideoSystemAudio { get; set; } = true;
     public bool VideoMicrophone { get; set; }
+    /// <summary>Microphone id (see IScreenRecorderFactory.Microphones), empty for the system's default one.</summary>
+    public string VideoMicrophoneDevice { get; set; } = "";
     public bool VideoShowClicks { get; set; }
+    /// <summary>The video zooms in briefly around each mouse click.</summary>
+    public bool VideoClickZoom { get; set; }
     public int VideoFramerate { get; set; } = 30;
     /// <summary>Webcam inlaid in a corner of the recording (picture-in-picture).</summary>
     public bool VideoWebcam { get; set; }
@@ -162,6 +166,7 @@ public sealed class AppSettings
         JpegQuality = Math.Clamp(JpegQuality, 10, 100);
         DelaySeconds = Math.Clamp(DelaySeconds, 0, 60);
         VideoFramerate = Math.Clamp(VideoFramerate, 5, 60);
+        VideoMicrophoneDevice = VideoMicrophoneDevice?.Trim() ?? defaults.VideoMicrophoneDevice;
         VideoWebcamDevice = VideoWebcamDevice?.Trim() ?? defaults.VideoWebcamDevice;
         VideoWebcamCorner = WebcamCorners.FirstOrDefault(c => string.Equals(c, VideoWebcamCorner, StringComparison.OrdinalIgnoreCase))
                             ?? defaults.VideoWebcamCorner;

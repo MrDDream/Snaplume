@@ -14,7 +14,11 @@ internal static class FloatingBar
     /// (when the system allows it), never activated and out of the task bar, and optionally click-through.
     /// Failures are only logged: the window works without them.
     /// </summary>
-    public static void ApplyNativeStyles(Window window, bool clickThrough = false)
+    /// <param name="activatable">
+    /// The window may take the keyboard focus (the video options: Escape, drop-down lists); it then keeps its usual
+    /// native style, out of the task bar through <see cref="Window.ShowInTaskbar"/>.
+    /// </param>
+    public static void ApplyNativeStyles(Window window, bool clickThrough = false, bool activatable = false)
     {
         if (!AppServices.HasPlatform) return;
         try
@@ -22,7 +26,7 @@ internal static class FloatingBar
             var handle = window.TryGetPlatformHandle()?.Handle ?? IntPtr.Zero;
             if (handle == IntPtr.Zero) return;
             var platform = AppServices.Platform;
-            platform.NativeWindows.MakeToolWindow(handle);
+            if (!activatable) platform.NativeWindows.MakeToolWindow(handle);
             if (platform.Has(PlatformFeatures.ExcludeFromCapture)) platform.NativeWindows.ExcludeFromCapture(handle);
             if (clickThrough) platform.NativeWindows.MakeClickThrough(handle);
         }

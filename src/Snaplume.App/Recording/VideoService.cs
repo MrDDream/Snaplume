@@ -13,8 +13,9 @@ namespace Snaplume.Recording;
 /// One recording at a time; the file goes to the active workspace when finished.
 /// </summary>
 /// <remarks>
-/// States: idle → starting (area selection, countdown, system permission) → recording → finishing (file written and
-/// moved) → idle. <see cref="Finish"/> is the only way back to idle and resets everything.
+/// States: idle → starting (area selection, video options until Record is pressed, countdown, system permission) →
+/// recording → finishing (file written and moved) → idle. <see cref="Finish"/> is the only way back to idle and resets
+/// everything. While the options are shown, the area can still be moved (grip of the frame) or given a standard size.
 /// Where the system chooses what is recorded (Wayland portal, no <see cref="PlatformFeatures.RecordAnyArea"/>),
 /// Snaplume shows no selection: the portal asks the user.
 /// </remarks>
@@ -40,6 +41,8 @@ public sealed class VideoService
     private TaskCompletionSource<string?>? _completion;
     /// <summary>Cancels a start waiting for the system (permission dialog of the portal).</summary>
     private CancellationTokenSource? _starting;
+    /// <summary>The options are shown: true when Record is pressed, false when cancelled.</summary>
+    private TaskCompletionSource<bool>? _armed;
     private string? _tempPath;
     private PixelRect _area;
     /// <summary>The current recording inlays the webcam.</summary>
@@ -49,7 +52,12 @@ public sealed class VideoService
     private bool _stopping;
     private bool _paused;
 
-    public VideoService(App app) => _app = app;
+    public VideoService(App app)
+    {
+        _app = app;
+        // Options changed in the settings window while the video options are shown.
+        app.SettingsApplied += () => _bar?.RefreshOptions();
+    }
 
     /// <summary>True from the start of the area selection until the video is saved (or abandoned).</summary>
     public bool IsBusy => _operation.IsBusy;
@@ -71,7 +79,9 @@ public sealed class VideoService
     /// <summary>Starts a recording (area selection first, unless <paramref name="fullScreen"/>), or stops the one in progress.</summary>
     /// <param name="fullScreen">Record the monitor under the cursor instead of selecting an area.</param>
     /// <param name="hide">Window hidden during the recording (e.g. the quick panel).</param>
-    /// <param name="durationSeconds">Stops automatically after this time (command line).</param>
+    /// <param name="durationSeconds">
+    /// Stops automatically after this time (command line); the recording then starts without waiting for Record.
+    /// </param>
     /// <returns>Path of the saved video, or null if cancelled or failed.</returns>
     public async Task<string?> ToggleAsync(bool fullScreen = false, Window? hide = null, int settleMs = 0, int durationSeconds = 0)
     {
@@ -118,7 +128,26 @@ public sealed class VideoService
             _operation.EndInteractive();
 
             var area = CaptureGeometry.EvenSize(chosen);
-            ShowControls(area, showFrame: !fullScreen && !systemChooses);
+            _area = area;
+            bool movable = !fullScreen && !systemChooses;
+            bool showOptions = durationSeconds <= 0;
+            ShowControls(area, showFrame: movable, showOptions, movable ? platform.Screen.Monitors.Select(m => m.Bounds).ToList() : null);
+            if (showOptions)
+            {
+                // Until Record is pressed (or the cross, Escape, the shortcut again...).
+                var armed = new TaskCompletionSource<bool>(TaskCreationOptions.RunContinuationsAsynchronously);
+                _armed = armed;
+                bool record = await armed.Task;
+                _armed = null;
+                if (!record || _cancelled)
+                {
+                    Finish(null);
+                    return await completion.Task;
+                }
+                // Moved or resized meanwhile; it stays where it is from now on.
+                area = _area;
+                _frame?.EndMoving();
+            }
             if (!systemChooses)
             {
                 // With the portal, its dialog comes first: a countdown before it would mean nothing.
@@ -167,6 +196,7 @@ public sealed class VideoService
         if (_recording == null)
         {
             _cancelled = true;
+            _armed?.TrySetResult(false);
             _starting?.Cancel();
             RegionSelectorWindow.CancelCurrent();
             return;
@@ -272,18 +302,39 @@ public sealed class VideoService
         return (monitors.FirstOrDefault(m => m.IsPrimary) ?? monitors[0]).Bounds;
     }
 
-    private void ShowControls(PixelRect area, bool showFrame)
+    /// <param name="showOptions">The bar starts with the options and waits for Record.</param>
+    /// <param name="monitors">
+    /// Monitor bounds when the area may be moved and resized before the recording; null for a fixed area (whole screen).
+    /// </param>
+    private void ShowControls(PixelRect area, bool showFrame, bool showOptions, IReadOnlyList<PixelRect>? monitors)
     {
         if (showFrame)
         {
-            _frame = new RecordingFrame(area);
+            _frame = new RecordingFrame(area, showOptions ? monitors : null);
+            _frame.AreaChanged += moved =>
+            {
+                _area = moved;
+                _bar?.SetArea(moved);
+            };
             _frame.Show();
         }
-        _bar = new RecordingControlBar(area);
+        _bar = new RecordingControlBar(area, showOptions, showOptions ? monitors : null);
+        _bar.RecordClicked += () => _armed?.TrySetResult(true);
+        _bar.SettingsClicked += () => _app.ShowSettings("PageVideo");
+        _bar.AreaSizeChosen += (width, height) => ResizeArea(width, height, monitors);
         _bar.PauseClicked += TogglePause;
         _bar.StopClicked += Stop;
         _bar.CancelClicked += Cancel;
         _bar.Show();
+    }
+
+    /// <summary>Another size chosen in the options: around the same center, within its monitor.</summary>
+    private void ResizeArea(int width, int height, IReadOnlyList<PixelRect>? monitors)
+    {
+        if (_armed == null || monitors == null) return;
+        _area = RecordingArea.Resize(_area, width, height, monitors);
+        _frame?.SetArea(_area);
+        _bar?.SetArea(_area);
     }
 
     private async Task BeginAsync(PixelRect area)
@@ -336,7 +387,9 @@ public sealed class VideoService
             Settings.VideoMicrophone,
             Settings.VideoShowClicks && platform.Has(PlatformFeatures.ClickHighlight),
             Math.Clamp(Settings.VideoFramerate, 5, 60),
-            camera);
+            camera,
+            Settings.VideoMicrophoneDevice,
+            Settings.VideoClickZoom && platform.Has(PlatformFeatures.ClickZoom));
 
         _starting = new CancellationTokenSource();
         IScreenRecording recording;
@@ -545,6 +598,8 @@ public sealed class VideoService
     {
         _timer?.Stop();
         _timer = null;
+        _armed?.TrySetResult(false);
+        _armed = null;
         _bar?.Close();
         _bar = null;
         _frame?.Close();

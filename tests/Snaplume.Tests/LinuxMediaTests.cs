@@ -79,6 +79,66 @@ public class LinuxMediaTests
     }
 
     [Fact]
+    public void Click_zoom_crops_the_screen_and_scales_it_back()
+    {
+        var area = new PixelRect(10, 20, 1280, 720);
+        var description = RecordingPipeline.Build(new X11AreaSource(area, true), 30, "x264enc", null, false, false, null, 1280, 720, clickZoom: true);
+        Assert.Contains("video/x-raw,framerate=30/1 ! videocrop name=zoom ! videoscale add-borders=false ! video/x-raw,width=1280,height=720,pixel-aspect-ratio=1/1", description);
+        // Without the option, or with the portal (the compositor records), no crop.
+        Assert.DoesNotContain("videocrop", RecordingPipeline.Build(new X11AreaSource(area, true), 30, "x264enc", null, false, false, null, 1280, 720));
+        Assert.DoesNotContain("videocrop", RecordingPipeline.Build(new PipeWireSource(3, 4, 1280, 720), 30, "x264enc", null, false, false, null, 1280, 720, clickZoom: true));
+    }
+
+    [Fact]
+    public void Click_zoom_leaves_the_webcam_out_of_the_zoom()
+    {
+        var placement = RecordingPipeline.PlaceWebcam("/dev/video0", "BottomRight", 20, 1280, 720);
+        var description = RecordingPipeline.Build(new X11AreaSource(new PixelRect(0, 0, 1280, 720), true), 30, "x264enc", null, false, false,
+            placement, 1280, 720, clickZoom: true);
+        // The crop is on the screen branch, before the compositor adds the camera.
+        Assert.True(description.IndexOf("videocrop", StringComparison.Ordinal) < description.IndexOf("comp.sink_0", StringComparison.Ordinal));
+        Assert.DoesNotContain("videocrop", description[description.IndexOf("v4l2src", StringComparison.Ordinal)..]);
+    }
+
+    [Fact]
+    public void Microphone_source_is_named_for_its_device()
+    {
+        var description = RecordingPipeline.Build(new X11AreaSource(new PixelRect(0, 0, 100, 100), false), 30, "x264enc", "opusenc", true, true, null, 100, 100);
+        Assert.Contains("pulsesrc provide-clock=false do-timestamp=true name=mic", description);
+        // The device name itself is set as a property, never written in the description.
+        Assert.DoesNotContain("device=alsa", description);
+    }
+
+    [Fact]
+    public void Microphones_are_read_from_pactl_without_the_monitors()
+    {
+        const string output = """
+            Source #0
+            	State: SUSPENDED
+            	Name: alsa_output.pci-0000_00_1f.3.analog-stereo.monitor
+            	Description: Monitor of Built-in Audio Analog Stereo
+            	Driver: PipeWire
+            	Monitor of Sink: alsa_output.pci-0000_00_1f.3.analog-stereo
+            	Properties:
+            		device.description = "Built-in Audio"
+            Source #57
+            	State: RUNNING
+            	Name: alsa_input.usb-Blue_Yeti-00.analog-stereo
+            	Description: Yeti Stereo Microphone Analog Stereo
+            	Monitor of Sink: n/a
+            Source #58
+            	Name: bluez_input.00_11_22
+            	Monitor of Sink: n/a
+            """;
+        var inputs = AudioInputs.Parse(output);
+        Assert.Equal(2, inputs.Count);
+        Assert.Equal(new AudioDeviceInfo("alsa_input.usb-Blue_Yeti-00.analog-stereo", "Yeti Stereo Microphone Analog Stereo"), inputs[0]);
+        // No description: the name is shown.
+        Assert.Equal(new AudioDeviceInfo("bluez_input.00_11_22", "bluez_input.00_11_22"), inputs[1]);
+        Assert.Empty(AudioInputs.Parse(""));
+    }
+
+    [Fact]
     public void Encoders_are_chosen_in_order()
     {
         Assert.Equal("openh264enc", RecordingPipeline.Choose(RecordingPipeline.VideoEncoders, e => e == "openh264enc"));

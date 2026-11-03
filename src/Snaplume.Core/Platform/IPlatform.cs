@@ -27,6 +27,8 @@ public enum PlatformFeatures
     ActiveWindow = 1 << 7,
     /// <summary>The system's own capture shortcut (Win+Shift+S) can be taken over, see <see cref="IGlobalHotkeys.ReplaceSystemCapture"/>.</summary>
     ReplaceSystemCapture = 1 << 8,
+    /// <summary>Videos can zoom in where the mouse clicks (<see cref="RecordingOptions.ClickZoom"/>).</summary>
+    ClickZoom = 1 << 9,
 }
 
 /// <summary>
@@ -166,7 +168,13 @@ public interface IGlobalHotkeys : IDisposable
 
 /// <param name="Area">Physical pixels; ignored when the system chooses the area (no <see cref="PlatformFeatures.RecordAnyArea"/>).</param>
 /// <param name="Webcam">Camera inlaid in a corner, or null.</param>
-public sealed record RecordingOptions(PixelRect Area, bool SystemAudio, bool Microphone, bool ShowClicks, int Framerate, WebcamOptions? Webcam);
+/// <param name="MicrophoneDevice">Microphone id from <see cref="IScreenRecorderFactory.Microphones"/>, empty for the system's default one.</param>
+/// <param name="ClickZoom">
+/// The video zooms in briefly around each mouse click (see <see cref="Snaplume.Recording.ClickZoom"/>); ignored without
+/// <see cref="PlatformFeatures.ClickZoom"/>. The size of the video does not change.
+/// </param>
+public sealed record RecordingOptions(PixelRect Area, bool SystemAudio, bool Microphone, bool ShowClicks, int Framerate, WebcamOptions? Webcam,
+    string MicrophoneDevice = "", bool ClickZoom = false);
 
 /// <param name="Device">Camera id from <see cref="IScreenRecorderFactory.Webcams"/>, empty for the first one.</param>
 /// <param name="Corner">"TopLeft", "TopRight", "BottomLeft" or "BottomRight".</param>
@@ -175,9 +183,16 @@ public sealed record WebcamOptions(string Device, string Corner, int SizePercent
 
 public sealed record WebcamInfo(string Id, string Name);
 
+/// <param name="Id">What <see cref="RecordingOptions.MicrophoneDevice"/> takes.</param>
+/// <param name="Name">Shown to the user.</param>
+public sealed record AudioDeviceInfo(string Id, string Name);
+
 public interface IScreenRecorderFactory
 {
     IReadOnlyList<WebcamInfo> Webcams();
+
+    /// <summary>Sound inputs that can be recorded; empty when the recorder only takes the default one. May be slow.</summary>
+    IReadOnlyList<AudioDeviceInfo> Microphones() => Array.Empty<AudioDeviceInfo>();
 
     /// <summary>Starts recording into an MP4 file.</summary>
     /// <exception cref="OperationCanceledException">The user refused the permission (Wayland portal).</exception>

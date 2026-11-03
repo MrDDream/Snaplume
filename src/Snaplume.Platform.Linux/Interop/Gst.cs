@@ -132,6 +132,15 @@ internal static unsafe class Gst
         g_value_unset(&v);
     }
 
+    public static void SetInt(IntPtr obj, string property, int value)
+    {
+        var v = new GValue();
+        g_value_init(&v, TypeInt);
+        g_value_set_int(&v, value);
+        g_object_set_property(obj, property, &v);
+        g_value_unset(&v);
+    }
+
     public static void SetDouble(IntPtr obj, string property, double value)
     {
         var v = new GValue();
