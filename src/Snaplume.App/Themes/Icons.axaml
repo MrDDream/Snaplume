@@ -66,7 +66,8 @@
     <StreamGeometry x:Key="IconEllipse">M4,12 A8,6 0 1 1 20,12 A8,6 0 1 1 4,12 Z</StreamGeometry>
     <StreamGeometry x:Key="IconText">M5,7 V4 H19 V7 M12,4 V20 M9,20 H15</StreamGeometry>
     <StreamGeometry x:Key="IconHighlight">M4,21 H20 M8,17 L5,14 L14,5 L19,10 L10,19 Z M7,19 L4,19 L5.5,17.5</StreamGeometry>
-    <StreamGeometry x:Key="IconPixelate">M4,4 H10 V10 H4 Z M14,4 H20 V10 H14 Z M4,14 H10 V20 H4 Z M14,14 H20 V20 H14 Z</StreamGeometry>
+    <!-- Pixelate hides what must not be seen: a crossed-out eye, clearer than pixels to most people -->
+    <StreamGeometry x:Key="IconPixelate">M2.5,12 C5,7.5 8.3,5.5 12,5.5 C15.7,5.5 19,7.5 21.5,12 C19,16.5 15.7,18.5 12,18.5 C8.3,18.5 5,16.5 2.5,12 Z M9,12 A3,3 0 1 1 15,12 A3,3 0 1 1 9,12 Z M4,20 L20,4</StreamGeometry>
     <StreamGeometry x:Key="IconSpotlight">M3,4 H21 V20 H3 Z M8,9 H16 V15 H8 Z M3,4 L8,9 M21,4 L16,9 M3,20 L8,15 M21,20 L16,15</StreamGeometry>
     <StreamGeometry x:Key="IconStep">M12,3 A9,9 0 1 1 11.99,3 Z M10,9 L12.5,7.5 V16.5 M10,16.5 H15</StreamGeometry>
     <StreamGeometry x:Key="IconPen">M3,17 C6,12 8,20 11,15 C14,10 15,17 18,13 L21,9</StreamGeometry>

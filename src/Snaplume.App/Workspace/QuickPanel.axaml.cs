@@ -15,7 +15,6 @@ namespace Snaplume.Workspace;
 /// </summary>
 public partial class QuickPanel : CaptureHostWindow
 {
-    private const double ScreenMargin = 12;
     private bool _movedByUser;
 
     public QuickPanel()
@@ -37,7 +36,10 @@ public partial class QuickPanel : CaptureHostWindow
 
     protected override TextBlock StatusLine => SummaryText;
 
-    /// <summary>Shows the panel in the bottom-right corner of the main screen's work area, unless the user moved it.</summary>
+    /// <summary>
+    /// Shows the panel against the bottom-right corner of the main screen's work area (on the taskbar and the screen
+    /// edge), unless the user moved it.
+    /// </summary>
     public void ShowDocked()
     {
         if (!_movedByUser && Screens.Primary is { } screen)
@@ -45,8 +47,8 @@ public partial class QuickPanel : CaptureHostWindow
             var area = screen.WorkingArea;
             double scale = screen.Scaling;
             Position = new PixelPoint(
-                area.Right - (int)Math.Round((Width + ScreenMargin) * scale),
-                area.Bottom - (int)Math.Round((Height + ScreenMargin) * scale));
+                area.Right - (int)Math.Round(Width * scale),
+                area.Bottom - (int)Math.Round(Height * scale));
         }
         Show();
         if (WindowState == WindowState.Minimized) WindowState = WindowState.Normal;

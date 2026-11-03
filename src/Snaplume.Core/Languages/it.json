@@ -184,7 +184,7 @@
   "Editor.Tool.Spotlight": "Riflettore",
   "Editor.Tool.SpotlightTip": "Riflettore (O)",
   "Editor.Tool.Pixelate": "Pixela",
-  "Editor.Tool.PixelateTip": "Pixela (B)",
+  "Editor.Tool.PixelateTip": "Nascondi un’area (pixela) (B)",
   "Editor.Tool.Crop": "Ritaglia",
   "Editor.Tool.CropTip": "Ritaglia (C)",
   "Editor.Hint.Select": "Fai clic su un'annotazione per modificarla · trascina per spostare · doppio clic su un testo per modificarlo",

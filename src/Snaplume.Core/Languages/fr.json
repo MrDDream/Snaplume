@@ -184,7 +184,7 @@
   "Editor.Tool.Spotlight": "Projecteur",
   "Editor.Tool.SpotlightTip": "Projecteur (O)",
   "Editor.Tool.Pixelate": "Pixeliser",
-  "Editor.Tool.PixelateTip": "Pixeliser (B)",
+  "Editor.Tool.PixelateTip": "Masquer une zone (pixeliser) (B)",
   "Editor.Tool.Crop": "Recadrer",
   "Editor.Tool.CropTip": "Recadrer (C)",
   "Editor.Hint.Select": "Cliquez une annotation pour la modifier · glisser pour déplacer · double-clic sur un texte pour l'éditer",

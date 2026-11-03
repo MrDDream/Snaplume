@@ -184,7 +184,7 @@
   "Editor.Tool.Spotlight": "تسليط الضوء",
   "Editor.Tool.SpotlightTip": "تسليط الضوء (O)",
   "Editor.Tool.Pixelate": "تمويه بالبكسلة",
-  "Editor.Tool.PixelateTip": "تمويه بالبكسلة (B)",
+  "Editor.Tool.PixelateTip": "إخفاء منطقة (تمويه بالبكسلة) (B)",
   "Editor.Tool.Crop": "اقتصاص",
   "Editor.Tool.CropTip": "اقتصاص (C)",
   "Editor.Hint.Select": "انقر على تعليق توضيحي لتعديله · اسحب للنقل · انقر نقرًا مزدوجًا على نص لتحريره",

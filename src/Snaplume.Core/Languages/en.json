@@ -184,7 +184,7 @@
   "Editor.Tool.Spotlight": "Spotlight",
   "Editor.Tool.SpotlightTip": "Spotlight (O)",
   "Editor.Tool.Pixelate": "Pixelate",
-  "Editor.Tool.PixelateTip": "Pixelate (B)",
+  "Editor.Tool.PixelateTip": "Hide an area (pixelate) (B)",
   "Editor.Tool.Crop": "Crop",
   "Editor.Tool.CropTip": "Crop (C)",
   "Editor.Hint.Select": "Click an annotation to change it · drag to move it · double-click text to edit it",

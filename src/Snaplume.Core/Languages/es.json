@@ -184,7 +184,7 @@
   "Editor.Tool.Spotlight": "Foco",
   "Editor.Tool.SpotlightTip": "Foco (O)",
   "Editor.Tool.Pixelate": "Pixelar",
-  "Editor.Tool.PixelateTip": "Pixelar (B)",
+  "Editor.Tool.PixelateTip": "Ocultar una zona (pixelar) (B)",
   "Editor.Tool.Crop": "Recortar",
   "Editor.Tool.CropTip": "Recortar (C)",
   "Editor.Hint.Select": "Haga clic en una anotación para modificarla · arrastre para moverla · doble clic en un texto para editarlo",
