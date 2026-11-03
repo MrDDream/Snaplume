@@ -61,35 +61,36 @@ jobs:
         with:
           dotnet-version: 10.0.4xx   # the feature band of global.json, latest patch
 
-      # Always this version, even when the runner image has another one: the installer is built the same way each time.
+      # The runner image ships Inno Setup; it is installed (this version) only when missing. Errors are written as
+      # annotations, readable without signing in.
       - name: Install Inno Setup
         id: inno
         env:
           INNO_VERSION: '6.7.1'
         run: |
-          function Find-Iscc {
-            @("${env:ProgramFiles(x86)}\Inno Setup 6\ISCC.exe", "$env:ProgramFiles\Inno Setup 6\ISCC.exe") |
-              Where-Object { Test-Path $_ } | Select-Object -First 1
+          try {
+            $candidates = @("${env:ProgramFiles(x86)}\Inno Setup 6\ISCC.exe", "$env:ProgramFiles\Inno Setup 6\ISCC.exe")
+            $iscc = $candidates | Where-Object { Test-Path -LiteralPath $_ } | Select-Object -First 1
+            if (-not $iscc) {
+              Write-Host "Inno Setup not found; installing $env:INNO_VERSION."
+              $output = choco install innosetup --version $env:INNO_VERSION -y --no-progress 2>&1 | Out-String
+              Write-Host $output
+              # 1641 and 3010: installed, a restart is pending (not needed here).
+              if ($LASTEXITCODE -notin 0, 1641, 3010) { throw "choco install innosetup failed ($LASTEXITCODE): $($output.Trim() -split "`n" | Select-Object -Last 5)" }
+              $iscc = $candidates | Where-Object { Test-Path -LiteralPath $_ } | Select-Object -First 1
+              if (-not $iscc) { throw 'ISCC.exe not found after installing Inno Setup.' }
+            }
+            $info = (Get-Item -LiteralPath $iscc).VersionInfo
+            $installed = "$($info.FileMajorPart).$($info.FileMinorPart).$($info.FileBuildPart)"
+            if ($installed -ne $env:INNO_VERSION) { Write-Host "::warning::Inno Setup $installed is used instead of $env:INNO_VERSION." }
+            Write-Host "Inno Setup $installed ($iscc)"
+            "iscc=$iscc" >> $env:GITHUB_OUTPUT
           }
-          function Get-InnoVersion([string]$path) {
-            $info = (Get-Item -LiteralPath $path).VersionInfo
-            "$($info.FileMajorPart).$($info.FileMinorPart).$($info.FileBuildPart)"
+          catch {
+            Write-Host "::error::Install Inno Setup: $($_.Exception.Message)"
+            exit 1
           }
-          $iscc = Find-Iscc
-          $installed = if ($iscc) { Get-InnoVersion $iscc } else { '' }
-          if ($installed -ne $env:INNO_VERSION) {
-            Write-Host "Inno Setup '$installed' found; installing $env:INNO_VERSION."
-            choco install innosetup --version $env:INNO_VERSION --force --allow-downgrade -y --no-progress
-            # 1641 and 3010: installed, a restart is pending (not needed here).
-            if ($LASTEXITCODE -notin 0, 1641, 3010) { throw "choco install innosetup failed ($LASTEXITCODE)." }
-            $iscc = Find-Iscc
-            if (-not $iscc) { throw 'ISCC.exe not found after installing Inno Setup.' }
-            $installed = Get-InnoVersion $iscc
-          }
-          if ($installed -ne $env:INNO_VERSION) { throw "Inno Setup $installed found at $iscc, expected $env:INNO_VERSION." }
-          Write-Host "Inno Setup $installed ($iscc)"
-          "iscc=$iscc" >> $env:GITHUB_OUTPUT
-          $global:LASTEXITCODE = 0
+          exit 0
 
       - name: Install WiX Toolset 5
         run: |
