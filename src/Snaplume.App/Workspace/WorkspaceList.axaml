@@ -1,0 +1,73 @@
+<!--
+  The workspaces (sub-folders), the active one selected: a click (or the arrow keys) makes another one active, the context
+  menu renames, deletes or opens one, captures dragged from the gallery onto one are moved there. In the sidebar of the
+  workspace window and in the side panel of the quick panel.
+-->
+<UserControl xmlns="https://github.com/avaloniaui"
+             xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+             xmlns:l="using:Snaplume.Ui"
+             xmlns:local="using:Snaplume.Workspace"
+             x:Class="Snaplume.Workspace.WorkspaceList">
+    <UserControl.Styles>
+        <!-- One workspace: hover, active (accent marker) and drop target states -->
+        <Style Selector="ListBox#EntryList ListBoxItem">
+            <Setter Property="Margin" Value="0,1" />
+            <Setter Property="Padding" Value="0" />
+            <Setter Property="CornerRadius" Value="6" />
+            <Setter Property="Background" Value="Transparent" />
+            <Setter Property="Cursor" Value="Hand" />
+            <Setter Property="DragDrop.AllowDrop" Value="True" />
+        </Style>
+        <Style Selector="ListBox#EntryList ListBoxItem:pointerover /template/ ContentPresenter#PART_ContentPresenter">
+            <Setter Property="Background" Value="{DynamicResource NavHoverBrush}" />
+        </Style>
+        <Style Selector="ListBox#EntryList ListBoxItem:selected /template/ ContentPresenter#PART_ContentPresenter">
+            <Setter Property="Background" Value="{DynamicResource NavSelectedBrush}" />
+        </Style>
+        <Style Selector="ListBox#EntryList ListBoxItem:selected Border.marker">
+            <Setter Property="IsVisible" Value="True" />
+        </Style>
+        <Style Selector="Border.entry.drop">
+            <Setter Property="Background" Value="{DynamicResource DropTargetBrush}" />
+            <Setter Property="BorderBrush" Value="{DynamicResource AccentBrush}" />
+        </Style>
+    </UserControl.Styles>
+
+    <ListBox Name="EntryList" Background="Transparent" BorderThickness="0" Padding="8,0"
+             ScrollViewer.HorizontalScrollBarVisibility="Disabled" DragDrop.AllowDrop="True"
+             AutomationProperties.Name="{l:T Workspaces.Header}">
+        <ListBox.ItemTemplate>
+            <DataTemplate x:DataType="local:WorkspaceEntry">
+                <Panel>
+                    <!-- A folder that cannot be reached (unplugged drive...) is greyed; the tooltip gives the folder -->
+                    <Border Classes="entry" Classes.drop="{Binding IsDropTarget}" CornerRadius="6" BorderThickness="1"
+                            BorderBrush="Transparent" Background="Transparent" Padding="10,7"
+                            Opacity="{Binding Opacity}" ToolTip.Tip="{Binding Tip}">
+                        <DockPanel>
+                            <Path Classes="icon" Data="{StaticResource IconWorkspace}" VerticalAlignment="Top" Margin="0,1,0,0" />
+                            <StackPanel Margin="9,0,0,0" VerticalAlignment="Center">
+                                <TextBlock Text="{Binding DisplayName}" TextTrimming="CharacterEllipsis" />
+                                <!-- A folder of the user's choice: its path, on a second line -->
+                                <TextBlock Text="{Binding Folder}" IsVisible="{Binding IsCustom}" FontSize="11" FlowDirection="LeftToRight" HorizontalAlignment="Left"
+                                           Foreground="{DynamicResource MutedTextBrush}" TextTrimming="PrefixCharacterEllipsis" />
+                            </StackPanel>
+                        </DockPanel>
+                    </Border>
+                    <Border Classes="marker" Width="3" Height="18" CornerRadius="1.5" HorizontalAlignment="Left"
+                            Background="{DynamicResource AccentBrush}" IsVisible="False" />
+                </Panel>
+            </DataTemplate>
+        </ListBox.ItemTemplate>
+        <ListBox.ContextMenu>
+            <ContextMenu Name="EntryMenu">
+                <MenuItem Name="RenameEntryItem" Header="{l:T Workspaces.Menu.Rename}" Click="OnRenameEntry" />
+                <MenuItem Name="DeleteEntryItem" Header="{l:T Workspaces.Menu.Delete}" Click="OnDeleteEntry" />
+                <MenuItem Name="OpenEntryItem" Header="{l:T Workspaces.Menu.OpenFolder}" Click="OnOpenEntryFolder" />
+                <MenuItem Name="ChangeFolderItem" Header="{l:T Workspaces.Menu.ChangeFolder}" Click="OnChangeFolder" />
+                <MenuItem Name="DefaultFolderItem" Header="{l:T Workspaces.Menu.DefaultFolder}" Click="OnDefaultFolder" />
+                <Separator Name="EntrySeparator" />
+                <MenuItem Header="{l:T Workspaces.New}" Click="OnNewWorkspace" />
+            </ContextMenu>
+        </ListBox.ContextMenu>
+    </ListBox>
+</UserControl>

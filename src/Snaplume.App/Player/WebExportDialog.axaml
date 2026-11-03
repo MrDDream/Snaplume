@@ -24,6 +24,34 @@
         <ComboBox x:Name="FormatBox" HorizontalAlignment="Stretch" />
         <TextBlock x:Name="FormatNote" Classes="note" Margin="0,4,0,12" />
 
+        <!-- Without ffmpeg only MP4 H.264 is listed: the other formats come with the module, downloaded from here -->
+        <StackPanel x:Name="MoreFormatsPanel" IsVisible="False" Margin="0,0,0,12">
+            <Button x:Name="ModuleButton" HorizontalAlignment="Stretch" HorizontalContentAlignment="Stretch"
+                    Padding="10,7" Click="OnModuleClick" ToolTip.Tip="{l:T Player.Web.ModuleTip}">
+                <DockPanel>
+                    <Path Classes="icon" Data="{StaticResource IconDownload}" Stroke="{DynamicResource AccentBrush}" Margin="0,0,10,0"
+                          VerticalAlignment="Center" />
+                    <StackPanel>
+                        <TextBlock Text="{l:T Player.Web.MoreFormats}" FontWeight="SemiBold" TextWrapping="Wrap" />
+                        <TextBlock x:Name="ModuleSizeText" Classes="note" />
+                    </StackPanel>
+                </DockPanel>
+            </Button>
+            <!-- Download in progress: its own Cancel (the dialog stays open) -->
+            <DockPanel x:Name="ModuleProgressPanel" IsVisible="False">
+                <Button DockPanel.Dock="Right" Content="{l:T Common.Cancel}" Padding="10,3" Margin="10,0,0,0"
+                        VerticalAlignment="Center" Click="OnCancelModule" />
+                <StackPanel VerticalAlignment="Center">
+                    <TextBlock x:Name="ModuleStatus" Classes="note" />
+                    <ProgressBar x:Name="ModuleProgress" Classes="thin" Minimum="0" Maximum="1" Margin="0,6,0,0" />
+                </StackPanel>
+            </DockPanel>
+            <!-- Linux: the system's package -->
+            <TextBlock x:Name="ModuleNote" Classes="note" IsVisible="False" />
+            <!-- Windows: why the download or the installation failed -->
+            <TextBlock x:Name="ModuleError" Foreground="{DynamicResource ErrorTextBrush}" TextWrapping="Wrap" Margin="0,6,0,0" IsVisible="False" />
+        </StackPanel>
+
         <TextBlock Classes="label" Text="{l:T Player.Web.Target}" />
         <Grid ColumnDefinitions="*,Auto" Margin="0,0,0,12">
             <ComboBox x:Name="TargetBox" HorizontalAlignment="Stretch" />
@@ -41,15 +69,6 @@
         <TextBlock x:Name="SummaryText" Foreground="{DynamicResource MutedTextBrush}" TextWrapping="Wrap" />
         <TextBlock x:Name="ErrorText" Foreground="{DynamicResource ErrorTextBrush}" Margin="0,8,0,0" IsVisible="False" TextWrapping="Wrap" />
 
-        <!-- Windows without ffmpeg: the formats that need it are greyed; the module is one click away -->
-        <Border x:Name="ModuleHint" IsVisible="False" Background="{DynamicResource WarningBrush}" BorderBrush="{DynamicResource WarningBorderBrush}"
-                BorderThickness="1" CornerRadius="6" Padding="12,8" Margin="0,12,0,0">
-            <DockPanel>
-                <Button DockPanel.Dock="Right" VerticalAlignment="Center" Margin="10,0,0,0" Padding="10,3"
-                        Content="{l:T Player.Web.ModuleButton}" Click="OnModuleClick" />
-                <TextBlock Text="{l:T Player.Web.ModuleHint}" TextWrapping="Wrap" VerticalAlignment="Center" />
-            </DockPanel>
-        </Border>
 
         <StackPanel Orientation="Horizontal" HorizontalAlignment="Right" Margin="0,16,0,0" Spacing="8">
             <Button Classes="accent" Content="{l:T Player.Gif.Export}" IsDefault="True" Padding="14,4" Click="OnOk" />

@@ -74,6 +74,46 @@ public static class FileOps
         AppServices.Platform.Shell.Open(folder);
     }
 
+    /// <summary>
+    /// Moves a file to a path that does not exist yet, also to another drive or a network share: when the move itself
+    /// fails there, the file is copied (its dates kept: annotation files and thumbnails are matched on them), then the
+    /// original deleted. If the original cannot be deleted, the copy is removed and the error thrown: never two copies.
+    /// </summary>
+    /// <param name="move">For the tests: the plain move tried first (by default <see cref="File.Move(string, string)"/>).</param>
+    public static void MoveFile(string source, string destination, Action<string, string>? move = null)
+    {
+        try
+        {
+            (move ?? File.Move)(source, destination);
+            return;
+        }
+        catch (IOException ex) when (ex is not FileNotFoundException and not DirectoryNotFoundException && File.Exists(source) && !File.Exists(destination))
+        {
+            // Across volumes on some systems: copy and delete below.
+        }
+        var info = new FileInfo(source);
+        DateTime written = info.LastWriteTimeUtc, created = info.CreationTimeUtc;
+        File.Copy(source, destination, overwrite: false);
+        try
+        {
+            try
+            {
+                File.SetCreationTimeUtc(destination, created);
+            }
+            catch (Exception)
+            {
+                // Not supported everywhere.
+            }
+            File.SetLastWriteTimeUtc(destination, written);
+            File.Delete(source);
+        }
+        catch
+        {
+            try { File.Delete(destination); } catch (Exception) { /* the original error matters more */ }
+            throw;
+        }
+    }
+
     /// <summary>Returns a path that does not exist yet, adding _2, _3... if needed.</summary>
     public static string UniquePath(string folder, string baseName, string extension)
     {

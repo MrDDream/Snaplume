@@ -28,7 +28,7 @@ public class WebExportDialogTests
     public void Greyed_formats_explain_why_and_a_typed_size_becomes_custom()
     {
         using var scope = new Scope(new AppSettings { WebExportFormat = "hevc", WebExportTarget = "discord" });
-        var dialog = scope.Open(new WebExportDialog(TimeSpan.FromSeconds(60), null, null, Source, Formats(), showModuleHint: false));
+        var dialog = scope.Open(new WebExportDialog(TimeSpan.FromSeconds(60), null, null, Source, Formats(), hasFfmpeg: true));
         var format = dialog.FindControl<ComboBox>("FormatBox")!;
         var target = dialog.FindControl<ComboBox>("TargetBox")!;
         var size = dialog.FindControl<TextBox>("MegabytesBox")!;
@@ -59,12 +59,50 @@ public class WebExportDialogTests
     {
         using var scope = new Scope(new AppSettings { WebExportTarget = "discord" });
         var dialog = scope.Open(new WebExportDialog(TimeSpan.FromMinutes(30), null, null, Source with { Duration = TimeSpan.FromMinutes(30) },
-            Formats(), showModuleHint: true));
+            Formats(), hasFfmpeg: true));
         var error = dialog.FindControl<TextBlock>("ErrorText")!;
         Assert.True(error.IsVisible);
         Assert.Contains("5:08", error.Text);
-        Assert.True(dialog.FindControl<Border>("ModuleHint")!.IsVisible);
+        Assert.False(dialog.FindControl<StackPanel>("MoreFormatsPanel")!.IsVisible);
         Save(dialog, "web-export-dialog-error.png");
+    }
+
+    [AvaloniaFact]
+    public void Without_ffmpeg_only_h264_is_listed_and_the_module_is_offered_then_every_format()
+    {
+        // HEVC remembered, and Windows' own HEVC encoder present: still only H.264 before the module.
+        using var scope = new Scope(new AppSettings { WebExportFormat = "hevc" });
+        var basic = WebVideoExport.Offered(_ => true, null, windows: true);
+        var dialog = scope.Open(new WebExportDialog(TimeSpan.FromSeconds(60), null, null, Source, basic, hasFfmpeg: false));
+        var format = dialog.FindControl<ComboBox>("FormatBox")!;
+        Assert.Equal(1, format.ItemCount);
+        Assert.Equal(WebFormat.Mp4H264, Value(format));
+        Assert.True(dialog.FindControl<StackPanel>("MoreFormatsPanel")!.IsVisible);
+        Assert.Equal(FfmpegModule.IsSupported, dialog.FindControl<Button>("ModuleButton")!.IsVisible);
+        Assert.Equal(!FfmpegModule.IsSupported, dialog.FindControl<TextBlock>("ModuleNote")!.IsVisible);
+        Assert.Contains("81", dialog.FindControl<TextBlock>("ModuleSizeText")!.Text);
+        Save(dialog, "web-export-dialog-no-ffmpeg.png");
+
+        // The module installed (what the download ends with): every format, the panel gone.
+        typeof(WebExportDialog).GetMethod("ShowFormats", System.Reflection.BindingFlags.Instance | System.Reflection.BindingFlags.NonPublic)!
+            .Invoke(dialog, new object[] { Formats(), true, WebFormat.Mp4H264 });
+        Dispatcher.UIThread.RunJobs();
+        Assert.Equal(WebFormats.All.Length, format.ItemCount);
+        Assert.Equal(WebFormat.Mp4H264, Value(format));
+        Assert.False(dialog.FindControl<StackPanel>("MoreFormatsPanel")!.IsVisible);
+        Save(dialog, "web-export-dialog-with-ffmpeg.png");
+    }
+
+    [AvaloniaFact]
+    public void Without_ffmpeg_dark_and_right_to_left()
+    {
+        using var scope = new Scope(new AppSettings(), ThemeVariant.Dark);
+        var dialog = new WebExportDialog(TimeSpan.FromSeconds(60), null, null, Source, WebVideoExport.Offered(_ => true, null, windows: true),
+            hasFfmpeg: false) { FlowDirection = FlowDirection.RightToLeft };
+        // The interface language stays French: other tests running meanwhile read it.
+        scope.Open(dialog);
+        Assert.True(dialog.FindControl<StackPanel>("MoreFormatsPanel")!.IsVisible);
+        Save(dialog, "web-export-dialog-no-ffmpeg-dark-rtl.png");
     }
 
     [AvaloniaFact]
@@ -72,7 +110,7 @@ public class WebExportDialogTests
     {
         using var scope = new Scope(new AppSettings { WebExportFormat = "webm", WebExportTarget = "off" }, ThemeVariant.Dark);
         var dialog = new WebExportDialog(TimeSpan.FromSeconds(60), TimeSpan.FromSeconds(5), TimeSpan.FromSeconds(25), Source, Formats(),
-            showModuleHint: false) { FlowDirection = FlowDirection.RightToLeft };
+            hasFfmpeg: true) { FlowDirection = FlowDirection.RightToLeft };
         scope.Open(dialog);
         Assert.True(dialog.FindControl<StackPanel>("QualityPanel")!.IsVisible);
         Assert.False(dialog.FindControl<StackPanel>("MegabytesPanel")!.IsVisible);

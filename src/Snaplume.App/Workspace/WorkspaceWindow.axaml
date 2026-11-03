@@ -8,29 +8,6 @@
                          Icon="/Assets/app.ico"
                          WindowStartupLocation="CenterScreen" UseLayoutRounding="True">
     <Window.Styles>
-        <!-- One workspace of the sidebar: hover, active (accent marker) and drop target states -->
-        <Style Selector="ListBox#WorkspaceList ListBoxItem">
-            <Setter Property="Margin" Value="0,1" />
-            <Setter Property="Padding" Value="0" />
-            <Setter Property="CornerRadius" Value="6" />
-            <Setter Property="Background" Value="Transparent" />
-            <Setter Property="Cursor" Value="Hand" />
-            <Setter Property="DragDrop.AllowDrop" Value="True" />
-        </Style>
-        <Style Selector="ListBox#WorkspaceList ListBoxItem:pointerover /template/ ContentPresenter#PART_ContentPresenter">
-            <Setter Property="Background" Value="{DynamicResource NavHoverBrush}" />
-        </Style>
-        <Style Selector="ListBox#WorkspaceList ListBoxItem:selected /template/ ContentPresenter#PART_ContentPresenter">
-            <Setter Property="Background" Value="{DynamicResource NavSelectedBrush}" />
-        </Style>
-        <Style Selector="ListBox#WorkspaceList ListBoxItem:selected Border.marker">
-            <Setter Property="IsVisible" Value="True" />
-        </Style>
-        <Style Selector="Border.entry.drop">
-            <Setter Property="Background" Value="{DynamicResource DropTargetBrush}" />
-            <Setter Property="BorderBrush" Value="{DynamicResource AccentBrush}" />
-        </Style>
-
         <!-- Sidebar button, content on the start side -->
         <Style Selector="Button.sidebar">
             <Setter Property="Padding" Value="8,6" />
@@ -139,7 +116,7 @@
                 <!-- New workspace, and the commands of the active one -->
                 <Grid DockPanel.Dock="Bottom" Margin="8,6,8,8" ColumnDefinitions="*,Auto">
                     <Button Classes="flat sidebar" HorizontalAlignment="Stretch" HorizontalContentAlignment="Left" Click="OnNewWorkspace"
-                            ToolTip.Tip="{l:T Workspaces.NewTip}">
+                            ToolTip.Tip="{l:T Workspaces.NewTipFolder}">
                         <StackPanel Orientation="Horizontal">
                             <Path Classes="icon" Data="{StaticResource IconAdd}" />
                             <TextBlock Classes="button-label" Text="{l:T Workspaces.New}" Margin="6,0,2,0" />
@@ -152,6 +129,8 @@
                             <MenuFlyout Placement="TopEdgeAlignedRight">
                                 <MenuItem Name="RenameActiveItem" Header="{l:T Workspaces.Menu.Rename}" Click="OnRenameActive" />
                                 <MenuItem Name="DeleteActiveItem" Header="{l:T Workspaces.Menu.Delete}" Click="OnDeleteActive" />
+                                <MenuItem Name="ChangeFolderActiveItem" Header="{l:T Workspaces.Menu.ChangeFolder}" Click="OnChangeFolderActive" />
+                                <MenuItem Name="DefaultFolderActiveItem" Header="{l:T Workspaces.Menu.DefaultFolder}" Click="OnDefaultFolderActive" />
                                 <Separator />
                                 <MenuItem Header="{l:T Workspaces.Menu.OpenFolder}" Click="OnOpenFolder" />
                             </MenuFlyout>
@@ -159,34 +138,7 @@
                     </Button>
                 </Grid>
 
-                <ListBox Name="WorkspaceList" Background="Transparent" BorderThickness="0" Padding="8,0"
-                         ScrollViewer.HorizontalScrollBarVisibility="Disabled" DragDrop.AllowDrop="True">
-                    <ListBox.ItemTemplate>
-                        <DataTemplate x:DataType="local:WorkspaceEntry">
-                            <Panel>
-                                <Border Classes="entry" Classes.drop="{Binding IsDropTarget}" CornerRadius="6" BorderThickness="1"
-                                        BorderBrush="Transparent" Background="Transparent" Padding="10,7">
-                                    <DockPanel>
-                                        <Path Classes="icon" Data="{StaticResource IconWorkspace}" />
-                                        <TextBlock Text="{Binding DisplayName}" Margin="9,0,0,0" VerticalAlignment="Center"
-                                                   TextTrimming="CharacterEllipsis" ToolTip.Tip="{Binding DisplayName}" />
-                                    </DockPanel>
-                                </Border>
-                                <Border Classes="marker" Width="3" Height="18" CornerRadius="1.5" HorizontalAlignment="Left"
-                                        Background="{DynamicResource AccentBrush}" IsVisible="False" />
-                            </Panel>
-                        </DataTemplate>
-                    </ListBox.ItemTemplate>
-                    <ListBox.ContextMenu>
-                        <ContextMenu Name="WorkspaceMenu">
-                            <MenuItem Name="RenameEntryItem" Header="{l:T Workspaces.Menu.Rename}" Click="OnRenameEntry" />
-                            <MenuItem Name="DeleteEntryItem" Header="{l:T Workspaces.Menu.Delete}" Click="OnDeleteEntry" />
-                            <MenuItem Name="OpenEntryItem" Header="{l:T Workspaces.Menu.OpenFolder}" Click="OnOpenEntryFolder" />
-                            <Separator Name="EntrySeparator" />
-                            <MenuItem Header="{l:T Workspaces.New}" Click="OnNewWorkspace" />
-                        </ContextMenu>
-                    </ListBox.ContextMenu>
-                </ListBox>
+                <local:WorkspaceList Name="WorkspaceList" />
             </DockPanel>
         </Border>
 

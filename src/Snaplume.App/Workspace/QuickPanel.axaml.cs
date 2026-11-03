@@ -3,6 +3,7 @@ using Avalonia;
 using Avalonia.Controls;
 using Avalonia.Input;
 using Avalonia.Interactivity;
+using Avalonia.Threading;
 using Snaplume.Core;
 using Snaplume.Imaging;
 using Snaplume.Platform;
@@ -24,7 +25,9 @@ public partial class QuickPanel : CaptureHostWindow
         Gallery.Message += ShowMessage;
         TitleBar.PointerPressed += OnTitlePointerPressed;
         ResizeGrip.PointerPressed += OnGripPointerPressed;
-        if (WorkspaceButton.Flyout is MenuFlyout workspaceMenu) workspaceMenu.Opening += OnWorkspaceMenuOpening;
+        WorkspaceList.CapturesDropped += (paths, target) => _ = Gallery.MoveToWorkspaceAsync(paths, target);
+        IsWorkspacePaneOpen = AppServices.Settings.PanelWorkspacesOpen;
+        ShowWorkspacePane(IsWorkspacePaneOpen, animate: false);
         // Scrolling capture needs the wheel to be turned for the user (not possible on every desktop).
         ScrollingMenuItem.IsVisible = Has(PlatformFeatures.ScrollingCapture);
         UpdateState();
@@ -50,6 +53,9 @@ public partial class QuickPanel : CaptureHostWindow
                 area.Right - (int)Math.Round(Width * scale),
                 area.Bottom - (int)Math.Round(Height * scale));
         }
+        // A drive plugged in or out since last time: its workspace is shown as it is now.
+        Workspaces.ForgetAvailability();
+        WorkspaceList.Refresh();
         Show();
         if (WindowState == WindowState.Minimized) WindowState = WindowState.Normal;
         Activate();
@@ -74,29 +80,64 @@ public partial class QuickPanel : CaptureHostWindow
     protected override void OnWorkspacesChanged() =>
         WorkspaceName.Text = Workspaces.DisplayName(Workspaces.ActiveName);
 
-    /// <summary>Drop-down list of the workspaces (the active one checked), then "New...".</summary>
-    private void OnWorkspaceMenuOpening(object? sender, EventArgs e)
+    // ---- Side panel of the workspaces ----
+
+    /// <summary>Width of the side panel of the workspaces, when open.</summary>
+    public const double WorkspacePaneWidth = 200;
+
+    /// <summary>Time the panel takes to slide (its transition in the styles).</summary>
+    private static readonly TimeSpan PaneSlide = TimeSpan.FromMilliseconds(160);
+
+    /// <summary>The side panel of the workspaces is open (remembered in the settings).</summary>
+    public bool IsWorkspacePaneOpen
     {
-        if (sender is not MenuFlyout menu) return;
-        menu.Items.Clear();
-        foreach (var name in Workspaces.List())
-        {
-            // A TextBlock, so that an underscore in the name is not taken for an access key.
-            var item = new MenuItem
-            {
-                Header = new TextBlock { Text = Workspaces.DisplayName(name) },
-                ToggleType = MenuItemToggleType.CheckBox,
-                IsChecked = WorkspaceCommands.IsActive(name),
-            };
-            var target = name;
-            item.Click += (_, _) => WorkspaceCommands.Select(this, target);
-            menu.Items.Add(item);
-        }
-        menu.Items.Add(new Separator());
-        var create = new MenuItem { Header = Loc.T("Workspaces.New"), Icon = MenuIcon("IconAdd") };
-        create.Click += (_, _) => _ = WorkspaceCommands.CreateAsync(this);
-        menu.Items.Add(create);
+        get => WorkspaceButton.IsChecked == true;
+        set => WorkspaceButton.IsChecked = value;
     }
+
+    /// <summary>The workspace button was toggled (click, Space, Enter): the panel opens or closes, the gallery shrinks or grows.</summary>
+    private void OnWorkspaceButtonChecked(object? sender, RoutedEventArgs e)
+    {
+        bool open = IsWorkspacePaneOpen;
+        ShowWorkspacePane(open, animate: IsVisible);
+        var settings = AppServices.Settings;
+        if (settings.PanelWorkspacesOpen == open) return;
+        settings.PanelWorkspacesOpen = open;
+        try
+        {
+            settings.Save();
+        }
+        catch (Exception ex)
+        {
+            // The choice still applies until Snaplume quits.
+            ErrorLog.Write("Enregistrement des paramètres", ex);
+        }
+    }
+
+    private void ShowWorkspacePane(bool open, bool animate)
+    {
+        if (open)
+        {
+            WorkspacePane.IsVisible = true;
+            WorkspacePane.Width = WorkspacePaneWidth;
+            return;
+        }
+        // The focus leaves the panel with it.
+        if (WorkspacePane.IsKeyboardFocusWithin) WorkspaceButton.Focus(NavigationMethod.Tab);
+        WorkspacePane.Width = 0;
+        if (!animate)
+        {
+            WorkspacePane.IsVisible = false;
+            return;
+        }
+        // Hidden once it has slid away: out of the Tab order and of the screen readers.
+        DispatcherTimer.RunOnce(() =>
+        {
+            if (!IsWorkspacePaneOpen) WorkspacePane.IsVisible = false;
+        }, PaneSlide + TimeSpan.FromMilliseconds(40));
+    }
+
+    private void OnNewWorkspace(object? sender, RoutedEventArgs e) => _ = WorkspaceCommands.CreateAsync(this);
 
     private void OnTitlePointerPressed(object? sender, PointerPressedEventArgs e)
     {

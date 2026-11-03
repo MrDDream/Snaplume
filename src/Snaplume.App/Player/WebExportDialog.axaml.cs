@@ -6,9 +6,10 @@ using Snaplume.Platform;
 namespace Snaplume.Player;
 
 /// <summary>
-/// "Export / compress": format (MP4 H.264 or HEVC, MP4 AV1, WebM, animated WebP), and a file size to stay under
-/// (Discord, e-mail, typed) or a quality. Shown with <c>ShowDialog&lt;WebExportSettings?&gt;</c>: the settings, or
-/// null if cancelled. The rules are in <see cref="WebExportForm"/>; the last choices are kept in the settings.
+/// "Export / compress": format (MP4 H.264; with ffmpeg also HEVC, MP4 AV1, WebM, animated WebP), and a file size to
+/// stay under (Discord, e-mail, typed) or a quality. Without ffmpeg, the module can be downloaded from the dialog, which
+/// then lists every format. Shown with <c>ShowDialog&lt;WebExportSettings?&gt;</c>: the settings, or null if cancelled.
+/// The rules are in <see cref="WebExportForm"/>; the last choices are kept in the settings.
 /// </summary>
 public partial class WebExportDialog : Window
 {
@@ -25,19 +26,27 @@ public partial class WebExportDialog : Window
     private readonly bool _ready;
     /// <summary>The size field is being filled from the list: it does not switch the list to "custom".</summary>
     private bool _fillingSize;
+    /// <summary>The items of the format list, in its order.</summary>
+    private List<Option> _formatOptions = new();
+    /// <summary>Download of the ffmpeg module in progress, cancelled with its button or by closing the dialog.</summary>
+    private CancellationTokenSource? _download;
+    private bool _closed;
 
     /// <summary>For the XAML previewer only.</summary>
     public WebExportDialog() : this(TimeSpan.FromSeconds(30), null, null, new VideoInfo(1920, 1080, 30, true, TimeSpan.FromSeconds(30)),
-        WebFormats.All.Select(f => new WebFormatAvailability(f, WebEncoderRoute.System, "")).ToList(), showModuleHint: false)
+        WebFormats.All.Select(f => new WebFormatAvailability(f, WebEncoderRoute.System, "")).ToList(), hasFfmpeg: true)
     {
     }
 
     /// <param name="inPoint">Start of the extract chosen in the player, if any.</param>
     /// <param name="outPoint">End of the extract chosen in the player, if any.</param>
-    /// <param name="formats">What this computer can make (<see cref="WebVideoExport.Availability"/>).</param>
-    /// <param name="showModuleHint">Windows without ffmpeg: offers the module of the settings.</param>
+    /// <param name="formats">The formats to list and what this computer can make of them (<see cref="WebVideoExport.Offered"/>).</param>
+    /// <param name="hasFfmpeg">
+    /// An ffmpeg was found. Without one, only MP4 H.264 is listed, and the other formats are offered: the module,
+    /// downloaded from the dialog (Windows), or the system's package (Linux).
+    /// </param>
     public WebExportDialog(TimeSpan duration, TimeSpan? inPoint, TimeSpan? outPoint, VideoInfo source, IReadOnlyList<WebFormatAvailability> formats,
-        bool showModuleHint)
+        bool hasFfmpeg)
     {
         InitializeComponent();
         _form = new WebExportForm(duration, inPoint, outPoint, source, formats);
@@ -50,24 +59,17 @@ public partial class WebExportDialog : Window
         RangeBox.SelectedItem = ranges[^1];
 
         // Greyed formats keep their place, with the reason as tooltip (shown on disabled items too).
-        var formatOptions = WebFormats.All.Select(f =>
-        {
-            var availability = formats.FirstOrDefault(a => a.Format == f);
-            bool enabled = availability?.IsAvailable == true;
-            var name = Loc.T("Player.Web.Format." + WebFormats.Id(f));
-            return new Option(f, enabled ? name : Loc.T("Player.Web.Unavailable", name), enabled, availability?.Reason ?? "");
-        }).ToList();
         FormatBox.ContainerPrepared += (_, e) =>
         {
-            if (e.Container is not ComboBoxItem item || e.Index < 0 || e.Index >= formatOptions.Count) return;
-            var option = formatOptions[e.Index];
+            if (e.Container is not ComboBoxItem item || e.Index < 0 || e.Index >= _formatOptions.Count) return;
+            var option = _formatOptions[e.Index];
             item.IsEnabled = option.Enabled;
             ToolTip.SetTip(item, option.Tip.Length > 0 ? option.Tip : null);
             ToolTip.SetShowOnDisabled(item, true);
         };
-        FormatBox.ItemsSource = formatOptions;
-        var format = _form.Available(WebFormats.FromId(settings.WebExportFormat));
-        FormatBox.SelectedItem = formatOptions.First(o => (WebFormat)o.Value == format);
+        ModuleSizeText.Text = Loc.T("Player.Web.DownloadModule", FfmpegModule.DownloadMegabytes);
+        ModuleNote.Text = Loc.T("Player.Web.MoreFormatsPackage");
+        ShowFormats(formats, hasFfmpeg, WebFormats.FromId(settings.WebExportFormat));
 
         var targets = Targets.Select(t => new Option(t, t == SizeTargets.Off || t == SizeTargets.Custom
             ? Loc.T("Player.Web.Target." + t)
@@ -82,8 +84,11 @@ public partial class WebExportDialog : Window
         QualityBox.ItemsSource = qualities;
         QualityBox.SelectedItem = qualities.First(q => (WebQuality)q.Value == WebFormats.QualityFromId(settings.WebExportQuality));
 
-        ModuleHint.IsVisible = showModuleHint;
-
+        Closed += (_, _) =>
+        {
+            _closed = true;
+            _download?.Cancel();
+        };
         RangeBox.SelectionChanged += (_, _) => Update();
         FormatBox.SelectionChanged += (_, _) => Update();
         QualityBox.SelectionChanged += (_, _) => Update();
@@ -187,11 +192,101 @@ public partial class WebExportDialog : Window
         }
     }
 
-    /// <summary>Opens Settings › Video, where the module is installed; the dialog closes (its formats would be out of date).</summary>
-    private void OnModuleClick(object? sender, RoutedEventArgs e)
+    /// <summary>
+    /// Fills the format list (the remembered format if it is offered and available, else MP4 H.264) and shows, without
+    /// ffmpeg, how to get the other formats.
+    /// </summary>
+    private void ShowFormats(IReadOnlyList<WebFormatAvailability> formats, bool hasFfmpeg, WebFormat preferred)
     {
-        Close(null);
-        App.Instance.ShowSettings("PageVideo");
+        _form.Formats = formats;
+        _formatOptions = formats.Select(a =>
+        {
+            var name = Loc.T("Player.Web.Format." + WebFormats.Id(a.Format));
+            return new Option(a.Format, a.IsAvailable ? name : Loc.T("Player.Web.Unavailable", name), a.IsAvailable, a.Reason);
+        }).ToList();
+        FormatBox.ItemsSource = _formatOptions;
+        var format = _form.Available(preferred);
+        FormatBox.SelectedItem = _formatOptions.FirstOrDefault(o => (WebFormat)o.Value == format) ?? _formatOptions.FirstOrDefault();
+
+        bool module = FfmpegModule.IsSupported;
+        MoreFormatsPanel.IsVisible = !hasFfmpeg;
+        ModuleButton.IsVisible = !hasFfmpeg && module && _download == null;
+        ModuleNote.IsVisible = !hasFfmpeg && !module;
+        ModuleError.IsVisible = false;
+    }
+
+    /// <summary>Downloads and installs the ffmpeg module (progress and Cancel in the dialog), then lists every format.</summary>
+    private async void OnModuleClick(object? sender, RoutedEventArgs e)
+    {
+        if (_download != null) return;
+        using var cancel = new CancellationTokenSource();
+        _download = cancel;
+        long size = FfmpegModule.Package.Size;
+        ModuleButton.IsVisible = false;
+        ModuleError.IsVisible = false;
+        ModuleProgress.IsIndeterminate = false;
+        ShowModuleProgress(0, size);
+        ModuleProgressPanel.IsVisible = true;
+        string? failure;
+        try
+        {
+            var progress = new Progress<long>(received =>
+            {
+                if (_download != cancel) return;
+                ShowModuleProgress(received, size);
+                // The last bytes are in: unzipping follows.
+                if (received >= size)
+                {
+                    ModuleProgress.IsIndeterminate = true;
+                    ModuleStatus.Text = Loc.T("Settings.Ffmpeg.Unpacking");
+                }
+            });
+            failure = await FfmpegModule.TryInstallAsync(progress, cancel.Token);
+        }
+        finally
+        {
+            if (_download == cancel) _download = null;
+        }
+        if (_closed) return;
+        if (failure == null && !cancel.IsCancellationRequested && !await RefreshFormatsAsync())
+            failure = Loc.T("Settings.Ffmpeg.Broken"); // installed, but it does not start
+        if (_closed) return;
+        ModuleProgressPanel.IsVisible = false;
+        ModuleButton.IsVisible = MoreFormatsPanel.IsVisible;
+        if (failure != null)
+        {
+            ModuleError.Text = failure;
+            ModuleError.IsVisible = true;
+        }
+    }
+
+    private void ShowModuleProgress(long received, long total)
+    {
+        ModuleProgress.Value = total > 0 ? Math.Clamp((double)received / total, 0, 1) : 0;
+        ModuleStatus.Text = FfmpegModule.ProgressText(received, total);
+    }
+
+    private void OnCancelModule(object? sender, RoutedEventArgs e) => _download?.Cancel();
+
+    /// <summary>Looks for ffmpeg again (after the installation) and lists what it can make; false if there is still none.</summary>
+    private async Task<bool> RefreshFormatsAsync()
+    {
+        FfmpegInfo? ffmpeg;
+        try
+        {
+            ffmpeg = await FfmpegTools.DetectAsync();
+        }
+        catch (Exception ex)
+        {
+            ErrorLog.Write("Recherche de ffmpeg", ex);
+            ffmpeg = null;
+        }
+        var video = AppServices.HasPlatform ? AppServices.Platform.Video : null;
+        var formats = await Task.Run(() => WebVideoExport.Offered(c => video?.CanTranscode(c) == true, ffmpeg, OperatingSystem.IsWindows()));
+        if (_closed) return ffmpeg != null;
+        ShowFormats(formats, ffmpeg != null, (FormatBox.SelectedItem as Option)?.Value as WebFormat? ?? WebFormat.Mp4H264);
+        Update();
+        return ffmpeg != null;
     }
 
     private void OnCancel(object? sender, RoutedEventArgs e) => Close(null);

@@ -195,7 +195,7 @@
                                               DisplayMemberBinding="{Binding Label, x:DataType=l:ChoiceItem}" />
                                     <StackPanel>
                                         <TextBlock Classes="row-title" Text="{l:T Settings.General.ImageFormat}" />
-                                        <TextBlock Classes="row-description" Text="{l:T Settings.General.ImageFormatDescription}" />
+                                        <TextBlock Classes="row-description" Text="{l:T Settings.General.ImageFormatDescriptionWebp}" />
                                     </StackPanel>
                                 </DockPanel>
                             </Border>

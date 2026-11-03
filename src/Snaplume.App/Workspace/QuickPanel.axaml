@@ -33,16 +33,36 @@
             <Setter Property="VerticalAlignment" Value="Center" />
         </Style>
 
-        <!-- Workspace selector of the title bar: current workspace name + drop-down menu -->
-        <Style Selector="Button.workspace">
+        <!-- Workspace button of the title bar: current workspace name; shows or hides the side panel of the workspaces -->
+        <Style Selector="ToggleButton.workspace">
             <Setter Property="Height" Value="28" />
             <Setter Property="Padding" Value="8,0,10,0" />
             <Setter Property="BorderBrush" Value="{DynamicResource PanelBorderBrush}" />
             <Setter Property="CornerRadius" Value="6" />
             <Setter Property="Foreground" Value="{DynamicResource TextBrush}" />
+            <!-- In the Tab order, unlike the other buttons of the title bar: the panel opens from the keyboard too -->
+            <Setter Property="Focusable" Value="True" />
         </Style>
-        <Style Selector="Button.workspace:pointerover /template/ ContentPresenter#PART_ContentPresenter">
+        <Style Selector="ToggleButton.workspace:pointerover /template/ ContentPresenter#PART_ContentPresenter">
             <Setter Property="Foreground" Value="{DynamicResource TextBrush}" />
+        </Style>
+        <!-- Open: the selected look of the workspace list, not Fluent's accent fill -->
+        <Style Selector="ToggleButton.workspace:checked /template/ ContentPresenter#PART_ContentPresenter">
+            <Setter Property="Background" Value="{DynamicResource NavSelectedBrush}" />
+            <Setter Property="BorderBrush" Value="{DynamicResource PanelBorderBrush}" />
+            <Setter Property="Foreground" Value="{DynamicResource TextBrush}" />
+        </Style>
+        <Style Selector="ToggleButton.workspace:checked:pointerover /template/ ContentPresenter#PART_ContentPresenter">
+            <Setter Property="Background" Value="{DynamicResource NavHoverBrush}" />
+        </Style>
+
+        <!-- Side panel of the workspaces: its width slides; the content keeps its own width meanwhile -->
+        <Style Selector="Border#WorkspacePane">
+            <Setter Property="Transitions">
+                <Transitions>
+                    <DoubleTransition Property="Width" Duration="0:0:0.16" Easing="CubicEaseOut" />
+                </Transitions>
+            </Setter>
         </Style>
 
         <!--
@@ -136,18 +156,14 @@
                 </StackPanel>
                 <Image DockPanel.Dock="Left" Source="{StaticResource LogoImage}" Width="20" Height="20" Margin="12,0,0,0" />
                 <TextBlock DockPanel.Dock="Left" Text="Snaplume" FontSize="14" FontWeight="SemiBold" Margin="9,0,0,0" VerticalAlignment="Center" />
-                <Button Name="WorkspaceButton" DockPanel.Dock="Left" Classes="flat workspace" Margin="12,0,0,0"
-                        ToolTip.Tip="{l:T Panel.WorkspaceTip}">
+                <ToggleButton Name="WorkspaceButton" DockPanel.Dock="Left" Classes="flat workspace" Margin="12,0,0,0"
+                              ToolTip.Tip="{l:T Panel.WorkspaceTip}" AutomationProperties.Name="{l:T Panel.WorkspaceTip}"
+                              IsCheckedChanged="OnWorkspaceButtonChecked">
                     <StackPanel Orientation="Horizontal">
                         <Path Classes="icon" Data="{StaticResource IconWorkspace}" Width="16.8" Height="16.8" RenderTransform="scale(0.7)" />
                         <TextBlock Name="WorkspaceName" Margin="6,0,0,0" MaxWidth="160" TextTrimming="CharacterEllipsis" VerticalAlignment="Center" />
-                        <Path Classes="chevron" Stroke="{DynamicResource MutedTextBrush}" Margin="8,1,0,0" />
                     </StackPanel>
-                    <Button.Flyout>
-                        <!-- Filled when opened: the workspaces, then "New..." -->
-                        <MenuFlyout Placement="BottomEdgeAlignedLeft" />
-                    </Button.Flyout>
-                </Button>
+                </ToggleButton>
                 <TextBlock Name="SummaryText" Foreground="{DynamicResource MutedTextBrush}" Margin="12,1,8,0" VerticalAlignment="Center"
                            TextTrimming="CharacterEllipsis" />
             </DockPanel>
@@ -235,6 +251,24 @@
                             </Button>
                         </StackPanel>
                     </StackPanel>
+                </DockPanel>
+            </Border>
+
+            <!-- Side panel of the workspaces (start side), opened with the workspace button: the gallery shrinks -->
+            <Border Name="WorkspacePane" DockPanel.Dock="Left" Width="0" IsVisible="False" ClipToBounds="True"
+                    Background="{DynamicResource SidebarBrush}" BorderBrush="{DynamicResource LineBrush}" BorderThickness="0,0,1,0">
+                <DockPanel Width="{x:Static local:QuickPanel.WorkspacePaneWidth}" HorizontalAlignment="Left">
+                    <TextBlock DockPanel.Dock="Top" Text="{l:T Workspaces.Header}" Foreground="{DynamicResource MutedTextBrush}" FontWeight="SemiBold"
+                               Margin="18,12,12,6" />
+                    <Button Name="NewWorkspaceButton" DockPanel.Dock="Bottom" Classes="flat" Margin="8,6,8,8" Padding="8,6"
+                            HorizontalAlignment="Stretch" HorizontalContentAlignment="Left" Focusable="True" Click="OnNewWorkspace"
+                            ToolTip.Tip="{l:T Workspaces.NewTipFolder}">
+                        <StackPanel Orientation="Horizontal">
+                            <Path Classes="icon" Data="{StaticResource IconAdd}" />
+                            <TextBlock Classes="button-label" Text="{l:T Workspaces.New}" Margin="6,0,2,0" />
+                        </StackPanel>
+                    </Button>
+                    <local:WorkspaceList Name="WorkspaceList" />
                 </DockPanel>
             </Border>
 
