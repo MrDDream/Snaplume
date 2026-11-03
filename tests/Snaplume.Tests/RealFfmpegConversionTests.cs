@@ -98,10 +98,10 @@ public class RealFfmpegConversionTests(ITestOutputHelper output)
         if (result.ExitCode != 0) throw new InvalidOperationException($"ffmpeg ({result.ExitCode}): {result.Errors}");
     }
 
-    /// <summary>What "ffmpeg -i" says of a file (it exits with an error: no output given).</summary>
+    /// <summary>What "ffmpeg -i" says of a file (it exits with an error: no output given), with the options of the exports.</summary>
     private static async Task<VideoInfo?> Probe(IProcessRunner runner, string path, CancellationToken cancel)
     {
-        var result = await runner.RunAsync(Executable!, new[] { "-hide_banner", "-i", path }, null, TimeSpan.FromSeconds(30), cancel);
+        var result = await runner.RunAsync(Executable!, FfmpegWebArguments.Probe(path), null, TimeSpan.FromSeconds(30), cancel);
         return FfmpegTools.ParseInputInfo(result.Errors);
     }
 }

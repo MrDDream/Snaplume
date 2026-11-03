@@ -1,3 +1,4 @@
+using Snaplume.Core;
 using Snaplume.Imaging;
 using Snaplume.Player;
 using Snaplume.Tests.Fakes;
@@ -54,6 +55,26 @@ public class CaptureGifExportTests : IDisposable
         };
         Assert.False(form.TryRead(out _, out var error));
         Assert.False(string.IsNullOrWhiteSpace(error));
+    }
+
+    [Fact]
+    public void FormKeepsTheGifWithinItsLargestSizeAndASaneSpeed()
+    {
+        // A very tall video (a scrolling capture made into a video): the height would pass 65535.
+        var tall = new GifExportForm(TimeSpan.FromSeconds(2), null, null, 2000, 200_000) { WidthText = "800" };
+        Assert.False(tall.TryRead(out _, out var error));
+        Assert.Equal(Loc.T("Player.Gif.WidthError", GifExportForm.SmallestWidth, tall.LargestWidth), error);
+        Assert.Equal(655, tall.LargestWidth);
+        tall.WidthText = "655";
+        Assert.True(tall.TryRead(out var settings, out _));
+        Assert.True(settings.Height <= 65535);
+
+        foreach (var speed in new[] { double.NaN, double.PositiveInfinity, 0, -2 })
+        {
+            var form = new GifExportForm(TimeSpan.FromSeconds(5), null, null, 640, 480) { Speed = speed };
+            Assert.True(form.TryRead(out var read, out _));
+            Assert.Equal(1, read.Speed);
+        }
     }
 
     [Fact]

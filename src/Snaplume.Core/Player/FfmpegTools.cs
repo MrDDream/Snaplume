@@ -68,9 +68,10 @@ public sealed class ProcessRunner : IProcessRunner
         using var process = Process.Start(info) ?? throw new InvalidOperationException($"{executable} could not be started");
         using var timer = CancellationTokenSource.CreateLinkedTokenSource(cancel);
         if (timeout is { } limit) timer.CancelAfter(limit);
+        Task<string>? errors = null;
         try
         {
-            var errors = process.StandardError.ReadToEndAsync(timer.Token);
+            errors = ReadKeptAsync(process.StandardError, timer.Token);
             var output = new StringBuilder();
             string? line;
             while ((line = await process.StandardOutput.ReadLineAsync(timer.Token).ConfigureAwait(false)) != null)
@@ -84,15 +85,35 @@ public sealed class ProcessRunner : IProcessRunner
         catch (OperationCanceledException)
         {
             Kill(process);
+            Observe(errors);
             if (cancel.IsCancellationRequested) throw;
             throw new TimeoutException($"{Path.GetFileName(executable)} did not finish within {timeout?.TotalSeconds:0} s");
         }
         catch
         {
             Kill(process);
+            Observe(errors);
             throw;
         }
     }
+
+    /// <summary>The error output, the first <see cref="MaxKeptChars"/> characters kept, the rest read and dropped.</summary>
+    private static async Task<string> ReadKeptAsync(StreamReader reader, CancellationToken cancel)
+    {
+        var kept = new StringBuilder();
+        var buffer = new char[4096];
+        int read;
+        while ((read = await reader.ReadAsync(buffer, cancel).ConfigureAwait(false)) > 0)
+        {
+            if (kept.Length < MaxKeptChars) kept.Append(buffer, 0, Math.Min(read, MaxKeptChars - kept.Length));
+        }
+        return kept.ToString();
+    }
+
+    /// <summary>The error output is no longer awaited once the program is killed: its failure is observed, not raised later.</summary>
+    private static void Observe(Task? task) =>
+        task?.ContinueWith(t => _ = t.Exception, CancellationToken.None, TaskContinuationOptions.OnlyOnFaulted | TaskContinuationOptions.ExecuteSynchronously,
+            TaskScheduler.Default);
 
     private static void Kill(Process process)
     {
@@ -121,7 +142,8 @@ public static class FfmpegTools
     {
         lock (Gate)
         {
-            return _detected ??= DetectSafelyAsync();
+            // On the thread pool: the search (files, PATH, programs started) never runs on the caller's thread.
+            return _detected ??= Task.Run(DetectSafelyAsync);
         }
     }
 
@@ -189,8 +211,9 @@ public static class FfmpegTools
                     CancellationToken.None).ConfigureAwait(false);
                 works = result.ExitCode == 0;
             }
-            catch (Exception ex) when (ex is TimeoutException or InvalidOperationException)
+            catch (Exception ex) when (ex is not OperationCanceledException)
             {
+                // Timed out, did not start, crashed the driver...: not usable here, the other encoders still are.
                 works = false;
             }
             if (!works) encoders.Remove(encoder);
@@ -281,24 +304,40 @@ public static class FfmpegTools
     /// "Stream #0:0[0x1](und): Video: h264 (High) (avc1 / 0x31637661), yuv420p(tv), 1920x1080 [SAR 1:1 DAR 16:9], 4500 kb/s, 30 fps, ..."
     /// and "Stream #0:1: Audio: aac ...". Null without a video stream.
     /// </summary>
+    /// <remarks>
+    /// Only the description of the first input is read (from "Input #0" to the next "Input #" or "Output #"), and only
+    /// its own "Stream #0:" lines: a warning printed before it, or a second input, cannot pass for the file. Values out
+    /// of reason (a side over <see cref="MaxVideoSide"/>, a length over <see cref="MaxDuration"/>) are left unknown.
+    /// </remarks>
     public static VideoInfo? ParseInputInfo(string text)
     {
         var f = CultureInfo.InvariantCulture;
         int width = 0, height = 0;
         double fps = 0;
-        bool audio = false, video = false;
+        bool audio = false, video = false, input = false;
         var duration = TimeSpan.Zero;
         foreach (var raw in text.Split('\n'))
         {
             var line = raw.Trim();
-            var d = Regex.Match(line, @"^Duration: (\d+):(\d{2}):(\d{2}(?:\.\d+)?)");
-            if (d.Success)
+            if (line.StartsWith("Input #", StringComparison.Ordinal) || line.StartsWith("Output #", StringComparison.Ordinal))
             {
-                duration = TimeSpan.FromHours(int.Parse(d.Groups[1].Value, f)) + TimeSpan.FromMinutes(int.Parse(d.Groups[2].Value, f))
-                           + TimeSpan.FromSeconds(double.Parse(d.Groups[3].Value, f));
+                if (input) break;
+                input = line.StartsWith("Input #0,", StringComparison.Ordinal);
                 continue;
             }
-            if (!line.StartsWith("Stream #", StringComparison.Ordinal)) continue;
+            if (!input) continue;
+            var d = Regex.Match(line, @"^Duration: (\d{1,6}):(\d{2}):(\d{2}(?:\.\d{1,6})?)");
+            if (d.Success)
+            {
+                if (int.TryParse(d.Groups[1].Value, NumberStyles.None, f, out int hours) && int.TryParse(d.Groups[2].Value, NumberStyles.None, f, out int minutes)
+                    && double.TryParse(d.Groups[3].Value, NumberStyles.AllowDecimalPoint, f, out double seconds))
+                {
+                    var length = TimeSpan.FromHours(hours) + TimeSpan.FromMinutes(minutes) + TimeSpan.FromSeconds(seconds);
+                    if (length <= MaxDuration) duration = length;
+                }
+                continue;
+            }
+            if (!line.StartsWith("Stream #0:", StringComparison.Ordinal)) continue;
             if (line.Contains(": Audio:", StringComparison.Ordinal))
             {
                 audio = true;
@@ -308,13 +347,28 @@ public static class FfmpegTools
             // A cover picture of an audio file is no video.
             if (line.Contains("(attached pic)", StringComparison.Ordinal)) continue;
             var size = Regex.Match(line, @"[ ,](\d{2,5})x(\d{2,5})[ ,\[]");
-            if (!size.Success) continue;
+            if (!size.Success || !int.TryParse(size.Groups[1].Value, NumberStyles.None, f, out int w) || !int.TryParse(size.Groups[2].Value, NumberStyles.None, f, out int h)
+                || w is < 1 or > MaxVideoSide || h is < 1 or > MaxVideoSide)
+                continue;
             video = true;
-            width = int.Parse(size.Groups[1].Value, f);
-            height = int.Parse(size.Groups[2].Value, f);
-            var rate = Regex.Match(line, @", (\d+(?:\.\d+)?)(k?) fps");
-            if (rate.Success) fps = double.Parse(rate.Groups[1].Value, f) * (rate.Groups[2].Value == "k" ? 1000 : 1);
+            width = w;
+            height = h;
+            var rate = Regex.Match(line, @", (\d{1,6}(?:\.\d{1,6})?)(k?) fps");
+            if (rate.Success && double.TryParse(rate.Groups[1].Value, NumberStyles.AllowDecimalPoint, f, out double r))
+            {
+                r *= rate.Groups[2].Value == "k" ? 1000 : 1;
+                if (r <= MaxFramesPerSecond) fps = r;
+            }
         }
         return video ? new VideoInfo(width, height, fps, audio, duration) : null;
     }
+
+    /// <summary>Largest picture side believed from ffmpeg's description (the encoders stop at 16384).</summary>
+    public const int MaxVideoSide = 16384;
+
+    /// <summary>Longest video believed from ffmpeg's description; a longer one has an unknown length.</summary>
+    public static readonly TimeSpan MaxDuration = TimeSpan.FromHours(1000);
+
+    /// <summary>Highest frame rate believed from ffmpeg's description; a higher one is unknown (0).</summary>
+    public const double MaxFramesPerSecond = 1000;
 }

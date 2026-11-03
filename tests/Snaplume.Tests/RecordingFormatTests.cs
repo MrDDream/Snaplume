@@ -184,6 +184,15 @@ public class RecordingFormatTests
     }
 
     [Fact]
+    public void Recording_formats_are_read_like_the_export_ones_without_webp()
+    {
+        foreach (var format in RecordingFormats.All) Assert.Equal(format, RecordingFormats.FromId(WebFormats.Id(format)));
+        Assert.Equal(WebFormat.Mp4H264, RecordingFormats.FromId(WebFormats.Id(WebFormat.WebP)));
+        Assert.Equal(WebFormat.Mp4H264, RecordingFormats.FromId("unknown"));
+        Assert.Equal(WebFormat.Mp4H264, RecordingFormats.FromId(null));
+    }
+
+    [Fact]
     public void The_original_quality_keeps_size_and_frame_rate()
     {
         var source = new VideoInfo(2560, 1440, 60, true, TimeSpan.FromSeconds(10));
@@ -270,6 +279,28 @@ public class RecordingFormatTests
         Assert.Equal(Path.Combine(folder, "Video_1.mp4"), result.Original);
         Assert.Equal(new byte[] { 9, 9, 9, 9 }, File.ReadAllBytes(result.Original!));
         Assert.False(File.Exists(recorded));
+    }
+
+    [Fact]
+    public async Task A_kept_original_that_cannot_be_moved_leaves_the_conversion_done()
+    {
+        using var temp = new TempFolder();
+        var folder = Path.Combine(temp.Path, "workspace");
+        var recorded = Recorded(temp);
+        var encoder = new FakeEncoder();
+        // The original vanishes once encoded (antivirus, disk removed...): its move fails.
+        var result = await RecordingConversion.RunAsync(recorded, folder, "Video_1", Hevc, keepOriginal: true, Probe(Recording),
+            async (source, destination, settings, info, progress, cancel) =>
+            {
+                await encoder.Encode(source, destination, settings, info, progress, cancel);
+                File.Delete(source);
+            }, null, CancellationToken.None);
+        Assert.True(result.Converted);
+        Assert.Equal(Path.Combine(folder, "Video_1.hevc.mp4"), result.Path);
+        Assert.Null(result.Original);
+        Assert.Equal(recorded, result.OriginalLeftAt);
+        Assert.Equal(1, encoder.Calls);
+        Assert.Equal(new[] { "Video_1.hevc.mp4" }, Directory.GetFiles(folder).Select(Path.GetFileName));
     }
 
     [Fact]
