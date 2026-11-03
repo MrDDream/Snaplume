@@ -41,5 +41,26 @@ public sealed class FakeVideoTools : IVideoTools
 
     public Task<PixelBuffer?> ThumbnailAsync(string path, int size, CancellationToken cancel = default) => Task.FromResult<PixelBuffer?>(null);
 
+    /// <summary>Codecs the fake system encoder makes.</summary>
+    public HashSet<VideoCodec> SystemCodecs { get; init; } = new() { VideoCodec.H264 };
+    /// <summary>Size of the file a re-encoding writes, from its settings; by default the bit rates over 10 s.</summary>
+    public Func<VideoEncodeSettings, long> TranscodedSize { get; init; } = s => (s.VideoBitrate + s.AudioBitrate) * 10L / 8;
+    public List<VideoEncodeSettings> Transcodes { get; } = new();
+    public VideoInfo? Info { get; init; }
+
+    public bool CanTranscode(VideoCodec codec) => SystemCodecs.Contains(codec);
+
+    public async Task TranscodeAsync(string source, string destination, TimeSpan start, TimeSpan end, VideoEncodeSettings settings,
+        IProgress<double>? progress, CancellationToken cancel)
+    {
+        cancel.ThrowIfCancellationRequested();
+        if (File.Exists(destination)) throw new IOException($"{destination} already exists.");
+        Transcodes.Add(settings);
+        await File.WriteAllBytesAsync(destination, new byte[TranscodedSize(settings)], cancel);
+        progress?.Report(1);
+    }
+
+    public Task<VideoInfo?> ProbeAsync(string path, CancellationToken cancel = default) => Task.FromResult(Info);
+
     public IVideoPlayer CreatePlayer() => throw new NotSupportedException();
 }

@@ -1,4 +1,5 @@
 using System.Runtime.CompilerServices;
+using Snaplume.Core;
 using Snaplume.Imaging;
 using Windows.Graphics.Imaging;
 using Windows.Media.Editing;
@@ -27,6 +28,40 @@ public sealed class VideoTools : IVideoTools
     public async Task ExportClipAsync(string source, string destination, TimeSpan start, TimeSpan end,
         IProgress<double>? progress, CancellationToken cancel)
     {
+        await RenderAsync(source, destination, start, end, BuildProfile, progress, cancel);
+    }
+
+    public bool CanTranscode(VideoCodec codec) => codec == VideoCodec.H264 || HevcEncoders.Available;
+
+    /// <summary>Re-encodes the part to H.264 or HEVC with the size, frame rate and bit rates asked.</summary>
+    public Task TranscodeAsync(string source, string destination, TimeSpan start, TimeSpan end, VideoEncodeSettings settings,
+        IProgress<double>? progress, CancellationToken cancel) =>
+        RenderAsync(source, destination, start, end, clip => BuildProfile(clip, settings), progress, cancel);
+
+    public async Task<VideoInfo?> ProbeAsync(string path, CancellationToken cancel = default)
+    {
+        try
+        {
+            var file = await StorageFile.GetFileFromPathAsync(Path.GetFullPath(path)).AsTask(cancel).ConfigureAwait(false);
+            var clip = await MediaClip.CreateFromFileAsync(file).AsTask(cancel).ConfigureAwait(false);
+            var video = clip.GetVideoEncodingProperties();
+            double fps = video.FrameRate.Denominator > 0 ? (double)video.FrameRate.Numerator / video.FrameRate.Denominator : 0;
+            return new VideoInfo((int)video.Width, (int)video.Height, fps, clip.EmbeddedAudioTracks.Count > 0, clip.OriginalDuration);
+        }
+        catch (Exception ex) when (ex is not OperationCanceledException)
+        {
+            ErrorLog.Write($"Lecture des propriétés de {path}", ex);
+            return null;
+        }
+    }
+
+    /// <summary>
+    /// Renders the part of the video with the profile made for it into a new file, deleted again if the render
+    /// fails or is cancelled.
+    /// </summary>
+    private static async Task RenderAsync(string source, string destination, TimeSpan start, TimeSpan end,
+        Func<MediaClip, MediaEncodingProfile> profileFor, IProgress<double>? progress, CancellationToken cancel)
+    {
         CheckDestination(source, destination);
         var clip = await MediaClip.CreateFromFileAsync(await StorageFile.GetFileFromPathAsync(Path.GetFullPath(source)));
         var duration = clip.OriginalDuration;
@@ -37,13 +72,14 @@ public sealed class VideoTools : IVideoTools
         clip.TrimTimeFromEnd = duration - end;
         var composition = new MediaComposition();
         composition.Clips.Add(clip);
+        var profile = profileFor(clip);
 
         destination = Path.GetFullPath(destination);
         var folder = await StorageFolder.GetFolderFromPathAsync(Path.GetDirectoryName(destination)!);
         var target = await folder.CreateFileAsync(Path.GetFileName(destination), CreationCollisionOption.FailIfExists);
         try
         {
-            var render = composition.RenderToFileAsync(target, MediaTrimmingPreference.Precise, BuildProfile(clip));
+            var render = composition.RenderToFileAsync(target, MediaTrimmingPreference.Precise, profile);
             var reason = await render.AsTask(cancel, new Progress<double>(percent => progress?.Report(Math.Clamp(percent / 100, 0, 1))));
             if (reason != TranscodeFailureReason.None) throw new InvalidOperationException($"MediaComposition: {reason}");
         }
@@ -140,6 +176,33 @@ public sealed class VideoTools : IVideoTools
         profile.Video.Bitrate = Math.Max(video.Bitrate, estimate);
         if (clip.EmbeddedAudioTracks.Count == 0) profile.Audio = null; // no silent track
         return profile;
+    }
+
+    /// <summary>MP4 (H.264 or HEVC, and AAC) of the size, frame rate and bit rates asked.</summary>
+    private static MediaEncodingProfile BuildProfile(MediaClip clip, VideoEncodeSettings settings)
+    {
+        var profile = settings.Codec == VideoCodec.Hevc
+            ? MediaEncodingProfile.CreateHevc(VideoEncodingQuality.HD1080p)
+            : MediaEncodingProfile.CreateMp4(VideoEncodingQuality.HD1080p);
+        profile.Video.Width = (uint)Math.Max(2, settings.Width & ~1);
+        profile.Video.Height = (uint)Math.Max(2, settings.Height & ~1);
+        var (numerator, denominator) = FrameRate(settings.FramesPerSecond);
+        profile.Video.FrameRate.Numerator = numerator;
+        profile.Video.FrameRate.Denominator = denominator;
+        profile.Video.Bitrate = (uint)Math.Max(100_000, settings.VideoBitrate);
+        // The AAC encoder of Windows takes 96, 128, 160 or 192 kbit/s.
+        profile.Audio = clip.EmbeddedAudioTracks.Count == 0 || settings.AudioBitrate <= 0
+            ? null
+            : AudioEncodingProperties.CreateAac(48000, 2, settings.AudioBitrate >= 128_000 ? 128_000u : 96_000u);
+        return profile;
+    }
+
+    /// <summary>30 → 30/1, 29.97 → 30000/1001.</summary>
+    private static (uint Numerator, uint Denominator) FrameRate(double fps)
+    {
+        if (fps <= 0 || !double.IsFinite(fps)) return (30, 1);
+        if (Math.Abs(fps - Math.Round(fps)) < 0.01) return ((uint)Math.Round(fps), 1);
+        return ((uint)Math.Round(fps * 1001), 1001);
     }
 
     private static void CheckDestination(string source, string destination)

@@ -398,6 +398,30 @@
                             </StackPanel>
                         </StackPanel>
                     </Border>
+                    <TextBlock Classes="card-header" Text="{l:T Settings.Ffmpeg.Header}" />
+                    <Border Classes="card">
+                        <StackPanel>
+                            <!-- Web formats module (ffmpeg): installed on demand on Windows, the system's package on Linux -->
+                            <Border Classes="row last">
+                                <DockPanel>
+                                    <StackPanel Name="FfmpegButtons" DockPanel.Dock="Right" Orientation="Horizontal" Spacing="8" VerticalAlignment="Center">
+                                        <Button Name="FfmpegInstallButton" Content="{l:T Settings.Ffmpeg.Install}" Classes="accent" Padding="12,4"
+                                                Click="OnInstallFfmpeg" IsVisible="False" />
+                                        <Button Name="FfmpegCancelButton" Content="{l:T Common.Cancel}" Classes="flat outlined" Padding="12,4"
+                                                Click="OnCancelFfmpeg" IsVisible="False" />
+                                        <Button Name="FfmpegUninstallButton" Content="{l:T Settings.Ffmpeg.Uninstall}" Classes="flat outlined" Padding="12,4"
+                                                Click="OnUninstallFfmpeg" IsVisible="False" />
+                                    </StackPanel>
+                                    <StackPanel>
+                                        <TextBlock Classes="row-title" Text="{l:T Settings.Ffmpeg.Title}" />
+                                        <TextBlock Name="FfmpegStatus" Classes="row-description" Text="{l:T Settings.Ffmpeg.Checking}" />
+                                        <ProgressBar Name="FfmpegProgress" Classes="thin" Minimum="0" Maximum="1" Margin="0,8,0,0" IsVisible="False" />
+                                        <TextBlock Name="FfmpegFormats" Classes="row-description" Margin="0,4,0,0" IsVisible="False" />
+                                    </StackPanel>
+                                </DockPanel>
+                            </Border>
+                        </StackPanel>
+                    </Border>
                 </StackPanel>
 
                 <!-- Hotkeys -->

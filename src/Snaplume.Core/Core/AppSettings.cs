@@ -59,6 +59,16 @@ public sealed class AppSettings
     /// <summary>Width of the webcam picture, in % of the width of the recorded area.</summary>
     public int VideoWebcamSize { get; set; } = 20;
 
+    // Last choices of the player's "Export / compress" dialog (see Player.WebExportForm).
+    /// <summary>"mp4", "hevc", "av1", "webm" or "webp" (Player.WebFormats.Id).</summary>
+    public string WebExportFormat { get; set; } = "mp4";
+    /// <summary>"high", "medium" or "light", used without a size to reach.</summary>
+    public string WebExportQuality { get; set; } = "medium";
+    /// <summary>"off", "discord", "nitro", "email" or "custom" (Player.SizeTargets).</summary>
+    public string WebExportTarget { get; set; } = "off";
+    /// <summary>Size typed for "custom", in MB.</summary>
+    public double WebExportMegabytes { get; set; } = 10;
+
     /// <summary>
     /// Asks GitHub once a day whether a newer version was published (see <see cref="UpdateChecker"/>). Off by
     /// default: Snaplume contacts nothing unless the user asks for it.
@@ -171,6 +181,14 @@ public sealed class AppSettings
         VideoWebcamCorner = WebcamCorners.FirstOrDefault(c => string.Equals(c, VideoWebcamCorner, StringComparison.OrdinalIgnoreCase))
                             ?? defaults.VideoWebcamCorner;
         VideoWebcamSize = Math.Clamp(VideoWebcamSize, 10, 40);
+        WebExportFormat = Player.WebFormats.Id(Player.WebFormats.FromId(WebExportFormat));
+        WebExportQuality = Player.WebFormats.QualityId(Player.WebFormats.QualityFromId(WebExportQuality));
+        WebExportTarget = WebExportTarget is Player.SizeTargets.Discord or Player.SizeTargets.Nitro or Player.SizeTargets.Email or Player.SizeTargets.Custom
+            ? WebExportTarget
+            : Player.SizeTargets.Off;
+        WebExportMegabytes = double.IsFinite(WebExportMegabytes)
+            ? Math.Clamp(WebExportMegabytes, Player.SizeTargets.MinMegabytes, Player.SizeTargets.MaxMegabytes)
+            : defaults.WebExportMegabytes;
     }
 
     /// <summary>Full path of a folder, or null if it is relative or invalid.</summary>

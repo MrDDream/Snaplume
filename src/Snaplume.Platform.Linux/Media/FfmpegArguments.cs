@@ -1,4 +1,5 @@
 using System.Globalization;
+using Snaplume.Player;
 
 namespace Snaplume.Platform.Linux.Media;
 
@@ -39,38 +40,11 @@ internal static class FfmpegArguments
         _ => new[] { "-c:v", "mpeg4", "-q:v", "3", "-pix_fmt", "yuv420p" },
     };
 
-    /// <summary>Encoder names from "ffmpeg -encoders" (lines like " V....D libx264  libx264 H.264 ...").</summary>
-    public static HashSet<string> ParseEncoders(string text)
-    {
-        var result = new HashSet<string>(StringComparer.Ordinal);
-        bool table = false;
-        foreach (var raw in text.Split('\n'))
-        {
-            var line = raw.Trim();
-            if (line.StartsWith("------", StringComparison.Ordinal))
-            {
-                table = true;
-                continue;
-            }
-            if (!table) continue;
-            var parts = line.Split(' ', StringSplitOptions.RemoveEmptyEntries);
-            if (parts.Length >= 2 && parts[0].Length == 6) result.Add(parts[1]);
-        }
-        return result;
-    }
+    /// <summary>Encoder names from "ffmpeg -encoders" (shared with the web exports, <see cref="FfmpegTools.ParseEncoders"/>).</summary>
+    public static HashSet<string> ParseEncoders(string text) => FfmpegTools.ParseEncoders(text);
 
-    /// <summary>Progress between 0 and 1 from a "-progress" line ("out_time_us=1234567"), or null.</summary>
-    public static double? ParseProgress(string line, TimeSpan duration)
-    {
-        if (duration <= TimeSpan.Zero) return null;
-        foreach (var key in new[] { "out_time_us=", "out_time_ms=" }) // out_time_ms is in microseconds too (historical ffmpeg bug)
-        {
-            if (line.StartsWith(key, StringComparison.Ordinal)
-                && long.TryParse(line.AsSpan(key.Length), NumberStyles.Integer, CultureInfo.InvariantCulture, out long us) && us >= 0)
-                return Math.Clamp(us / 1_000_000.0 / duration.TotalSeconds, 0, 1);
-        }
-        return line.Trim() == "progress=end" ? 1 : null;
-    }
+    /// <summary>Progress between 0 and 1 from a "-progress" line (<see cref="FfmpegTools.ParseProgress"/>), or null.</summary>
+    public static double? ParseProgress(string line, TimeSpan duration) => FfmpegTools.ParseProgress(line, duration);
 
     /// <summary>
     /// When the times are evenly spaced (GIF export), one ffmpeg run produces all the frames with the fps

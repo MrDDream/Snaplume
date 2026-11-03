@@ -467,7 +467,7 @@ public partial class App : Application
         }
     }
 
-    /// <summary>Opens an image in the editor (an animated GIF opens in the default application, a video in the player).</summary>
+    /// <summary>Opens an image in the editor (an animated GIF or WebP opens in the default application, a video in the player).</summary>
     public void OpenEditor(string path)
     {
         try
@@ -478,7 +478,7 @@ public partial class App : Application
                 OpenPlayer(path);
                 return;
             }
-            if (IsAnimatedGif(path))
+            if (IsAnimatedGif(path) || ImageIO.IsAnimation(path))
             {
                 if (!FileOps.OpenWithDefaultApp(path)) ShowError(Loc.T("App.OpenImageFailed", path));
                 return;
@@ -641,6 +641,11 @@ public partial class App : Application
         result.OcrLanguage = current.OcrLanguage;
         result.LastUpdateCheckUtc = current.LastUpdateCheckUtc;
         result.UpdateNotifiedVersion = current.UpdateNotifiedVersion;
+        // The player's export dialog keeps its last choices while the settings are open.
+        result.WebExportFormat = current.WebExportFormat;
+        result.WebExportQuality = current.WebExportQuality;
+        result.WebExportTarget = current.WebExportTarget;
+        result.WebExportMegabytes = current.WebExportMegabytes;
         result.Sanitize();
         bool folderChanged = !string.Equals(current.WorkspaceFolder, result.WorkspaceFolder, PathComparison);
         bool languageChanged = current.Language != result.Language;

@@ -227,8 +227,48 @@ public interface IVideoTools
     /// <summary>A frame near the start of the video, at most <paramref name="size"/> pixels wide or high; null if unreadable.</summary>
     Task<PixelBuffer?> ThumbnailAsync(string path, int size, CancellationToken cancel = default);
 
+    /// <summary>Size, frame rate, sound and length of a video; null if it cannot be read.</summary>
+    Task<VideoInfo?> ProbeAsync(string path, CancellationToken cancel = default);
+
+    /// <summary>
+    /// True when <see cref="TranscodeAsync"/> can make <paramref name="codec"/>: always H.264 on Windows; HEVC when the
+    /// PC has an HEVC encoder (graphics card, or the "HEVC Video Extensions" of the Microsoft Store); H.264 under Linux
+    /// when ffmpeg is installed.
+    /// </summary>
+    bool CanTranscode(VideoCodec codec);
+
+    /// <summary>
+    /// Re-encodes the part between <paramref name="start"/> and <paramref name="end"/> to a new MP4 file (H.264 or
+    /// HEVC, and AAC) with the encoder of the system: the Windows media engine, or ffmpeg under Linux.
+    /// </summary>
+    /// <param name="destination">A new file (never overwritten), deleted again if the encoding fails or is cancelled.</param>
+    /// <param name="progress">Receives 0 to 1.</param>
+    Task TranscodeAsync(string source, string destination, TimeSpan start, TimeSpan end, VideoEncodeSettings settings,
+        IProgress<double>? progress, CancellationToken cancel);
+
     IVideoPlayer CreatePlayer();
 }
+
+/// <summary>What the exports need to know of a video.</summary>
+/// <param name="FramesPerSecond">Average frame rate; 0 when unknown.</param>
+public sealed record VideoInfo(int Width, int Height, double FramesPerSecond, bool HasAudio, TimeSpan Duration);
+
+/// <summary>Picture formats of <see cref="IVideoTools.TranscodeAsync"/>.</summary>
+public enum VideoCodec
+{
+    H264,
+    /// <summary>H.265: about 40 % smaller than H.264, but not played by every browser (Firefox).</summary>
+    Hevc,
+}
+
+/// <summary>Picture and bit rates of a re-encoding (<see cref="IVideoTools.TranscodeAsync"/>).</summary>
+/// <param name="Width">Even number of pixels, like <paramref name="Height"/>.</param>
+/// <param name="VideoBitrate">Bits per second of the picture.</param>
+/// <param name="AudioBitrate">Bits per second of the sound (AAC: 96 000 or more); 0 drops the sound.</param>
+/// <param name="SizeMatters">A file size is aimed at: two passes where the encoder can (ffmpeg).</param>
+/// <param name="Crf">Constant quality for the encoders that have one (ffmpeg), used instead of the bit rate; null when a size is aimed at.</param>
+public sealed record VideoEncodeSettings(VideoCodec Codec, int Width, int Height, double FramesPerSecond, int VideoBitrate, int AudioBitrate,
+    bool SizeMatters, int? Crf = null);
 
 public interface IVideoPlayer : IDisposable
 {
