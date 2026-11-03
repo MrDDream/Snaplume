@@ -123,20 +123,21 @@ public sealed class EffectsLayout
     private readonly IPen? _borderPen;
     private readonly Rect _borderRect;
 
-    internal EffectsLayout(ImageEffects effects, int width, int height)
+    /// <param name="shared">False to build the outline and the shadow apart from the caches (see <see cref="EffectsRenderer.Sample"/>).</param>
+    internal EffectsLayout(ImageEffects effects, int width, int height, bool shared = true)
     {
         Effects = effects;
         Width = width;
         Height = height;
         Padding = effects.GetPadding();
-        var outline = EffectsRenderer.Outline(effects, width, height);
+        var outline = EffectsRenderer.Outline(effects, width, height, shared);
         OutlineGeometry = outline?.Geometry;
 
         var background = effects.Background;
         _background = new ImmutableSolidColorBrush(Color.FromRgb(background.R, background.G, background.B));
 
         if (effects.Shadow && effects.ShadowOpacity > 0)
-            _shadow = EffectsRenderer.Shadow(effects, outline, width, height);
+            _shadow = EffectsRenderer.Shadow(effects, outline, width, height, shared);
 
         if (effects.Border)
         {
@@ -248,6 +249,19 @@ public static class EffectsRenderer
         return Layouts.GetOrAdd((effects, width, height), () => new EffectsLayout(effects, width, height));
     }
 
+    /// <summary>
+    /// Layout for a small sample of the effects (the gallery of border presets), built apart from the caches:
+    /// drawing the samples of many effects does not push those of the edited image out of them. Null when there is no effect.
+    /// </summary>
+    /// <exception cref="InvalidDataException">The output, margins included, would be too big.</exception>
+    public static EffectsLayout? Sample(ImageEffects effects, int width, int height)
+    {
+        if (effects.IsEmpty || width < 1 || height < 1) return null;
+        var padding = effects.GetPadding();
+        ImageIO.CheckSize(width + padding.Left + padding.Right, height + padding.Top + padding.Bottom);
+        return new EffectsLayout(effects, width, height, shared: false);
+    }
+
     private static OutlineKey KeyOf(ImageEffects effects, int width, int height)
     {
         double radius = Math.Min(effects.CornerRadius, Math.Min(width, height) / 2.0);
@@ -259,10 +273,10 @@ public static class EffectsRenderer
     }
 
     /// <summary>Outline with the rounded corners and the torn edges, or null for a plain rectangle.</summary>
-    internal static ImageOutline? Outline(ImageEffects effects, int width, int height)
+    internal static ImageOutline? Outline(ImageEffects effects, int width, int height, bool shared = true)
     {
         var key = KeyOf(effects, width, height);
-        return Outlines.GetOrAdd(key, () => BuildOutline(key));
+        return shared ? Outlines.GetOrAdd(key, () => BuildOutline(key)) : BuildOutline(key);
     }
 
     private static ImageOutline? BuildOutline(OutlineKey key)
@@ -466,8 +480,9 @@ public static class EffectsRenderer
     }
 
     /// <summary>The blurred mask of the shadow, shared by the layouts that differ only by opacity, offset or border.</summary>
-    internal static ShadowMask Shadow(ImageEffects effects, ImageOutline? outline, int width, int height)
+    internal static ShadowMask Shadow(ImageEffects effects, ImageOutline? outline, int width, int height, bool shared = true)
     {
+        if (!shared) return BuildShadow(effects.ShadowBlur, outline?.Path, width, height);
         var key = (KeyOf(effects, width, height), effects.ShadowBlur);
         return Shadows.GetOrAdd(key, () => BuildShadow(effects.ShadowBlur, outline?.Path, width, height));
     }

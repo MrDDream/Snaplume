@@ -387,6 +387,36 @@ public sealed class EditorDocument
     /// <summary>Base image with all annotations burnt in, and the image effects around it (Avalonia rendering).</summary>
     public PixelBuffer Flatten() => RenderImage(Annotations, Effects);
 
+    /// <summary>
+    /// Base image with its annotations, without the effects, reduced to fit in <paramref name="maxWidth"/> ×
+    /// <paramref name="maxHeight"/> (never enlarged): the sample of the border presets.
+    /// </summary>
+    public PixelBuffer Thumbnail(int maxWidth, int maxHeight)
+    {
+        int w = BaseImage.Width, h = BaseImage.Height;
+        double scale = Math.Min(1, Math.Min((double)maxWidth / w, (double)maxHeight / h));
+        int width = Math.Max(1, (int)Math.Round(w * scale)), height = Math.Max(1, (int)Math.Round(h * scale));
+        // Reduced by Skia (sharper than a reduction while drawing), then the annotations drawn over it at the same scale.
+        var reduced = scale < 1 ? new EditorImage(ImageIO.Resize(BaseImage.Pixels, width, height)) : null;
+        if (Annotations.Count == 0) return reduced?.Pixels ?? new PixelBuffer(w, h, (byte[])BaseImage.Pixels.Pixels.Clone());
+        try
+        {
+            using var target = new RenderTargetBitmap(new PixelSize(width, height), AvaloniaImages.Dpi);
+            using (var dc = target.CreateDrawingContext())
+            {
+                dc.DrawImage((reduced ?? BaseImage).Bitmap, new Rect(0, 0, width, height));
+                using (dc.PushTransform(Matrix.CreateScale((double)width / w, (double)height / h)))
+                using (dc.PushClip(BaseImage.Bounds))
+                    AnnotationRenderer.Render(dc, BaseImage, Annotations);
+            }
+            return AvaloniaImages.ToPixelBuffer(target);
+        }
+        finally
+        {
+            reduced?.ReleaseBitmaps();
+        }
+    }
+
     /// <summary>Base image with only the pixelated areas burnt in: what is kept in the sidecar folder.</summary>
     internal PixelBuffer RedactedBase()
     {
