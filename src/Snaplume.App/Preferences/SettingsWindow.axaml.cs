@@ -29,6 +29,8 @@ public partial class SettingsWindow : Window
     private readonly TaskCompletionSource<bool> _closed = new();
     /// <summary>The camera list is filled: until then, the saved camera is kept as is.</summary>
     private bool _webcamsLoaded;
+    /// <summary>The microphone list is filled: until then, the saved microphone is kept as is.</summary>
+    private bool _microphonesLoaded;
     private bool _saved;
     /// <summary>The newer version found by "Check for updates".</summary>
     private UpdateChecker.Release? _update;
@@ -40,7 +42,8 @@ public partial class SettingsWindow : Window
     {
     }
 
-    public SettingsWindow(AppSettings settings)
+    /// <param name="page">Page shown first ("PageVideo"...); the one shown last when null.</param>
+    public SettingsWindow(AppSettings settings, string? page = null)
     {
         InitializeComponent();
         Result = settings;
@@ -80,7 +83,11 @@ public partial class SettingsWindow : Window
 
         SystemAudioCheck.IsChecked = settings.VideoSystemAudio;
         MicrophoneCheck.IsChecked = settings.VideoMicrophone;
+        MicrophoneCheck.IsCheckedChanged += (_, _) => MicrophoneOptions.IsEnabled = MicrophoneCheck.IsChecked == true;
+        MicrophoneOptions.IsEnabled = settings.VideoMicrophone;
+        _ = LoadMicrophonesAsync(settings.VideoMicrophoneDevice);
         ClicksCheck.IsChecked = settings.VideoShowClicks;
+        ZoomCheck.IsChecked = settings.VideoClickZoom;
         var framerates = Framerates.Select(f => new ChoiceItem(f, Loc.T("Settings.Video.FramerateValue", f))).ToList();
         FramerateBox.ItemsSource = framerates;
         FramerateBox.SelectedItem = framerates.FirstOrDefault(f => Equals(f.Value, settings.VideoFramerate)) ?? framerates.First(f => Equals(f.Value, 30));
@@ -114,7 +121,7 @@ public partial class SettingsWindow : Window
 
         AdaptToPlatform();
         Nav.SelectionChanged += OnNavChanged;
-        ShowPage(_lastPage.Length > 0 ? _lastPage : nameof(PageGeneral));
+        ShowPage(page ?? (_lastPage.Length > 0 ? _lastPage : nameof(PageGeneral)));
         UpdatePrefixExample();
         Closed += (_, _) => _closed.TrySetResult(_saved);
     }
@@ -130,6 +137,11 @@ public partial class SettingsWindow : Window
         {
             ClicksRow.IsEnabled = false;
             ClicksDescription.Text = Loc.T("Settings.Video.ShowClicksUnavailable");
+        }
+        if (!platform.Has(PlatformFeatures.ClickZoom))
+        {
+            ZoomRow.IsEnabled = false;
+            ZoomDescription.Text = Loc.T("Recording.ZoomUnavailable");
         }
 
         // Without detection (Wayland), an area is chosen by dragging only.
@@ -201,10 +213,42 @@ public partial class SettingsWindow : Window
         _webcamsLoaded = true;
     }
 
+    /// <summary>
+    /// Fills the microphone list like the camera list (off the UI thread); the row is hidden when the recorder only
+    /// takes the system's default microphone.
+    /// </summary>
+    private async Task LoadMicrophonesAsync(string saved)
+    {
+        var options = new List<ChoiceItem> { new("", Loc.T("Recording.MicrophoneDefault")) };
+        MicrophoneDeviceBox.ItemsSource = options;
+        MicrophoneDeviceBox.SelectedItem = options[0];
+        List<ChoiceItem> found;
+        try
+        {
+            found = !AppServices.HasPlatform ? new List<ChoiceItem>() : await Task.Run(() => AppServices.Platform.Recorder.Microphones()
+                .Select(m => new ChoiceItem(m.Id, m.Name))
+                .ToList());
+        }
+        catch (Exception ex)
+        {
+            ErrorLog.Write("Liste des microphones", ex);
+            found = new List<ChoiceItem>();
+        }
+        var all = new List<ChoiceItem>(options);
+        all.AddRange(found);
+        if (saved.Length > 0 && found.All(m => !string.Equals((string)m.Value, saved, StringComparison.OrdinalIgnoreCase)))
+            all.Add(new ChoiceItem(saved, Loc.T("Recording.MicrophoneDisconnected")));
+        MicrophoneDeviceBox.ItemsSource = all;
+        MicrophoneDeviceBox.SelectedItem = all.FirstOrDefault(m => string.Equals((string)m.Value, saved, StringComparison.OrdinalIgnoreCase)) ?? all[0];
+        MicrophoneDeviceRow.IsVisible = all.Count > 1;
+        MicrophoneRow.Classes.Set("last", !MicrophoneDeviceRow.IsVisible);
+        _microphonesLoaded = true;
+    }
+
     private Control[] Pages => new Control[] { PageGeneral, PageCapture, PageVideo, PageHotkeys, PageAbout };
 
     /// <summary>Selects the navigation entry whose Tag is the page name.</summary>
-    private void ShowPage(string page)
+    internal void ShowPage(string page)
     {
         var entries = Nav.Items.OfType<ListBoxItem>().ToList();
         Nav.SelectedItem = entries.FirstOrDefault(i => i.Tag as string == page) ?? entries.First();
@@ -501,7 +545,10 @@ public partial class SettingsWindow : Window
         Result.DelaySeconds = (DelayBox.SelectedItem as ChoiceItem)?.Value as int? ?? 3;
         Result.VideoSystemAudio = SystemAudioCheck.IsChecked == true;
         Result.VideoMicrophone = MicrophoneCheck.IsChecked == true;
+        if (_microphonesLoaded) Result.VideoMicrophoneDevice = (MicrophoneDeviceBox.SelectedItem as ChoiceItem)?.Value as string ?? "";
         Result.VideoShowClicks = ClicksCheck.IsChecked == true;
+        // Kept as it was where the system cannot zoom (the row is disabled).
+        if (ZoomRow.IsEnabled) Result.VideoClickZoom = ZoomCheck.IsChecked == true;
         Result.VideoFramerate = (FramerateBox.SelectedItem as ChoiceItem)?.Value as int? ?? 30;
         Result.VideoWebcam = WebcamCheck.IsChecked == true;
         if (_webcamsLoaded) Result.VideoWebcamDevice = (WebcamDeviceBox.SelectedItem as ChoiceItem)?.Value as string ?? "";

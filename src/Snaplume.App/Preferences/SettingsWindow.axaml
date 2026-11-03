@@ -302,13 +302,21 @@
                                     </StackPanel>
                                 </DockPanel>
                             </Border>
-                            <Border Classes="row last">
+                            <Border Name="MicrophoneRow" Classes="row last">
                                 <DockPanel>
                                     <ToggleSwitch Name="MicrophoneCheck" DockPanel.Dock="Right" />
                                     <StackPanel>
                                         <TextBlock Classes="row-title" Text="{l:T Settings.Video.Microphone}" />
                                         <TextBlock Classes="row-description" Text="{l:T Settings.Video.MicrophoneDescription}" />
                                     </StackPanel>
+                                </DockPanel>
+                            </Border>
+                            <!-- Which microphone: hidden when the recorder only takes the default one -->
+                            <Border Name="MicrophoneDeviceRow" Classes="row last" IsVisible="False">
+                                <DockPanel Name="MicrophoneOptions" Classes="dimmable">
+                                    <ComboBox Name="MicrophoneDeviceBox" DockPanel.Dock="Right" Width="230"
+                                              DisplayMemberBinding="{Binding Label, x:DataType=l:ChoiceItem}" />
+                                    <TextBlock Classes="row-title" Text="{l:T Recording.MicrophoneDevice}" VerticalAlignment="Center" />
                                 </DockPanel>
                             </Border>
                         </StackPanel>
@@ -322,6 +330,15 @@
                                     <StackPanel>
                                         <TextBlock Classes="row-title" Text="{l:T Settings.Video.ShowClicks}" />
                                         <TextBlock Name="ClicksDescription" Classes="row-description" Text="{l:T Settings.Video.ShowClicksDescription}" />
+                                    </StackPanel>
+                                </DockPanel>
+                            </Border>
+                            <Border Classes="row">
+                                <DockPanel Name="ZoomRow" Classes="dimmable">
+                                    <ToggleSwitch Name="ZoomCheck" DockPanel.Dock="Right" />
+                                    <StackPanel>
+                                        <TextBlock Classes="row-title" Text="{l:T Recording.ZoomSetting}" />
+                                        <TextBlock Name="ZoomDescription" Classes="row-description" Text="{l:T Recording.ZoomDescription}" />
                                     </StackPanel>
                                 </DockPanel>
                             </Border>

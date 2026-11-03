@@ -8,7 +8,7 @@ namespace Snaplume.Platform.Linux.X11;
 /// Highlights mouse clicks during an X11 recording: XInput 2 raw button events tell about every click without
 /// grabbing anything, and a small ring-shaped override-redirect window is shown under the pointer for a moment.
 /// ximagesrc records it like any other window. The ring is cut with XShape, so it works without a compositor,
-/// and its input shape is empty, so it never takes the click.
+/// and its input shape is empty, so it never takes the click. The same clicks drive the zoom on clicks.
 /// </summary>
 internal sealed unsafe class X11ClickHighlighter : IDisposable
 {
@@ -19,11 +19,17 @@ internal sealed unsafe class X11ClickHighlighter : IDisposable
     private const uint Color = 0xFFC107;
 
     private readonly Thread? _thread;
+    private readonly bool _showRing;
+    private readonly Action<int, int>? _clicked;
     private volatile bool _stopping;
     private IntPtr _display;
 
-    public X11ClickHighlighter()
+    /// <param name="showRing">Shows the ring under the pointer at each click.</param>
+    /// <param name="clicked">Called on the watching thread with the screen position of each left, middle or right click.</param>
+    public X11ClickHighlighter(bool showRing = true, Action<int, int>? clicked = null)
     {
+        _showRing = showRing;
+        _clicked = clicked;
         try
         {
             X11Errors.Install();
@@ -53,8 +59,9 @@ internal sealed unsafe class X11ClickHighlighter : IDisposable
             maskBytes[XI_RawButtonPress >> 3] |= (byte)(1 << (XI_RawButtonPress & 7));
             var mask = new XIEventMask { DeviceId = XIAllMasterDevices, MaskLength = 4, Mask = maskBytes };
             XISelectEvents(d, root, &mask, 1);
-            if (XShapeQueryExtension(d, out _, out _) == 0) return;
-            var ring = CreateRing(d, root);
+            // Without XShape the ring would be a square: clicks are only reported then.
+            nuint ring = _showRing && XShapeQueryExtension(d, out _, out _) != 0 ? CreateRing(d, root) : 0;
+            if (ring == 0 && _clicked == null) return;
             XFlush(d);
 
             var xevent = stackalloc byte[XEventSize];
@@ -75,10 +82,14 @@ internal sealed unsafe class X11ClickHighlighter : IDisposable
                         int button = *(int*)(raw + XOffsets.RawDetail);
                         if (button is < 1 or > 3) continue; // 4-7 are wheel steps
                         if (XQueryPointer(d, root, out _, out _, out int x, out int y, out _, out _, out _) == 0) continue;
-                        XMoveWindow(d, ring, x - Radius, y - Radius);
-                        XMapRaised(d, ring);
-                        XFlush(d);
-                        hideAt = Environment.TickCount64 + VisibleMs;
+                        if (ring != 0)
+                        {
+                            XMoveWindow(d, ring, x - Radius, y - Radius);
+                            XMapRaised(d, ring);
+                            XFlush(d);
+                            hideAt = Environment.TickCount64 + VisibleMs;
+                        }
+                        Report(x, y);
                     }
                     finally
                     {
@@ -93,12 +104,25 @@ internal sealed unsafe class X11ClickHighlighter : IDisposable
                 }
                 LibC.poll(&pollFd, 1, hideAt != 0 ? 20 : 100);
             }
-            XDestroyWindow(d, ring);
+            if (ring != 0) XDestroyWindow(d, ring);
             XFlush(d);
         }
         catch (Exception ex)
         {
             ErrorLog.Write("Mise en évidence des clics", ex);
+        }
+    }
+
+    private void Report(int x, int y)
+    {
+        if (_clicked == null) return;
+        try
+        {
+            _clicked(x, y);
+        }
+        catch (Exception ex)
+        {
+            ErrorLog.Write("Zoom sur les clics", ex);
         }
     }
 

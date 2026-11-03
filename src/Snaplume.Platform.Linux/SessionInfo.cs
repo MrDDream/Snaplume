@@ -34,7 +34,7 @@ internal static class SessionInfo
         if (session == SessionKind.X11)
             return PlatformFeatures.WindowDetection | PlatformFeatures.ScrollingCapture | PlatformFeatures.GlobalHotkeys
                    | PlatformFeatures.ClickHighlight | PlatformFeatures.RecordAnyArea | PlatformFeatures.StartWithSession
-                   | PlatformFeatures.ActiveWindow;
+                   | PlatformFeatures.ActiveWindow | PlatformFeatures.ClickZoom;
         var features = PlatformFeatures.StartWithSession;
         if (globalShortcutsPortal) features |= PlatformFeatures.GlobalHotkeys;
         if (remoteDesktopPortal) features |= PlatformFeatures.ScrollingCapture;

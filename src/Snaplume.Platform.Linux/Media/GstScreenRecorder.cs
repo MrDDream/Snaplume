@@ -3,6 +3,7 @@ using Snaplume.Core;
 using Snaplume.Platform.Linux.Interop;
 using Snaplume.Platform.Linux.Wayland;
 using Snaplume.Platform.Linux.X11;
+using Snaplume.Recording;
 
 namespace Snaplume.Platform.Linux.Media;
 
@@ -18,6 +19,8 @@ internal sealed class GstScreenRecorderFactory : IScreenRecorderFactory
     public GstScreenRecorderFactory(bool wayland) => _wayland = wayland;
 
     public IReadOnlyList<WebcamInfo> Webcams() => Media.Webcams.List();
+
+    public IReadOnlyList<AudioDeviceInfo> Microphones() => AudioInputs.List();
 
     public async Task<IScreenRecording> StartAsync(RecordingOptions options, string outputPath, CancellationToken cancel = default)
     {
@@ -55,13 +58,28 @@ internal sealed class GstScreenRecorderFactory : IScreenRecorderFactory
                 webcam = RecordingPipeline.PlaceWebcam(device.Id, cam.Corner, cam.SizePercent, width, height);
         }
 
+        // Zoom on clicks crops the X11 picture while recording (videocrop) and scales it back (videoscale).
+        bool zoom = options.ClickZoom && !_wayland && width >= 4 && height >= 4;
+        if (zoom && !(GStreamerRuntime.Has("videocrop") && GStreamerRuntime.Has("videoscale")))
+        {
+            ErrorLog.Write("Zoom sur les clics", "Éléments GStreamer videocrop/videoscale absents : vidéo sans zoom");
+            zoom = false;
+        }
+        var microphoneDevice = options.Microphone ? options.MicrophoneDevice : "";
+        // Off the UI thread: pactl may be slow to answer.
+        if (microphoneDevice.Length > 0 && (await Task.Run(AudioInputs.List, cancel).ConfigureAwait(false)).All(m => m.Id != microphoneDevice))
+        {
+            ErrorLog.Write("Microphone", $"Microphone introuvable, celui par défaut est utilisé : {microphoneDevice}");
+            microphoneDevice = "";
+        }
+
         try
         {
             GstRecording recording;
             try
             {
                 recording = GstRecording.Start(RecordingPipeline.Build(source, options.Framerate, videoEncoder, audioEncoder,
-                    options.SystemAudio, options.Microphone, webcam, width, height), outputPath);
+                    options.SystemAudio, options.Microphone, webcam, width, height, zoom), outputPath, microphoneDevice);
             }
             catch (InvalidOperationException ex) when (webcam != null)
             {
@@ -69,10 +87,13 @@ internal sealed class GstScreenRecorderFactory : IScreenRecorderFactory
                 ErrorLog.Write("Webcam pendant l'enregistrement", ex);
                 webcamDropped = true;
                 recording = GstRecording.Start(RecordingPipeline.Build(source, options.Framerate, videoEncoder, audioEncoder,
-                    options.SystemAudio, options.Microphone, null, width, height), outputPath);
+                    options.SystemAudio, options.Microphone, null, width, height, zoom), outputPath, microphoneDevice);
             }
             recording.WebcamDropped = webcamDropped;
-            recording.Attach(cast, options.ShowClicks && !_wayland ? new X11ClickHighlighter() : null);
+            var driver = zoom ? recording.CreateZoom(RecordingPipeline.EvenArea(options.Area)) : null;
+            bool showClicks = options.ShowClicks && !_wayland;
+            var clicks = showClicks || driver != null ? new X11ClickHighlighter(showClicks, driver != null ? driver.OnClick : null) : null;
+            recording.Attach(cast, clicks, driver);
             return recording;
         }
         catch
@@ -95,6 +116,9 @@ internal sealed class GstRecording : IScreenRecording
     private Thread? _busThread;
     private ScreenCastSession? _cast;
     private X11ClickHighlighter? _clicks;
+    private ClickZoomDriver? _zoom;
+    /// <summary>The videocrop element of the zoom on clicks (a reference of ours), or zero.</summary>
+    private IntPtr _crop;
     private bool _stopping;
     private bool _paused;
 
@@ -110,8 +134,9 @@ internal sealed class GstRecording : IScreenRecording
     public bool WebcamDropped { get; set; }
     public bool CanPause => true;
 
+    /// <param name="microphoneDevice">Sound server name of the microphone, empty for the default one.</param>
     /// <exception cref="InvalidOperationException">The pipeline could not be built or started.</exception>
-    public static GstRecording Start(string description, string outputPath)
+    public static GstRecording Start(string description, string outputPath, string microphoneDevice = "")
     {
         var pipeline = Gst.gst_parse_launch(description, out var error);
         if (pipeline == IntPtr.Zero) throw new InvalidOperationException("GStreamer: " + Gst.TakeError(error));
@@ -123,6 +148,17 @@ internal sealed class GstRecording : IScreenRecording
             if (sink == IntPtr.Zero) throw new InvalidOperationException("GStreamer: no file sink");
             Gst.SetString(sink, "location", outputPath);
             Gst.gst_object_unref(sink);
+            if (microphoneDevice.Length > 0)
+            {
+                // Set as a property, like the file name: a name from the sound server is never parsed.
+                var mic = Gst.gst_bin_get_by_name(pipeline, RecordingPipeline.MicrophoneElement);
+                if (mic != IntPtr.Zero)
+                {
+                    Gst.SetString(mic, "device", microphoneDevice);
+                    Gst.gst_object_unref(mic);
+                }
+            }
+            recording._crop = Gst.gst_bin_get_by_name(pipeline, RecordingPipeline.ZoomElement);
 
             Gst.gst_element_set_state(pipeline, Gst.StatePlaying);
             // Live sources: the change completes once every source produced (or failed to open).
@@ -140,10 +176,33 @@ internal sealed class GstRecording : IScreenRecording
         return recording;
     }
 
-    internal void Attach(ScreenCastSession? cast, X11ClickHighlighter? clicks)
+    internal void Attach(ScreenCastSession? cast, X11ClickHighlighter? clicks, ClickZoomDriver? zoom)
     {
-        _cast = cast;
-        _clicks = clicks;
+        lock (_gate)
+        {
+            _cast = cast;
+            _clicks = clicks;
+            _zoom = zoom;
+        }
+    }
+
+    /// <summary>The zoom on clicks of this pipeline, or null when it was built without its videocrop.</summary>
+    /// <param name="area">Recorded area, absolute X11 pixels (where the clicks are).</param>
+    internal ClickZoomDriver? CreateZoom(PixelRect area) => _crop == IntPtr.Zero ? null : new ClickZoomDriver(area, view => ApplyZoom(area, view));
+
+    /// <summary>Crops the picture to the view (relative to the area); videoscale brings it back to the size of the video.</summary>
+    private bool ApplyZoom(PixelRect area, PixelRect view)
+    {
+        lock (_gate)
+        {
+            if (_pipeline == IntPtr.Zero || _crop == IntPtr.Zero || _stopping) return false;
+            if (_paused) return false;
+            Gst.SetInt(_crop, "left", view.X);
+            Gst.SetInt(_crop, "top", view.Y);
+            Gst.SetInt(_crop, "right", Math.Max(0, area.Width - view.Right));
+            Gst.SetInt(_crop, "bottom", Math.Max(0, area.Height - view.Bottom));
+            return true;
+        }
     }
 
     private string? PopError()
@@ -217,6 +276,7 @@ internal sealed class GstRecording : IScreenRecording
             if (_pipeline == IntPtr.Zero || _stopping || _paused) return;
             Gst.gst_element_set_state(_pipeline, Gst.StatePaused);
             _paused = true;
+            if (_zoom != null) _zoom.Paused = true;
         }
     }
 
@@ -227,6 +287,7 @@ internal sealed class GstRecording : IScreenRecording
             if (_pipeline == IntPtr.Zero || _stopping || !_paused) return;
             Gst.gst_element_set_state(_pipeline, Gst.StatePlaying);
             _paused = false;
+            if (_zoom != null) _zoom.Paused = false;
         }
     }
 
@@ -249,8 +310,23 @@ internal sealed class GstRecording : IScreenRecording
 
     private void Release()
     {
+        X11ClickHighlighter? clicks;
+        ClickZoomDriver? zoom;
         lock (_gate)
         {
+            (clicks, _clicks) = (_clicks, null);
+            (zoom, _zoom) = (_zoom, null);
+        }
+        // Outside the lock: the zoom waits for a view being applied, which takes the lock.
+        clicks?.Dispose();
+        zoom?.Dispose();
+        lock (_gate)
+        {
+            if (_crop != IntPtr.Zero)
+            {
+                Gst.gst_object_unref(_crop);
+                _crop = IntPtr.Zero;
+            }
             if (_pipeline != IntPtr.Zero)
             {
                 Gst.gst_element_set_state(_pipeline, Gst.StateNull);
@@ -262,8 +338,6 @@ internal sealed class GstRecording : IScreenRecording
                 Gst.gst_object_unref(_bus);
                 _bus = IntPtr.Zero;
             }
-            _clicks?.Dispose();
-            _clicks = null;
             _cast?.Dispose();
             _cast = null;
         }

@@ -38,12 +38,14 @@ public class LinuxPlatformTests
         var x11 = SessionInfo.Features(SessionKind.X11, false, false);
         Assert.True(x11.HasFlag(PlatformFeatures.WindowDetection | PlatformFeatures.GlobalHotkeys | PlatformFeatures.RecordAnyArea));
         Assert.False(x11.HasFlag(PlatformFeatures.ExcludeFromCapture));
+        Assert.True(x11.HasFlag(PlatformFeatures.ClickZoom));
 
         var bare = SessionInfo.Features(SessionKind.Wayland, false, false);
         Assert.Equal(PlatformFeatures.StartWithSession, bare);
         var full = SessionInfo.Features(SessionKind.Wayland, true, true);
         Assert.Equal(PlatformFeatures.StartWithSession | PlatformFeatures.GlobalHotkeys | PlatformFeatures.ScrollingCapture, full);
         Assert.False(full.HasFlag(PlatformFeatures.ClickHighlight));
+        Assert.False(full.HasFlag(PlatformFeatures.ClickZoom));
         Assert.False(full.HasFlag(PlatformFeatures.ActiveWindow));
     }
 

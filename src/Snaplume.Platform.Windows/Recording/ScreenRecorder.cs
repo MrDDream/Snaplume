@@ -3,6 +3,7 @@ using ScreenRecorderLib;
 using Snaplume.Capturing;
 using Snaplume.Core;
 using Snaplume.Platform.Windows.Capturing;
+using Snaplume.Recording;
 
 namespace Snaplume.Platform.Windows.Recording;
 
@@ -21,6 +22,22 @@ public sealed class ScreenRecorderFactory : IScreenRecorderFactory
         {
             ErrorLog.Write("Liste des webcams", ex);
             return Array.Empty<WebcamInfo>();
+        }
+    }
+
+    public IReadOnlyList<AudioDeviceInfo> Microphones()
+    {
+        try
+        {
+            return Recorder.GetSystemAudioCaptureDevices()
+                .Where(d => !string.IsNullOrEmpty(d.DeviceName))
+                .Select(d => new AudioDeviceInfo(d.DeviceName, string.IsNullOrWhiteSpace(d.FriendlyName) ? d.DeviceName : d.FriendlyName))
+                .ToList();
+        }
+        catch (Exception ex)
+        {
+            ErrorLog.Write("Liste des microphones", ex);
+            return Array.Empty<AudioDeviceInfo>();
         }
     }
 
@@ -45,6 +62,10 @@ public sealed class ScreenRecorderFactory : IScreenRecorderFactory
 /// One recording. When the webcam cannot be opened (busy in another application, unplugged), the recording starts
 /// again without it rather than being lost, and <see cref="WebcamDropped"/> becomes true.
 /// </summary>
+/// <remarks>
+/// Zoom on clicks: the output frame size is fixed at the size of the area, and the source rectangle is changed
+/// while recording (dynamic options of ScreenRecorderLib), so the part of the screen around a click fills the video.
+/// </remarks>
 internal sealed class ScreenRecording : IScreenRecording
 {
     /// <summary>
@@ -58,6 +79,12 @@ internal sealed class ScreenRecording : IScreenRecording
     private readonly string _outputPath;
     private readonly Stopwatch _sinceStart = new();
     private Recorder? _recorder;
+    /// <summary>The recorded part of the desktop, relative to the monitors the recorder captures (its source rectangle).</summary>
+    private PixelRect _crop;
+    /// <summary>Top-left corner of the monitors the recorder captures, absolute: <see cref="_crop"/> is relative to it.</summary>
+    private (int X, int Y) _cropOrigin;
+    private ClickZoomDriver? _zoom;
+    private MouseClickHook? _clicks;
     /// <summary>The current recorder inlays the webcam.</summary>
     private bool _webcamActive;
     private bool _stopping;
@@ -132,6 +159,47 @@ internal sealed class ScreenRecording : IScreenRecording
                 StartRecorder(null);
             }
         }
+        if (_options.ClickZoom) StartClickZoom();
+    }
+
+    /// <summary>Watches the clicks and moves the source rectangle; without the hook, the video is recorded without zoom.</summary>
+    private void StartClickZoom()
+    {
+        PixelRect area;
+        lock (_lock)
+        {
+            // The area as the recorder sees it, back in absolute coordinates for the clicks.
+            area = _crop.Offset(_cropOrigin.X, _cropOrigin.Y);
+        }
+        if (area.Width < 4 || area.Height < 4) return;
+        var zoom = new ClickZoomDriver(area, ApplyZoom);
+        var clicks = MouseClickHook.Start(zoom.OnClick);
+        if (clicks == null)
+        {
+            zoom.Dispose();
+            return;
+        }
+        lock (_lock)
+        {
+            _zoom = zoom;
+            _clicks = clicks;
+        }
+    }
+
+    /// <summary>
+    /// Records the part of the area given by the zoom (relative to the area); called on the zoom's timer thread.
+    /// False while the recorder cannot take it (paused, being replaced): the zoom tries again.
+    /// </summary>
+    private bool ApplyZoom(PixelRect view)
+    {
+        lock (_lock)
+        {
+            if (_recorder is not { Status: RecorderStatus.Recording } recorder || _stopping) return false;
+            var source = new ScreenRect(_crop.X + view.X, _crop.Y + view.Y, view.Width, view.Height);
+            if (!recorder.GetDynamicOptionsBuilder().SetDynamicOutputOptions(new DynamicOutputOptions { SourceRect = source }).Apply())
+                throw new InvalidOperationException("ScreenRecorderLib refused the new source rectangle");
+            return true;
+        }
     }
 
     public void Pause()
@@ -139,6 +207,7 @@ internal sealed class ScreenRecording : IScreenRecording
         lock (_lock)
         {
             if (_recorder?.Status == RecorderStatus.Recording) _recorder.Pause();
+            if (_zoom != null) _zoom.Paused = true;
         }
     }
 
@@ -147,6 +216,7 @@ internal sealed class ScreenRecording : IScreenRecording
         lock (_lock)
         {
             if (_recorder?.Status == RecorderStatus.Paused) _recorder.Resume();
+            if (_zoom != null) _zoom.Paused = false;
         }
     }
 
@@ -164,21 +234,30 @@ internal sealed class ScreenRecording : IScreenRecording
     public void Dispose()
     {
         Recorder? recorder;
+        MouseClickHook? clicks;
+        ClickZoomDriver? zoom;
         lock (_lock)
         {
             if (_disposed) return;
             _disposed = true;
             recorder = _recorder;
             _recorder = null;
+            (clicks, _clicks) = (_clicks, null);
+            (zoom, _zoom) = (_zoom, null);
         }
-        // Outside the lock: disposing may wait for the library's thread, which may be waiting for the lock in a callback.
+        // Outside the lock: disposing may wait for the library's thread, which may be waiting for the lock in a callback;
+        // the zoom waits for a view being applied, which takes the lock too.
+        clicks?.Dispose();
+        zoom?.Dispose();
         recorder?.Dispose();
     }
 
     /// <summary>Creates the recorder and starts writing the file. Called under the lock.</summary>
     private void StartRecorder(WebcamOptions? webcam)
     {
-        var options = BuildOptions(_options);
+        var (options, crop, origin) = BuildOptions(_options);
+        _crop = crop;
+        _cropOrigin = origin;
         _webcamActive = webcam != null && AddWebcamOverlay(options, webcam);
         var recorder = Recorder.CreateRecorder(options);
         // Events of a recorder already replaced (webcam dropped) are ignored.
@@ -341,7 +420,10 @@ internal sealed class ScreenRecording : IScreenRecording
         return true;
     }
 
-    private static RecorderOptions BuildOptions(RecordingOptions settings)
+    /// <returns>
+    /// The options, the source rectangle (relative to the captured monitors) and the top-left corner of those monitors.
+    /// </returns>
+    private static (RecorderOptions Options, PixelRect Crop, (int X, int Y) Origin) BuildOptions(RecordingOptions settings)
     {
         // H.264 needs even dimensions.
         var area = settings.Area with { Width = Math.Max(2, settings.Area.Width & ~1), Height = Math.Max(2, settings.Area.Height & ~1) };
@@ -369,16 +451,24 @@ internal sealed class ScreenRecording : IScreenRecording
 
         var audioSources = new List<AudioSourceBase>();
         if (settings.SystemAudio && LoopbackAudioSource.Default is { } speakers) audioSources.Add(speakers);
-        if (settings.Microphone && CaptureAudioSource.Default is { } microphone) audioSources.Add(microphone);
+        if (settings.Microphone && Microphone(settings.MicrophoneDevice) is { } microphone) audioSources.Add(microphone);
+
+        var output = new OutputOptions
+        {
+            RecorderMode = RecorderMode.Video,
+            SourceRect = new ScreenRect(crop.X, crop.Y, crop.Width, crop.Height),
+        };
+        if (settings.ClickZoom)
+        {
+            // A smaller source rectangle (zoomed in) is scaled to this size: the video keeps its size.
+            output.OutputFrameSize = new ScreenSize(crop.Width, crop.Height);
+            output.Stretch = StretchMode.Fill;
+        }
 
         var options = new RecorderOptions
         {
             SourceOptions = new SourceOptions(),
-            OutputOptions = new OutputOptions
-            {
-                RecorderMode = RecorderMode.Video,
-                SourceRect = new ScreenRect(crop.X, crop.Y, crop.Width, crop.Height),
-            },
+            OutputOptions = output,
             AudioOptions = new AudioOptions
             {
                 IsAudioEnabled = audioSources.Count > 0,
@@ -400,6 +490,25 @@ internal sealed class ScreenRecording : IScreenRecording
             },
         };
         options.SourceOptions.RecordingSources.AddRange(sources);
-        return options;
+        return (options, crop, (origin.X, origin.Y));
+    }
+
+    /// <summary>The chosen microphone when it is connected, else the system's default one (null if there is none).</summary>
+    private static CaptureAudioSource? Microphone(string device)
+    {
+        if (!string.IsNullOrEmpty(device))
+        {
+            try
+            {
+                if (Recorder.GetSystemAudioCaptureDevices().Any(d => string.Equals(d.DeviceName, device, StringComparison.OrdinalIgnoreCase)))
+                    return new CaptureAudioSource(device);
+                ErrorLog.Write("Microphone", $"Microphone introuvable, celui par défaut est utilisé : {device}");
+            }
+            catch (Exception ex)
+            {
+                ErrorLog.Write("Liste des microphones", ex);
+            }
+        }
+        return CaptureAudioSource.Default;
     }
 }
