@@ -40,6 +40,8 @@ public partial class App : Application
     public IPlatform Platform => AppServices.Platform;
     public CaptureService Captures { get; private set; } = null!;
     public VideoService Videos { get; private set; } = null!;
+    /// <summary>Conversions of the recordings that follow them (Settings › Video › Video format).</summary>
+    public RecordingConverter Conversions { get; private set; } = null!;
     public ITray? Tray { get; private set; }
     public bool IsExiting { get; private set; }
 
@@ -138,6 +140,7 @@ public partial class App : Application
         var unavailableFolder = EnsureWorkspaceFolder();
         Captures = new CaptureService(this);
         Videos = new VideoService(this);
+        Conversions = new RecordingConverter(this);
         CreateTray();
         RegisterHotkeys(showWarnings: true);
         if (unavailableFolder != null)
@@ -339,6 +342,8 @@ public partial class App : Application
         {
             ErrorLog.Write("Ligne de commande : enregistrement vidéo", ex);
         }
+        // The file of a recording converted afterwards is only there once converted.
+        await Conversions.WhenIdleAsync();
         if (exit) ExitApp();
     }
 
@@ -647,6 +652,11 @@ public partial class App : Application
         result.WebExportTarget = current.WebExportTarget;
         result.WebExportMegabytes = current.WebExportMegabytes;
         result.Sanitize();
+        // A new format or compression for the recordings: the export dialog opens with it too.
+        var recordingFormat = Player.RecordingFormatChoice.From(result);
+        var previousFormat = Player.RecordingFormatChoice.From(current);
+        if (recordingFormat with { KeepOriginal = false } != previousFormat with { KeepOriginal = false })
+            Player.RecordingFormats.ApplyToExportDialog(recordingFormat, result);
         bool folderChanged = !string.Equals(current.WorkspaceFolder, result.WorkspaceFolder, PathComparison);
         bool languageChanged = current.Language != result.Language;
         // Another root folder: keep the active workspace only if it exists there too.
@@ -725,6 +735,12 @@ public partial class App : Application
             Videos.StopThen(() => ExitApp(restart));
             return;
         }
+        if (Conversions is { IsBusy: true })
+        {
+            // A recording being converted: its original goes to the workspace, then quit.
+            Conversions.CancelThen(() => ExitApp(restart));
+            return;
+        }
         if (Captures is { IsBusy: true })
         {
             // Let the capture in progress stop cleanly first: countdown or selection cancelled, scrolling
@@ -770,6 +786,8 @@ public partial class App : Application
         try
         {
             if (Videos is { IsBusy: true }) Videos.Stop();
+            // The originals of the recordings being converted are kept (in the temporary folder if time runs out).
+            if (Conversions is { IsBusy: true }) Conversions.CancelAll();
         }
         catch (Exception ex)
         {

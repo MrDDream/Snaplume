@@ -3,11 +3,12 @@ using ScreenRecorderLib;
 using Snaplume.Capturing;
 using Snaplume.Core;
 using Snaplume.Platform.Windows.Capturing;
+using Snaplume.Platform.Windows.Video;
 using Snaplume.Recording;
 
 namespace Snaplume.Platform.Windows.Recording;
 
-/// <summary>Screen recording to MP4 (H.264 + AAC) with ScreenRecorderLib / Media Foundation.</summary>
+/// <summary>Screen recording to MP4 (H.264 or HEVC, and AAC) with ScreenRecorderLib / Media Foundation.</summary>
 public sealed class ScreenRecorderFactory : IScreenRecorderFactory
 {
     public IReadOnlyList<WebcamInfo> Webcams()
@@ -41,6 +42,12 @@ public sealed class ScreenRecorderFactory : IScreenRecorderFactory
         }
     }
 
+    /// <summary>
+    /// H.264 always; HEVC when Media Foundation has an HEVC encoder (graphics card, or the "HEVC Video Extensions").
+    /// One that is registered but does not work makes the recording start again in H.264 (<see cref="ScreenRecording.Codec"/>).
+    /// </summary>
+    public bool CanRecord(VideoCodec codec) => codec == VideoCodec.H264 || (codec == VideoCodec.Hevc && HevcEncoders.Available);
+
     public Task<IScreenRecording> StartAsync(RecordingOptions options, string outputPath, CancellationToken cancel = default)
     {
         cancel.ThrowIfCancellationRequested();
@@ -60,17 +67,19 @@ public sealed class ScreenRecorderFactory : IScreenRecorderFactory
 
 /// <summary>
 /// One recording. When the webcam cannot be opened (busy in another application, unplugged), the recording starts
-/// again without it rather than being lost, and <see cref="WebcamDropped"/> becomes true.
+/// again without it rather than being lost, and <see cref="WebcamDropped"/> becomes true. Likewise an HEVC encoder that
+/// does not start gives way to H.264 (<see cref="Codec"/>).
 /// </summary>
 /// <remarks>
-/// Zoom on clicks: the output frame size is fixed at the size of the area, and the source rectangle is changed
+/// Zoom on clicks: the output frame size is fixed (the size of the area, or the smaller one of a quality preset), and the source rectangle is changed
 /// while recording (dynamic options of ScreenRecorderLib), so the part of the screen around a click fills the video.
 /// </remarks>
 internal sealed class ScreenRecording : IScreenRecording
 {
     /// <summary>
     /// A failure this soon after the start, with the webcam, is taken for a camera that could not
-    /// be opened (busy, unplugged): the recording starts again without it.
+    /// be opened (busy, unplugged): the recording starts again without it. In HEVC, for an encoder that does not
+    /// work: the recording starts again in H.264.
     /// </summary>
     private static readonly TimeSpan WebcamStartupWindow = TimeSpan.FromSeconds(4);
 
@@ -87,6 +96,8 @@ internal sealed class ScreenRecording : IScreenRecording
     private MouseClickHook? _clicks;
     /// <summary>The current recorder inlays the webcam.</summary>
     private bool _webcamActive;
+    /// <summary>The picture format of the current recorder: HEVC as asked, or H.264 once HEVC failed.</summary>
+    private VideoCodec _codec;
     private bool _stopping;
     private bool _disposed;
 
@@ -94,6 +105,7 @@ internal sealed class ScreenRecording : IScreenRecording
     {
         _options = options;
         _outputPath = outputPath;
+        _codec = options.Encoding?.Codec ?? VideoCodec.H264;
     }
 
     private Action? _completed;
@@ -142,24 +154,49 @@ internal sealed class ScreenRecording : IScreenRecording
     public bool WebcamDropped { get; private set; }
     public bool CanPause => true;
 
+    public VideoCodec Codec
+    {
+        get
+        {
+            lock (_lock) return _codec;
+        }
+    }
+
     public void Start()
     {
         lock (_lock)
         {
             try
             {
-                StartRecorder(_options.Webcam);
+                StartWithOrWithoutWebcam();
             }
-            catch (Exception ex) when (_webcamActive)
+            catch (Exception ex) when (_codec == VideoCodec.Hevc)
             {
-                // The camera could not be opened: record without it.
-                ErrorLog.Write("Webcam", ex);
+                // No usable HEVC encoder after all: H.264, converted afterwards (see RecordingPlanner.AfterRecording).
+                ErrorLog.Write("Enregistrement en HEVC", ex);
                 DropRecorder();
-                WebcamDropped = true;
-                StartRecorder(null);
+                _codec = VideoCodec.H264;
+                StartWithOrWithoutWebcam();
             }
         }
         if (_options.ClickZoom) StartClickZoom();
+    }
+
+    /// <summary>Starts with the webcam, or without it when it cannot be opened. Called under the lock.</summary>
+    private void StartWithOrWithoutWebcam()
+    {
+        try
+        {
+            StartRecorder(_options.Webcam);
+        }
+        catch (Exception ex) when (_webcamActive)
+        {
+            // The camera could not be opened: record without it.
+            ErrorLog.Write("Webcam", ex);
+            DropRecorder();
+            WebcamDropped = true;
+            StartRecorder(null);
+        }
     }
 
     /// <summary>Watches the clicks and moves the source rectangle; without the hook, the video is recorded without zoom.</summary>
@@ -255,7 +292,7 @@ internal sealed class ScreenRecording : IScreenRecording
     /// <summary>Creates the recorder and starts writing the file. Called under the lock.</summary>
     private void StartRecorder(WebcamOptions? webcam)
     {
-        var (options, crop, origin) = BuildOptions(_options);
+        var (options, crop, origin) = BuildOptions(_options, _codec);
         _crop = crop;
         _cropOrigin = origin;
         _webcamActive = webcam != null && AddWebcamOverlay(options, webcam);
@@ -285,10 +322,12 @@ internal sealed class ScreenRecording : IScreenRecording
         lock (_lock)
         {
             if (_recorder != recorder || _outcome != null) return;
-            if (_webcamActive && !_stopping && !_disposed && _sinceStart.Elapsed <= WebcamStartupWindow)
+            if ((_codec == VideoCodec.Hevc || _webcamActive) && !_stopping && !_disposed && _sinceStart.Elapsed <= WebcamStartupWindow)
             {
-                // Not from the library's own callback thread: disposing the recorder there could wait for itself.
-                _ = Task.Run(() => RestartWithoutWebcam(recorder, error));
+                // HEVC first (the webcam may well work in H.264), then the webcam. Not from the library's own callback
+                // thread: disposing the recorder there could wait for itself.
+                bool hevc = _codec == VideoCodec.Hevc;
+                _ = Task.Run(() => Restart(recorder, error, hevc));
                 return;
             }
         }
@@ -310,19 +349,30 @@ internal sealed class ScreenRecording : IScreenRecording
     }
 
     /// <summary>
-    /// The recording failed right after starting with the webcam (camera busy in another
-    /// application, or unplugged): starts again without it rather than losing the recording.
+    /// The recording failed right after starting: in HEVC, the encoder does not work on this PC, it starts again in
+    /// H.264; with the webcam (camera busy in another application, or unplugged), it starts again without it, rather
+    /// than losing the recording.
     /// </summary>
-    private void RestartWithoutWebcam(Recorder failed, string error)
+    private void Restart(Recorder failed, string error, bool hevc)
     {
+        WebcamOptions? webcam;
         lock (_lock)
         {
             if (_recorder != failed || _outcome != null || _disposed) return;
             _recorder = null;
+            if (hevc)
+            {
+                _codec = VideoCodec.H264;
+                webcam = _webcamActive ? _options.Webcam : null;
+            }
+            else
+            {
+                webcam = null;
+                WebcamDropped = true;
+            }
             _webcamActive = false;
-            WebcamDropped = true;
         }
-        ErrorLog.Write("Webcam", error);
+        ErrorLog.Write(hevc ? "Enregistrement en HEVC" : "Webcam", error);
         // Outside the lock, like in Dispose.
         failed.Dispose();
         DeleteOutput();
@@ -333,13 +383,13 @@ internal sealed class ScreenRecording : IScreenRecording
             if (_outcome != null || _disposed) return;
             try
             {
-                StartRecorder(null);
-                // Stop() was called while the webcam was being dropped.
+                StartRecorder(webcam);
+                // Stop() was called while the recorder was being replaced.
                 if (_stopping) _recorder?.Stop();
             }
             catch (Exception ex)
             {
-                ErrorLog.Write("Enregistrement vidéo sans webcam", ex);
+                ErrorLog.Write(hevc ? "Enregistrement vidéo en H.264" : "Enregistrement vidéo sans webcam", ex);
                 failure = ex.Message;
             }
         }
@@ -423,7 +473,7 @@ internal sealed class ScreenRecording : IScreenRecording
     /// <returns>
     /// The options, the source rectangle (relative to the captured monitors) and the top-left corner of those monitors.
     /// </returns>
-    private static (RecorderOptions Options, PixelRect Crop, (int X, int Y) Origin) BuildOptions(RecordingOptions settings)
+    private static (RecorderOptions Options, PixelRect Crop, (int X, int Y) Origin) BuildOptions(RecordingOptions settings, VideoCodec codec)
     {
         // H.264 needs even dimensions.
         var area = settings.Area with { Width = Math.Max(2, settings.Area.Width & ~1), Height = Math.Max(2, settings.Area.Height & ~1) };
@@ -458,10 +508,13 @@ internal sealed class ScreenRecording : IScreenRecording
             RecorderMode = RecorderMode.Video,
             SourceRect = new ScreenRect(crop.X, crop.Y, crop.Width, crop.Height),
         };
-        if (settings.ClickZoom)
+        var encoding = settings.Encoding ?? RecordingEncoding.Default;
+        var (outputWidth, outputHeight) = encoding.OutputSize(crop.Width, crop.Height);
+        if (settings.ClickZoom || outputWidth != crop.Width || outputHeight != crop.Height)
         {
-            // A smaller source rectangle (zoomed in) is scaled to this size: the video keeps its size.
-            output.OutputFrameSize = new ScreenSize(crop.Width, crop.Height);
+            // A smaller source rectangle (zoomed in) is scaled to this size: the video keeps its size. A quality preset
+            // may make it smaller than the area (same shape).
+            output.OutputFrameSize = new ScreenSize(outputWidth, outputHeight);
             output.Stretch = StretchMode.Fill;
         }
 
@@ -481,8 +534,10 @@ internal sealed class ScreenRecording : IScreenRecording
             },
             VideoEncoderOptions = new VideoEncoderOptions
             {
-                Encoder = new H264VideoEncoder { BitrateMode = H264BitrateControlMode.Quality, EncoderProfile = H264Profile.High },
-                Quality = 70,
+                Encoder = codec == VideoCodec.Hevc
+                    ? new H265VideoEncoder { BitrateMode = H265BitrateControlMode.Quality, EncoderProfile = H265Profile.Main }
+                    : new H264VideoEncoder { BitrateMode = H264BitrateControlMode.Quality, EncoderProfile = H264Profile.High },
+                Quality = Math.Clamp(encoding.Quality, 1, 100),
                 Framerate = Math.Clamp(settings.Framerate, 5, 60),
                 IsFixedFramerate = true, // constant frame rate: plays and edits everywhere
                 IsHardwareEncodingEnabled = true,

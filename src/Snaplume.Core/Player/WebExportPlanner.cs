@@ -26,6 +26,11 @@ public enum WebQuality
     High,
     Medium,
     Light,
+    /// <summary>
+    /// As close to the source as the format allows (same size and frame rate, a finer quality than <see cref="High"/>):
+    /// the conversion of a recording without compression (Settings › Video). Not offered by the export dialog.
+    /// </summary>
+    Original,
 }
 
 public static class WebFormats
@@ -75,6 +80,7 @@ public static class WebFormats
     {
         WebQuality.High => "high",
         WebQuality.Light => "light",
+        WebQuality.Original => "original",
         _ => "medium",
     };
 
@@ -82,6 +88,7 @@ public static class WebFormats
     {
         "high" => WebQuality.High,
         "light" => WebQuality.Light,
+        "original" => WebQuality.Original,
         _ => WebQuality.Medium,
     };
 }
@@ -270,7 +277,7 @@ public static class WebExportPlanner
         {
             var (shortSide, maxFps, webpQuality) = quality switch
             {
-                WebQuality.High => (1080, 20.0, 80),
+                WebQuality.High or WebQuality.Original => (1080, 20.0, 80),
                 WebQuality.Medium => (720, 15.0, 70),
                 _ => (540, 12.0, 55),
             };
@@ -280,18 +287,23 @@ public static class WebExportPlanner
 
         var (maxShortSide, fpsCap) = quality switch
         {
-            WebQuality.High => (int.MaxValue, double.MaxValue),
+            WebQuality.High or WebQuality.Original => (int.MaxValue, double.MaxValue),
             WebQuality.Medium => (1080, DefaultFramesPerSecond),
             _ => (720, DefaultFramesPerSecond),
         };
         var (pw, ph) = Fit(width, height, maxShortSide);
         double pfps = Math.Min(fps, fpsCap);
+        bool fine = quality is WebQuality.High or WebQuality.Original;
         int audio = !source.HasAudio ? 0
-            : WebFormats.UsesAac(format) ? (quality == WebQuality.High ? AacHighBitrate : AacBitrate)
-            : quality == WebQuality.High ? OpusBitrate : OpusLowBitrate;
+            : WebFormats.UsesAac(format) ? (fine ? AacHighBitrate : AacBitrate)
+            : fine ? OpusBitrate : OpusLowBitrate;
         // H.264 (0–51), HEVC (0–51), AV1 (0–63), VP9 (0–63): about the same look for the same preset.
         int crf = (format, quality) switch
         {
+            (WebFormat.Mp4H264, WebQuality.Original) => 18,
+            (WebFormat.Mp4Hevc, WebQuality.Original) => 21,
+            (WebFormat.Mp4Av1, WebQuality.Original) => 27,
+            (_, WebQuality.Original) => 28,
             (WebFormat.Mp4H264, WebQuality.High) => 20,
             (WebFormat.Mp4H264, WebQuality.Medium) => 24,
             (WebFormat.Mp4H264, _) => 28,
@@ -310,6 +322,7 @@ public static class WebExportPlanner
             // The Windows encoder takes a bit rate, not a quality: bits per pixel per frame (HEVC needs about 40 % fewer).
             double bitsPerPixel = quality switch
             {
+                WebQuality.Original => 0.16,
                 WebQuality.High => 0.12,
                 WebQuality.Medium => 0.07,
                 _ => 0.045,

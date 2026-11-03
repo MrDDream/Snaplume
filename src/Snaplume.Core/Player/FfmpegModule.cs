@@ -157,6 +157,21 @@ public static class FfmpegModule
         }
     }
 
+    /// <summary>Space the module takes on the disk, in bytes (0 when it is not installed or cannot be read).</summary>
+    public static long InstalledBytes(string? folder = null)
+    {
+        try
+        {
+            var root = new DirectoryInfo(folder ?? Folder);
+            return root.Exists ? root.EnumerateFiles("*", SearchOption.AllDirectories).Sum(f => f.Length) : 0;
+        }
+        catch (Exception ex)
+        {
+            ErrorLog.Write("Taille du module ffmpeg", ex);
+            return 0;
+        }
+    }
+
     /// <summary>Version written by <see cref="InstallAsync"/>, or "" when unknown.</summary>
     public static string InstalledVersion(string? folder = null)
     {

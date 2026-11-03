@@ -78,6 +78,17 @@ public sealed class AppSettings
     /// <summary>Width of the webcam picture, in % of the width of the recorded area.</summary>
     public int VideoWebcamSize { get; set; } = 20;
 
+    // Format of the recordings (Settings › Video › Video format, see Player.RecordingFormats). The defaults record
+    // MP4 H.264 as always, with no conversion afterwards.
+    /// <summary>"mp4", "hevc", "av1" or "webm" (Player.WebFormats.Id; animated WebP is not a recording format).</summary>
+    public string VideoFormat { get; set; } = "mp4";
+    /// <summary>"none", "high", "medium", "light", "discord", "nitro", "email" or "custom" (Player.RecordingCompression).</summary>
+    public string VideoCompression { get; set; } = "none";
+    /// <summary>Largest file for "custom", in MB.</summary>
+    public double VideoCompressionMegabytes { get; set; } = 25;
+    /// <summary>A recording converted afterwards keeps its MP4 H.264 original next to the converted file.</summary>
+    public bool VideoKeepOriginal { get; set; }
+
     // Last choices of the player's "Export / compress" dialog (see Player.WebExportForm).
     /// <summary>"mp4", "hevc", "av1", "webm" or "webp" (Player.WebFormats.Id).</summary>
     public string WebExportFormat { get; set; } = "mp4";
@@ -209,7 +220,15 @@ public sealed class AppSettings
                             ?? defaults.VideoWebcamCorner;
         VideoWebcamSize = Math.Clamp(VideoWebcamSize, 10, 40);
         WebExportFormat = Player.WebFormats.Id(Player.WebFormats.FromId(WebExportFormat));
-        WebExportQuality = Player.WebFormats.QualityId(Player.WebFormats.QualityFromId(WebExportQuality));
+        // "original" is the conversion of recordings, not a choice of the export dialog.
+        WebExportQuality = Player.WebFormats.QualityFromId(WebExportQuality) is var quality && quality != Player.WebQuality.Original
+            ? Player.WebFormats.QualityId(quality)
+            : defaults.WebExportQuality;
+        VideoFormat = Player.WebFormats.Id(Player.RecordingFormats.FromId(VideoFormat));
+        VideoCompression = Player.RecordingCompression.Normalize(VideoCompression);
+        VideoCompressionMegabytes = double.IsFinite(VideoCompressionMegabytes)
+            ? Math.Clamp(VideoCompressionMegabytes, Player.SizeTargets.MinMegabytes, Player.SizeTargets.MaxMegabytes)
+            : defaults.VideoCompressionMegabytes;
         WebExportTarget = WebExportTarget is Player.SizeTargets.Discord or Player.SizeTargets.Nitro or Player.SizeTargets.Email or Player.SizeTargets.Custom
             ? WebExportTarget
             : Player.SizeTargets.Off;

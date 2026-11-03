@@ -105,6 +105,7 @@ public partial class SettingsWindow : Window
         WebcamSizeBox.ItemsSource = sizes;
         WebcamSizeBox.SelectedItem = sizes.First(s => Equals(s.Value, settings.VideoWebcamSize));
         _ = LoadWebcamsAsync(settings.VideoWebcamDevice);
+        LoadVideoFormat(settings);
 
         RegionHotkey.Hotkey = Parse(settings.HotkeyRegion);
         ScreenHotkey.Hotkey = Parse(settings.HotkeyScreen);
@@ -547,6 +548,7 @@ public partial class SettingsWindow : Window
             return;
         }
 
+        if (!await SaveVideoFormatAsync()) return;
         if (await ValidateFolderAsync() is not { } folder) return;
 
         Result.WorkspaceFolder = folder;

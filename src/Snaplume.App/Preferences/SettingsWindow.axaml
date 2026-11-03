@@ -26,6 +26,41 @@
         <Style Selector="Button.outlined:pointerover /template/ ContentPresenter#PART_ContentPresenter">
             <Setter Property="Foreground" Value="{DynamicResource TextBrush}" />
         </Style>
+        <!-- Text buttons (more formats → the ffmpeg card): link colored, underlined under the mouse -->
+        <Style Selector="Button.link">
+            <Setter Property="Background" Value="Transparent" />
+            <Setter Property="BorderThickness" Value="0" />
+            <Setter Property="Padding" Value="0" />
+            <Setter Property="MinHeight" Value="0" />
+            <Setter Property="Cursor" Value="Hand" />
+            <Setter Property="HorizontalAlignment" Value="Left" />
+            <Setter Property="Foreground" Value="{DynamicResource LinkBrush}" />
+        </Style>
+        <Style Selector="Button.link:pointerover /template/ ContentPresenter#PART_ContentPresenter, Button.link:pressed /template/ ContentPresenter#PART_ContentPresenter">
+            <Setter Property="Background" Value="Transparent" />
+            <Setter Property="Foreground" Value="{DynamicResource LinkBrush}" />
+        </Style>
+        <Style Selector="Button.link:pointerover TextBlock">
+            <Setter Property="TextDecorations" Value="Underline" />
+        </Style>
+        <!-- What becomes of each recording (Video format card): muted, amber when it cannot be done -->
+        <Style Selector="Path.route">
+            <Setter Property="Stroke" Value="{DynamicResource MutedTextBrush}" />
+        </Style>
+        <Style Selector="Path.route.warning">
+            <Setter Property="Stroke" Value="{DynamicResource WarningTextBrush}" />
+        </Style>
+        <Style Selector="TextBlock.route.warning">
+            <Setter Property="Foreground" Value="{DynamicResource WarningTextBrush}" />
+        </Style>
+        <!-- The square behind the icon of a module (ffmpeg) -->
+        <Style Selector="Border.icon-tile">
+            <Setter Property="Width" Value="38" />
+            <Setter Property="Height" Value="38" />
+            <Setter Property="CornerRadius" Value="9" />
+            <Setter Property="Background" Value="{DynamicResource CheckedBrush}" />
+            <Setter Property="VerticalAlignment" Value="Top" />
+        </Style>
         <!-- Rows that do not apply (webcam options while the webcam is off, features this system lacks) -->
         <Style Selector="StackPanel.dimmable:disabled, DockPanel.dimmable:disabled">
             <Setter Property="Opacity" Value="0.5" />
@@ -289,7 +324,64 @@
                 <!-- Video -->
                 <StackPanel Name="PageVideo" IsVisible="False">
                     <TextBlock Classes="page-title" Text="{l:T Settings.Nav.Video}" />
-                    <TextBlock Classes="page-subtitle" Text="{l:T Settings.Video.Subtitle}" />
+                    <TextBlock Classes="page-subtitle" Text="{l:T Settings.Video.SubtitleFormats}" />
+
+                    <!-- Format and compression of the recordings: recorded directly when the recorder can, else converted afterwards -->
+                    <TextBlock Classes="card-header" Text="{l:T Settings.VideoFormat.Header}" />
+                    <Border Classes="card">
+                        <StackPanel>
+                            <Border Classes="row">
+                                <DockPanel>
+                                    <ComboBox Name="VideoFormatBox" DockPanel.Dock="Right" Width="250" />
+                                    <StackPanel>
+                                        <TextBlock Classes="row-title" Text="{l:T Settings.VideoFormat.Format}" />
+                                        <TextBlock Name="VideoFormatDescription" Classes="row-description" Text="{l:T Settings.VideoFormat.FormatDescription}" />
+                                        <!-- Without ffmpeg only MP4 H.264 is listed: the module card below adds the others -->
+                                        <Button Name="MoreFormatsButton" Classes="link" Margin="0,5,0,0" IsVisible="False" Click="OnShowFfmpegCard"
+                                                ToolTip.Tip="{l:T Player.Web.ModuleTip}">
+                                            <StackPanel Orientation="Horizontal" Spacing="5">
+                                                <Path Classes="chip-icon" Data="{StaticResource IconDownload}" />
+                                                <TextBlock Name="MoreFormatsText" Text="{l:T Settings.VideoFormat.MoreFormats}" TextWrapping="Wrap" />
+                                            </StackPanel>
+                                        </Button>
+                                    </StackPanel>
+                                </DockPanel>
+                            </Border>
+                            <Border Classes="row">
+                                <DockPanel>
+                                    <StackPanel DockPanel.Dock="Right" Orientation="Horizontal" Spacing="6" VerticalAlignment="Center">
+                                        <StackPanel Name="VideoMegabytesPanel" Orientation="Horizontal" Spacing="6" IsVisible="False">
+                                            <TextBox Name="VideoMegabytesBox" Width="64" HorizontalContentAlignment="Right" VerticalAlignment="Center" />
+                                            <TextBlock Text="{l:T Player.Web.Megabytes}" VerticalAlignment="Center" />
+                                        </StackPanel>
+                                        <ComboBox Name="VideoCompressionBox" Width="250" />
+                                    </StackPanel>
+                                    <StackPanel>
+                                        <TextBlock Classes="row-title" Text="{l:T Settings.VideoFormat.Compression}" />
+                                        <TextBlock Classes="row-description" Text="{l:T Settings.VideoFormat.CompressionDescription}" />
+                                    </StackPanel>
+                                </DockPanel>
+                            </Border>
+                            <Border Classes="row">
+                                <DockPanel Name="KeepOriginalRow" Classes="dimmable">
+                                    <ToggleSwitch Name="KeepOriginalCheck" DockPanel.Dock="Right" />
+                                    <StackPanel>
+                                        <TextBlock Classes="row-title" Text="{l:T Settings.VideoFormat.KeepOriginal}" />
+                                        <TextBlock Classes="row-description" Text="{l:T Settings.VideoFormat.KeepOriginalDescription}" />
+                                    </StackPanel>
+                                </DockPanel>
+                            </Border>
+                            <!-- What happens to each recording with these choices -->
+                            <Border Classes="row last" Padding="18,10,18,12">
+                                <DockPanel>
+                                    <Path Name="VideoRouteIcon" Classes="chip-icon route" Data="{StaticResource IconInfo}" DockPanel.Dock="Left"
+                                          VerticalAlignment="Top" Margin="0,2,8,0" />
+                                    <TextBlock Name="VideoRouteText" Classes="row-description route" Margin="0" />
+                                </DockPanel>
+                            </Border>
+                        </StackPanel>
+                    </Border>
+
                     <TextBlock Classes="card-header" Text="{l:T Settings.Video.SoundHeader}" />
                     <Border Classes="card">
                         <StackPanel>
@@ -399,12 +491,13 @@
                         </StackPanel>
                     </Border>
                     <TextBlock Classes="card-header" Text="{l:T Settings.Ffmpeg.Header}" />
-                    <Border Classes="card">
+                    <Border Name="FfmpegCard" Classes="card">
                         <StackPanel>
                             <!-- Web formats module (ffmpeg): installed on demand on Windows, the system's package on Linux -->
-                            <Border Classes="row last">
+                            <Border Name="FfmpegRow" Classes="row">
                                 <DockPanel>
-                                    <StackPanel Name="FfmpegButtons" DockPanel.Dock="Right" Orientation="Horizontal" Spacing="8" VerticalAlignment="Center">
+                                    <StackPanel Name="FfmpegButtons" DockPanel.Dock="Right" Orientation="Horizontal" Spacing="8" VerticalAlignment="Top"
+                                                Margin="12,4,0,0">
                                         <Button Name="FfmpegInstallButton" Content="{l:T Settings.Ffmpeg.Install}" Classes="accent" Padding="12,4"
                                                 Click="OnInstallFfmpeg" IsVisible="False" />
                                         <Button Name="FfmpegCancelButton" Content="{l:T Common.Cancel}" Classes="flat outlined" Padding="12,4"
@@ -412,13 +505,39 @@
                                         <Button Name="FfmpegUninstallButton" Content="{l:T Settings.Ffmpeg.Uninstall}" Classes="flat outlined" Padding="12,4"
                                                 Click="OnUninstallFfmpeg" IsVisible="False" />
                                     </StackPanel>
+                                    <Border Classes="icon-tile" DockPanel.Dock="Left" Margin="0,0,14,0">
+                                        <Path Classes="icon" Data="{StaticResource IconModule}" Stroke="{DynamicResource AccentBrush}"
+                                              HorizontalAlignment="Center" VerticalAlignment="Center" />
+                                    </Border>
                                     <StackPanel>
-                                        <TextBlock Classes="row-title" Text="{l:T Settings.Ffmpeg.Title}" />
+                                        <WrapPanel>
+                                            <TextBlock Classes="row-title" Text="{l:T Settings.Ffmpeg.Title}" FontWeight="SemiBold" Margin="0,0,10,2"
+                                                       VerticalAlignment="Center" />
+                                            <Border Name="FfmpegChip" Classes="chip" IsVisible="False" Margin="0,0,0,2">
+                                                <TextBlock Name="FfmpegChipText" />
+                                            </Border>
+                                        </WrapPanel>
                                         <TextBlock Name="FfmpegStatus" Classes="row-description" Text="{l:T Settings.Ffmpeg.Checking}" />
-                                        <ProgressBar Name="FfmpegProgress" Classes="thin" Minimum="0" Maximum="1" Margin="0,8,0,0" IsVisible="False" />
-                                        <TextBlock Name="FfmpegFormats" Classes="row-description" Margin="0,4,0,0" IsVisible="False" />
+                                        <TextBlock Name="FfmpegLocation" Classes="row-description" FontSize="11.5" TextWrapping="NoWrap"
+                                                   TextTrimming="CharacterEllipsis" IsVisible="False" />
+                                        <TextBlock Name="FfmpegError" Foreground="{DynamicResource ErrorTextBrush}" TextWrapping="Wrap" Margin="0,6,16,0"
+                                                   IsVisible="False" />
+                                        <ProgressBar Name="FfmpegProgress" Classes="thin" Minimum="0" Maximum="1" Margin="0,10,16,2" IsVisible="False" />
                                     </StackPanel>
                                 </DockPanel>
+                            </Border>
+                            <!-- What can be made with it: a chip per format, greyed (with the reason as tooltip) when this ffmpeg cannot -->
+                            <Border Name="FfmpegFormatsRow" Classes="row last" Padding="18,11,18,9" IsVisible="False">
+                                <StackPanel>
+                                    <TextBlock Classes="row-description" Margin="0,0,0,7" Text="{l:T Settings.Ffmpeg.FormatsHeader}" />
+                                    <ItemsControl Name="FfmpegFormatChips">
+                                        <ItemsControl.ItemsPanel>
+                                            <ItemsPanelTemplate>
+                                                <WrapPanel />
+                                            </ItemsPanelTemplate>
+                                        </ItemsControl.ItemsPanel>
+                                    </ItemsControl>
+                                </StackPanel>
                             </Border>
                         </StackPanel>
                     </Border>

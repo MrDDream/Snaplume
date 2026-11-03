@@ -4,13 +4,16 @@ using Avalonia.Threading;
 using Snaplume.Capturing;
 using Snaplume.Core;
 using Snaplume.Platform;
+using Snaplume.Player;
 using PixelRect = Snaplume.Capturing.PixelRect;
 
 namespace Snaplume.Recording;
 
 /// <summary>
 /// Screen recording to MP4 through the platform's recorder (ScreenRecorderLib under Windows, GStreamer under Linux).
-/// One recording at a time; the file goes to the active workspace when finished.
+/// One recording at a time; the file goes to the active workspace when finished. The format and compression of the
+/// settings are made by the recorder when it can (H.264, HEVC, quality presets); otherwise the recording is handed to
+/// <see cref="RecordingConverter"/> once it stops (<see cref="RecordingPlanner"/>).
 /// </summary>
 /// <remarks>
 /// States: idle → starting (area selection, video options until Record is pressed, countdown, system permission) →
@@ -51,6 +54,10 @@ public sealed class VideoService
     private bool _cancelled;
     private bool _stopping;
     private bool _paused;
+    /// <summary>Format and compression of the current recording (Settings › Video), chosen when it starts.</summary>
+    private RecordingFormatChoice _choice = new(WebFormat.Mp4H264, RecordingCompression.None);
+    /// <summary>What the recorder is asked for, and the conversion afterwards (<see cref="RecordingPlanner"/>).</summary>
+    private RecordingPlan? _plan;
 
     public VideoService(App app)
     {
@@ -80,7 +87,10 @@ public sealed class VideoService
     /// <param name="durationSeconds">
     /// Stops automatically after this time (command line); the recording then starts without waiting for Record.
     /// </param>
-    /// <returns>Path of the saved video, or null if cancelled or failed.</returns>
+    /// <returns>
+    /// Path of the saved video, or null if cancelled or failed, or when it is converted afterwards (Settings › Video ›
+    /// Video format: <see cref="RecordingConverter"/> announces the file once converted).
+    /// </returns>
     public async Task<string?> ToggleAsync(bool fullScreen = false, Window? hide = null, int settleMs = 0, int durationSeconds = 0)
     {
         if (IsBusy)
@@ -340,6 +350,13 @@ public sealed class VideoService
     private async Task BeginAsync(PixelRect area)
     {
         _area = area;
+        // Recorded directly in the chosen format and compression when the recorder can, else converted afterwards.
+        // Off the UI thread: the HEVC encoders are looked for the first time.
+        var choice = RecordingFormatChoice.From(Settings);
+        var recorder = Platform.Recorder;
+        int framerate = Settings.VideoFramerate;
+        _choice = choice;
+        _plan = await Task.Run(() => RecordingPlanner.Plan(choice, framerate, recorder.CanRecord));
         try
         {
             await StartRecorderAsync(area, Settings.VideoWebcam);
@@ -386,10 +403,11 @@ public sealed class VideoService
             Settings.VideoSystemAudio,
             Settings.VideoMicrophone,
             Settings.VideoShowClicks && platform.Has(PlatformFeatures.ClickHighlight),
-            Math.Clamp(Settings.VideoFramerate, 5, 60),
+            Math.Clamp(_plan?.Framerate ?? Settings.VideoFramerate, 5, 60),
             camera,
             Settings.VideoMicrophoneDevice,
-            Settings.VideoClickZoom && platform.Has(PlatformFeatures.ClickZoom));
+            Settings.VideoClickZoom && platform.Has(PlatformFeatures.ClickZoom),
+            _plan?.Encoding);
 
         _starting = new CancellationTokenSource();
         IScreenRecording recording;
@@ -494,6 +512,16 @@ public sealed class VideoService
         _bar?.SetFinishing();
         string? saved = null;
         Exception? error = null;
+        // AV1, WebM, a file size, or HEVC the recorder could not encode: converted once the recorder is idle.
+        var conversion = keep && _plan != null ? RecordingPlanner.AfterRecording(_plan, _recording?.Codec ?? VideoCodec.H264) : null;
+        if (conversion != null && temp != null && File.Exists(temp))
+        {
+            var job = new RecordingConversionJob(await Task.Run(() => KeepTempFile(temp)), Workspaces.ActiveFolder, "Video_" + CaptureService.TimeStamp(),
+                conversion, _choice.KeepOriginal, _area);
+            if (owner != null && _completion == owner) Finish(null);
+            _app.Conversions.Enqueue(job);
+            return;
+        }
         if (temp != null && File.Exists(temp))
         {
             if (keep)
@@ -535,17 +563,26 @@ public sealed class VideoService
         }
         else if (saved != null)
         {
-            _app.Captures.NotifySaved(saved);
-            if (!restoring && Settings.ShowPanelAfterCapture) _app.ShowQuickPanel();
-            var path = saved;
-            _app.Tray?.ShowInfo(Loc.T("Video.Saved"), Loc.T("Video.SavedDetails", Path.GetFileName(path)), () => _app.OpenPlayer(path));
-            _app.Captures.WarnIfWorkspaceUnavailable();
+            Announce(saved, Loc.T("Video.SavedDetails", Path.GetFileName(saved)), showPanel: !restoring);
         }
     }
 
     /// <summary>
-    /// The video could not reach the workspace: give it a name that the cleanup of temporary
-    /// files at startup leaves alone.
+    /// A video reached the workspace: shown in the gallery (and the quick panel, as after a capture), with a
+    /// notification that opens it in the player.
+    /// </summary>
+    /// <param name="details">Text of the notification.</param>
+    internal void Announce(string path, string details, bool showPanel = true)
+    {
+        _app.Captures.NotifySaved(path);
+        if (showPanel && Settings.ShowPanelAfterCapture) _app.ShowQuickPanel();
+        _app.Tray?.ShowInfo(Loc.T("Video.Saved"), details, () => _app.OpenPlayer(path));
+        _app.Captures.WarnIfWorkspaceUnavailable();
+    }
+
+    /// <summary>
+    /// The video could not reach the workspace, or waits for its conversion: give it a name that the cleanup of
+    /// temporary files at startup leaves alone.
     /// </summary>
     private static string KeepTempFile(string temp)
     {

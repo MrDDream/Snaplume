@@ -1,0 +1,27 @@
+<!-- Small floating bar shown while a recording is converted after it stopped (Settings › Video › Video format). -->
+<Window xmlns="https://github.com/avaloniaui"
+        xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+        xmlns:l="using:Snaplume.Ui"
+        x:Class="Snaplume.Recording.ConversionBar"
+        Title="{l:T Video.ConvertBarTitle}" WindowDecorations="None" Background="Transparent" TransparencyLevelHint="Transparent"
+        CanResize="False" SizeToContent="WidthAndHeight" Topmost="True" ShowInTaskbar="False" ShowActivated="False"
+        WindowStartupLocation="Manual" UseLayoutRounding="True">
+    <Border Background="{DynamicResource PopupBrush}" BorderBrush="{DynamicResource PopupBorderBrush}" BorderThickness="1"
+            CornerRadius="10" Padding="12,9,9,10" Width="360">
+        <DockPanel>
+            <Button DockPanel.Dock="Right" Classes="flat outlined" Content="{l:T Common.Cancel}" VerticalAlignment="Center" Margin="12,0,0,0"
+                    Padding="12,4" BorderThickness="1" BorderBrush="{DynamicResource LineBrush}" Foreground="{DynamicResource TextBrush}"
+                    Focusable="False" Click="OnCancel" ToolTip.Tip="{l:T Video.ConvertCancelTip}" />
+            <Path Classes="icon" Data="{StaticResource IconVideo}" Stroke="{DynamicResource AccentBrush}" VerticalAlignment="Top" Margin="0,1,0,0" />
+            <StackPanel Margin="8,0,0,0" VerticalAlignment="Center">
+                <DockPanel>
+                    <TextBlock x:Name="PercentText" DockPanel.Dock="Right" Margin="8,0,0,0" Foreground="{DynamicResource MutedTextBrush}" />
+                    <TextBlock x:Name="TitleText" FontWeight="SemiBold" Foreground="{DynamicResource TextBrush}" TextTrimming="CharacterEllipsis" />
+                </DockPanel>
+                <TextBlock x:Name="DetailText" FontSize="11.5" Foreground="{DynamicResource MutedTextBrush}" TextTrimming="CharacterEllipsis"
+                           Margin="0,1,0,0" />
+                <ProgressBar x:Name="Progress" Classes="thin" Minimum="0" Maximum="1" Margin="0,7,0,0" />
+            </StackPanel>
+        </DockPanel>
+    </Border>
+</Window>

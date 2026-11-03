@@ -82,7 +82,7 @@ public partial class WebExportDialog : Window
 
         var qualities = Qualities.Select(q => new Option(q, Loc.T("Player.Web.Quality." + WebFormats.QualityId(q)))).ToList();
         QualityBox.ItemsSource = qualities;
-        QualityBox.SelectedItem = qualities.First(q => (WebQuality)q.Value == WebFormats.QualityFromId(settings.WebExportQuality));
+        QualityBox.SelectedItem = qualities.FirstOrDefault(q => (WebQuality)q.Value == WebFormats.QualityFromId(settings.WebExportQuality)) ?? qualities[1];
 
         Closed += (_, _) =>
         {
