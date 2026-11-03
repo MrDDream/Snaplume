@@ -9,7 +9,7 @@ namespace Snaplume.Platform.Linux.Media;
 
 /// <summary>
 /// Screen recording with GStreamer in process: ximagesrc under X11, pipewiresrc on a ScreenCast portal stream
-/// under Wayland, PulseAudio/PipeWire sources for the sound, v4l2src and compositor for the webcam, H.264 and
+/// under Wayland, PulseAudio/PipeWire sources for the sound, v4l2src and compositor for the webcam, H.264 (or HEVC) and
 /// AAC in MP4.
 /// </summary>
 internal sealed class GstScreenRecorderFactory : IScreenRecorderFactory
@@ -22,11 +22,35 @@ internal sealed class GstScreenRecorderFactory : IScreenRecorderFactory
 
     public IReadOnlyList<AudioDeviceInfo> Microphones() => AudioInputs.List();
 
+    /// <summary>H.264 always (its absence is reported when recording starts); HEVC with x265enc or a VA-API encoder.</summary>
+    public bool CanRecord(VideoCodec codec)
+    {
+        if (codec == VideoCodec.H264) return true;
+        try
+        {
+            GStreamerRuntime.EnsureInit();
+            return HevcEncoder() != null;
+        }
+        catch (Exception ex)
+        {
+            ErrorLog.Write("Encodeurs GStreamer", ex);
+            return false;
+        }
+    }
+
+    private static string? HevcEncoder() =>
+        GStreamerRuntime.Has("h265parse") ? RecordingPipeline.Choose(RecordingPipeline.HevcEncoders, GStreamerRuntime.Has) : null;
+
     public async Task<IScreenRecording> StartAsync(RecordingOptions options, string outputPath, CancellationToken cancel = default)
     {
         GStreamerRuntime.EnsureInit();
-        var videoEncoder = RecordingPipeline.Choose(RecordingPipeline.VideoEncoders, GStreamerRuntime.Has)
-                           ?? throw new InvalidOperationException(Loc.T("Linux.NoH264Encoder"));
+        var h264Encoder = RecordingPipeline.Choose(RecordingPipeline.VideoEncoders, GStreamerRuntime.Has)
+                          ?? throw new InvalidOperationException(Loc.T("Linux.NoH264Encoder"));
+        var encoding = options.Encoding ?? RecordingEncoding.Default;
+        var hevcEncoder = encoding.Codec == VideoCodec.Hevc ? HevcEncoder() : null;
+        if (encoding.Codec == VideoCodec.Hevc && hevcEncoder == null)
+            ErrorLog.Write("Enregistrement en HEVC", "Aucun encodeur HEVC GStreamer (x265enc, vah265enc, vaapih265enc) : H.264");
+        var videoEncoder = hevcEncoder ?? h264Encoder;
         bool wantsAudio = options.SystemAudio || options.Microphone;
         var audioEncoder = wantsAudio ? RecordingPipeline.Choose(RecordingPipeline.AudioEncoders, GStreamerRuntime.Has) : null;
         if (wantsAudio && audioEncoder == null) ErrorLog.Write("Enregistrement vidéo", "Aucun encodeur audio GStreamer : vidéo sans son");
@@ -73,23 +97,42 @@ internal sealed class GstScreenRecorderFactory : IScreenRecorderFactory
             microphoneDevice = "";
         }
 
+        GstRecording Start(string encoder, WebcamPlacement? camera) =>
+            GstRecording.Start(RecordingPipeline.Build(source, options.Framerate, encoder, audioEncoder,
+                options.SystemAudio, options.Microphone, camera, width, height, zoom, encoding), outputPath, microphoneDevice);
+
         try
         {
             GstRecording recording;
             try
             {
-                recording = GstRecording.Start(RecordingPipeline.Build(source, options.Framerate, videoEncoder, audioEncoder,
-                    options.SystemAudio, options.Microphone, webcam, width, height, zoom), outputPath, microphoneDevice);
+                recording = Start(videoEncoder, webcam);
+            }
+            catch (InvalidOperationException ex) when (videoEncoder != h264Encoder)
+            {
+                // An HEVC encoder present but not working (VA-API without a driver...): H.264, converted afterwards.
+                ErrorLog.Write("Enregistrement en HEVC", ex);
+                videoEncoder = h264Encoder;
+                try
+                {
+                    recording = Start(videoEncoder, webcam);
+                }
+                catch (InvalidOperationException webcamEx) when (webcam != null)
+                {
+                    ErrorLog.Write("Webcam pendant l'enregistrement", webcamEx);
+                    webcamDropped = true;
+                    recording = Start(videoEncoder, null);
+                }
             }
             catch (InvalidOperationException ex) when (webcam != null)
             {
                 // A busy or vanished camera fails the whole pipeline: record without it.
                 ErrorLog.Write("Webcam pendant l'enregistrement", ex);
                 webcamDropped = true;
-                recording = GstRecording.Start(RecordingPipeline.Build(source, options.Framerate, videoEncoder, audioEncoder,
-                    options.SystemAudio, options.Microphone, null, width, height, zoom), outputPath, microphoneDevice);
+                recording = Start(videoEncoder, null);
             }
             recording.WebcamDropped = webcamDropped;
+            recording.Codec = videoEncoder == h264Encoder ? VideoCodec.H264 : VideoCodec.Hevc;
             var driver = zoom ? recording.CreateZoom(RecordingPipeline.EvenArea(options.Area)) : null;
             bool showClicks = options.ShowClicks && !_wayland;
             var clicks = showClicks || driver != null ? new X11ClickHighlighter(showClicks, driver != null ? driver.OnClick : null) : null;
@@ -132,6 +175,7 @@ internal sealed class GstRecording : IScreenRecording
     public event Action<string>? Failed;
 
     public bool WebcamDropped { get; set; }
+    public VideoCodec Codec { get; set; } = VideoCodec.H264;
     public bool CanPause => true;
 
     /// <param name="microphoneDevice">Sound server name of the microphone, empty for the default one.</param>

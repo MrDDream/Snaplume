@@ -59,6 +59,17 @@
             <SolidColorBrush x:Key="WarningBrush" Color="#FFFBEB" />
             <SolidColorBrush x:Key="WarningBorderBrush" Color="#F59E0B" />
 
+            <!-- Status chips (Border.chip of Styles.axaml): neutral, success, warning, error -->
+            <SolidColorBrush x:Key="LinkBrush" Color="#6D28D9" />
+            <SolidColorBrush x:Key="ChipBrush" Color="#F3F4F6" />
+            <SolidColorBrush x:Key="ChipBorderBrush" Color="#E5E7EB" />
+            <SolidColorBrush x:Key="SuccessBrush" Color="#ECFDF5" />
+            <SolidColorBrush x:Key="SuccessBorderBrush" Color="#A7F3D0" />
+            <SolidColorBrush x:Key="SuccessTextBrush" Color="#047857" />
+            <SolidColorBrush x:Key="WarningTextBrush" Color="#B45309" />
+            <SolidColorBrush x:Key="ErrorBrush" Color="#FEF2F2" />
+            <SolidColorBrush x:Key="ErrorBorderBrush" Color="#FECACA" />
+
             <!-- Quick panel -->
             <SolidColorBrush x:Key="PanelBrush" Color="#FFFFFF" />
             <SolidColorBrush x:Key="PanelChromeBrush" Color="#F3F4F6" />
@@ -216,6 +227,17 @@
             <!-- Notices -->
             <SolidColorBrush x:Key="WarningBrush" Color="#33290F" />
             <SolidColorBrush x:Key="WarningBorderBrush" Color="#B7791F" />
+
+            <!-- Status chips (Border.chip of Styles.axaml): neutral, success, warning, error -->
+            <SolidColorBrush x:Key="LinkBrush" Color="#B79BFB" />
+            <SolidColorBrush x:Key="ChipBrush" Color="#323232" />
+            <SolidColorBrush x:Key="ChipBorderBrush" Color="#424242" />
+            <SolidColorBrush x:Key="SuccessBrush" Color="#10291F" />
+            <SolidColorBrush x:Key="SuccessBorderBrush" Color="#1F5C43" />
+            <SolidColorBrush x:Key="SuccessTextBrush" Color="#6EE7B7" />
+            <SolidColorBrush x:Key="WarningTextBrush" Color="#FBBF24" />
+            <SolidColorBrush x:Key="ErrorBrush" Color="#341818" />
+            <SolidColorBrush x:Key="ErrorBorderBrush" Color="#6B2A2A" />
 
             <!-- Quick panel -->
             <SolidColorBrush x:Key="PanelBrush" Color="#202020" />

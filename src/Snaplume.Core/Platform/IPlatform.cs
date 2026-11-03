@@ -174,8 +174,33 @@ public interface IGlobalHotkeys : IDisposable
 /// The video zooms in briefly around each mouse click (see <see cref="Snaplume.Recording.ClickZoom"/>); ignored without
 /// <see cref="PlatformFeatures.ClickZoom"/>. The size of the video does not change.
 /// </param>
+/// <param name="Encoding">
+/// Picture format, quality and size of the file (Settings › Video › Video format); null for
+/// <see cref="RecordingEncoding.Default"/>, MP4 H.264 at the recorder's usual quality.
+/// </param>
 public sealed record RecordingOptions(PixelRect Area, bool SystemAudio, bool Microphone, bool ShowClicks, int Framerate, WebcamOptions? Webcam,
-    string MicrophoneDevice = "", bool ClickZoom = false);
+    string MicrophoneDevice = "", bool ClickZoom = false, RecordingEncoding? Encoding = null);
+
+/// <summary>How the recorder encodes the picture of the MP4 file.</summary>
+/// <param name="Codec">H.264, or HEVC when <see cref="IScreenRecorderFactory.CanRecord"/> says the recorder can.</param>
+/// <param name="Quality">
+/// 1 to 100, on the scale of the Windows encoder (Media Foundation "quality", <see cref="DefaultQuality"/> by default);
+/// the Linux encoders turn it into a quantizer.
+/// </param>
+/// <param name="MaxShortSide">
+/// The shorter side of the picture is scaled down to this many pixels, same shape (0: the size of the recorded area).
+/// </param>
+public sealed record RecordingEncoding(VideoCodec Codec = VideoCodec.H264, int Quality = RecordingEncoding.DefaultQuality, int MaxShortSide = 0)
+{
+    /// <summary>What Snaplume always recorded with: a sharp picture of screen contents at a moderate size.</summary>
+    public const int DefaultQuality = 70;
+
+    public static readonly RecordingEncoding Default = new();
+
+    /// <summary>Size of the picture recorded from an area of <paramref name="width"/> × <paramref name="height"/> (even numbers).</summary>
+    public (int Width, int Height) OutputSize(int width, int height) =>
+        MaxShortSide > 0 ? Player.WebExportPlanner.Fit(width, height, MaxShortSide) : Player.WebExportPlanner.Even(width, height);
+}
 
 /// <param name="Device">Camera id from <see cref="IScreenRecorderFactory.Webcams"/>, empty for the first one.</param>
 /// <param name="Corner">"TopLeft", "TopRight", "BottomLeft" or "BottomRight".</param>
@@ -195,6 +220,12 @@ public interface IScreenRecorderFactory
     /// <summary>Sound inputs that can be recorded; empty when the recorder only takes the default one. May be slow.</summary>
     IReadOnlyList<AudioDeviceInfo> Microphones() => Array.Empty<AudioDeviceInfo>();
 
+    /// <summary>
+    /// True when the recorder can write <paramref name="codec"/> while recording (<see cref="RecordingEncoding.Codec"/>);
+    /// always H.264. May be slow the first time (encoders looked for).
+    /// </summary>
+    bool CanRecord(VideoCodec codec) => codec == VideoCodec.H264;
+
     /// <summary>Starts recording into an MP4 file.</summary>
     /// <exception cref="OperationCanceledException">The user refused the permission (Wayland portal).</exception>
     Task<IScreenRecording> StartAsync(RecordingOptions options, string outputPath, CancellationToken cancel = default);
@@ -209,6 +240,13 @@ public interface IScreenRecording : IDisposable
 
     /// <summary>The webcam was dropped because it could not be opened.</summary>
     bool WebcamDropped { get; }
+
+    /// <summary>
+    /// The picture format really written: H.264 when the HEVC encoder asked for (<see cref="RecordingEncoding.Codec"/>)
+    /// could not start and the recorder fell back to it.
+    /// </summary>
+    VideoCodec Codec => VideoCodec.H264;
+
     bool CanPause { get; }
     void Pause();
     void Resume();

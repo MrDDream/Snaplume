@@ -23,6 +23,11 @@ internal readonly record struct WebcamPlacement(string Device, int X, int Y, int
 internal static class RecordingPipeline
 {
     public static readonly string[] VideoEncoders = { "x264enc", "openh264enc" };
+    /// <summary>
+    /// HEVC encoders by preference: x265 (software, predictable), then VA-API (new "va" plugin, then gstreamer-vaapi),
+    /// which may be present without a working driver: a failed start falls back to H.264.
+    /// </summary>
+    public static readonly string[] HevcEncoders = { "x265enc", "vah265enc", "vaapih265enc" };
     public static readonly string[] AudioEncoders = { "avenc_aac", "fdkaacenc", "voaacenc", "opusenc" };
 
     public static string? Choose(IEnumerable<string> candidates, Func<string, bool> available) => candidates.FirstOrDefault(available);
@@ -41,9 +46,16 @@ internal static class RecordingPipeline
     /// X11 only: the screen goes through a videocrop and is scaled back to the size of the area, so cropping it
     /// while recording zooms in (the webcam, composited afterwards, is not zoomed).
     /// </param>
+    /// <param name="videoEncoder">One of <see cref="VideoEncoders"/> (H.264) or <see cref="HevcEncoders"/>.</param>
+    /// <param name="encoding">
+    /// Quality and largest picture (Settings › Video); null for <see cref="RecordingEncoding.Default"/>. The codec is
+    /// the one of <paramref name="videoEncoder"/>.
+    /// </param>
     public static string Build(RecordingSource source, int framerate, string videoEncoder, string? audioEncoder,
-        bool systemAudio, bool microphone, WebcamPlacement? webcam, int outputWidth, int outputHeight, bool clickZoom = false)
+        bool systemAudio, bool microphone, WebcamPlacement? webcam, int outputWidth, int outputHeight, bool clickZoom = false,
+        RecordingEncoding? encoding = null)
     {
+        encoding ??= RecordingEncoding.Default;
         var f = CultureInfo.InvariantCulture;
         framerate = Math.Clamp(framerate, 1, 120);
         var d = new StringBuilder();
@@ -63,18 +75,26 @@ internal static class RecordingPipeline
         if (source is PipeWireSource { Width: > 0, Height: > 0 } pw && webcam != null)
             // The webcam position is computed on the size the portal announced: the stream is scaled to it.
             screenChain += string.Create(f, $" ! videoscale ! video/x-raw,width={pw.Width & ~1},height={pw.Height & ~1}");
-        string encoder = VideoEncoderChain(videoEncoder, outputWidth, outputHeight, framerate);
+        // A quality preset may record a smaller picture than the area (same shape), scaled before the encoder.
+        var (encodedWidth, encodedHeight) = outputWidth > 0 && outputHeight > 0 ? encoding.OutputSize(outputWidth, outputHeight) : (0, 0);
+        string scale = encodedWidth > 0 && (encodedWidth != (outputWidth & ~1) || encodedHeight != (outputHeight & ~1))
+            ? string.Create(f, $"videoscale add-borders=false ! video/x-raw,width={encodedWidth},height={encodedHeight},pixel-aspect-ratio=1/1 ! ")
+            : "";
+        if (scale.Length == 0) (encodedWidth, encodedHeight) = (outputWidth, outputHeight);
+        // The VA-API encoders take NV12 from memory; the software ones I420.
+        string toEncoder = $"{scale}videoconvert ! video/x-raw,format={(videoEncoder.StartsWith("va", StringComparison.Ordinal) ? "NV12" : "I420")}";
+        string encoder = VideoEncoderChain(videoEncoder, encodedWidth, encodedHeight, framerate, encoding.Quality);
 
         if (webcam is { } cam)
         {
             d.Append(f, $"compositor name=comp background=black sink_0::zorder=0 sink_1::zorder=1 sink_1::xpos={cam.X} sink_1::ypos={cam.Y} sink_1::width={cam.Width} sink_1::height={cam.Height} ");
-            d.Append(f, $"! videoconvert ! video/x-raw,format=I420 ! queue ! {encoder} ! queue ! mux. ");
+            d.Append(f, $"! {toEncoder} ! queue ! {encoder} ! queue ! mux. ");
             d.Append(f, $"{screenChain} ! queue ! comp.sink_0 ");
             d.Append(f, $"v4l2src device={cam.Device} ! decodebin ! videoconvert ! aspectratiocrop aspect-ratio=4/3 ! videoscale ! video/x-raw,width={cam.Width},height={cam.Height},pixel-aspect-ratio=1/1 ! videorate ! video/x-raw,framerate={framerate}/1 ! queue ! comp.sink_1 ");
         }
         else
         {
-            d.Append(f, $"{screenChain} ! videoconvert ! video/x-raw,format=I420 ! queue ! {encoder} ! queue ! mux. ");
+            d.Append(f, $"{screenChain} ! {toEncoder} ! queue ! {encoder} ! queue ! mux. ");
         }
 
         if (audioEncoder != null && (systemAudio || microphone))
@@ -98,23 +118,40 @@ internal static class RecordingPipeline
         return d.ToString().TrimEnd();
     }
 
-    private static string VideoEncoderChain(string encoder, int width, int height, int framerate)
+    /// <param name="quality">1 to 100 (<see cref="RecordingEncoding.Quality"/>), 70 being the usual quality.</param>
+    private static string VideoEncoderChain(string encoder, int width, int height, int framerate, int quality)
     {
         var f = CultureInfo.InvariantCulture;
+        int gop = framerate * 2;
+        // HEVC in MP4 tagged "hvc1" (parameter sets in the header): Apple devices and Safari play nothing else.
+        const string hevcOut = "h265parse ! video/x-h265,stream-format=hvc1,alignment=au";
+        int hevcQp = Quantizer(quality) + 3;
         return encoder switch
         {
-            // Constant quality (CRF 21), no B-frames: low latency and readable everywhere.
-            "x264enc" => string.Create(f, $"x264enc speed-preset=veryfast tune=zerolatency pass=qual quantizer=21 key-int-max={framerate * 2} ! h264parse"),
-            "openh264enc" => string.Create(f, $"openh264enc complexity=low rate-control=bitrate bitrate={Bitrate(width, height, framerate)} gop-size={framerate * 2} ! h264parse"),
+            // Constant quality (CRF 21 at the usual quality), no B-frames: low latency and readable everywhere.
+            "x264enc" => string.Create(f, $"x264enc speed-preset=veryfast tune=zerolatency pass=qual quantizer={Quantizer(quality)} key-int-max={gop} ! h264parse"),
+            "openh264enc" => string.Create(f, $"openh264enc complexity=low rate-control=bitrate bitrate={Bitrate(width, height, framerate, quality)} gop-size={gop} ! h264parse"),
+            // Constant quantizer: about the look of H.264 three steps lower, in a smaller file.
+            "x265enc" => string.Create(f, $"x265enc speed-preset=superfast tune=zerolatency qp={hevcQp} key-int-max={gop} ! {hevcOut}"),
+            "vah265enc" => string.Create(f, $"vah265enc rate-control=cqp qpi={hevcQp} qpp={hevcQp} qpb={hevcQp} b-frames=0 key-int-max={gop} ! {hevcOut}"),
+            "vaapih265enc" => string.Create(f, $"vaapih265enc rate-control=cqp init-qp={hevcQp} keyframe-period={gop} max-bframes=0 ! {hevcOut}"),
             _ => throw new ArgumentOutOfRangeException(nameof(encoder), encoder, null),
         };
     }
 
-    /// <summary>About 0.12 bit per pixel and frame, within 2 to 40 Mbit/s (openh264 has no constant-quality mode).</summary>
-    internal static long Bitrate(int width, int height, int framerate)
+    /// <summary>H.264 quantizer of a quality (1 to 100): 21 at the usual 70, one step per 4 points, within 12 to 40.</summary>
+    internal static int Quantizer(int quality) =>
+        Math.Clamp((int)Math.Round(21 + (RecordingEncoding.DefaultQuality - Math.Clamp(quality, 1, 100)) / 4.0, MidpointRounding.AwayFromZero), 12, 40);
+
+    /// <summary>
+    /// About 0.12 bit per pixel and frame at the usual quality (in proportion for the others), within 2 to 40 Mbit/s
+    /// (openh264 has no constant-quality mode).
+    /// </summary>
+    internal static long Bitrate(int width, int height, int framerate, int quality = RecordingEncoding.DefaultQuality)
     {
         if (width <= 0 || height <= 0) (width, height) = (1920, 1080);
-        return Math.Clamp((long)(width * (double)height * framerate * 0.12), 2_000_000, 40_000_000);
+        double bitsPerPixel = 0.12 * Math.Clamp(quality, 1, 100) / RecordingEncoding.DefaultQuality;
+        return Math.Clamp((long)(width * (double)height * framerate * bitsPerPixel), 2_000_000, 40_000_000);
     }
 
     private static string AudioEncoderChain(string encoder) => encoder switch

@@ -231,6 +231,18 @@ public static class FfmpegTools
         return match.Success ? match.Groups[1].Value : "";
     }
 
+    /// <summary>
+    /// The version for people: "n8.1.3-9-g29e619e767" → "8.1.3", "7.1.1-1ubuntu2" → "7.1.1", "N-121000-g1234abcd" (a
+    /// build of the development branch) → "N-121000"; anything else as is, "" when unknown.
+    /// </summary>
+    public static string ShortVersion(string version)
+    {
+        var release = Regex.Match(version, @"^n?(\d+(?:\.\d+)+)");
+        if (release.Success) return release.Groups[1].Value;
+        var master = Regex.Match(version, @"^(N-\d+)");
+        return master.Success ? master.Groups[1].Value : version;
+    }
+
     /// <summary>Encoder names from "ffmpeg -encoders" (lines like " V....D libx264  libx264 H.264 ...").</summary>
     public static HashSet<string> ParseEncoders(string text)
     {
