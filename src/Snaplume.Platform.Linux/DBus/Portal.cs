@@ -134,8 +134,9 @@ internal static class Portal
             {
                 return await connection.WatchNameOwnerAsync(Service).ConfigureAwait(false);
             }
-            catch (Exception ex) when (ex is DBusExceptionBase or InvalidOperationException or ArgumentException)
+            catch (Exception ex)
             {
+                // Kept for the whole run: requests then simply do not notice a portal that stops.
                 ErrorLog.Write("Portail (propriétaire du nom)", ex);
                 return null;
             }
