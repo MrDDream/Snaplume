@@ -1,0 +1,26 @@
+# yaml-language-server: $schema=https://aka.ms/winget-manifest.installer.1.10.0.schema.json
+
+PackageIdentifier: MrDDream.Snaplume
+PackageVersion: 1.1.1
+MinimumOSVersion: 10.0.19041.0
+UpgradeBehavior: install
+ReleaseDate: 2026-10-30
+Installers:
+# Inno Setup: installs for the current user by default (PrivilegesRequired=lowest).
+- Architecture: x64
+  InstallerType: inno
+  Scope: user
+  InstallerUrl: https://github.com/MrDDream/Snaplume/releases/download/v1.1.1/Snaplume-Setup-1.1.1.exe
+  InstallerSha256: AE9376180A20DE4FC6A2090A85702A07F32D616BADBE7268EE9A12ADAE9DB4B8
+  ProductCode: '{99A39269-5DA6-482F-AC92-453095B44057}_is1'
+# Same installer for every user of the PC (asks for administrator rights).
+- Architecture: x64
+  InstallerType: inno
+  Scope: machine
+  InstallerUrl: https://github.com/MrDDream/Snaplume/releases/download/v1.1.1/Snaplume-Setup-1.1.1.exe
+  InstallerSha256: AE9376180A20DE4FC6A2090A85702A07F32D616BADBE7268EE9A12ADAE9DB4B8
+  InstallerSwitches:
+    Custom: /ALLUSERS
+  ProductCode: '{99A39269-5DA6-482F-AC92-453095B44057}_is1'
+ManifestType: installer
+ManifestVersion: 1.10.0

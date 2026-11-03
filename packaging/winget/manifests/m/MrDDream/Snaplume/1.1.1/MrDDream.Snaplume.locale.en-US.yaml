@@ -1,0 +1,31 @@
+# yaml-language-server: $schema=https://aka.ms/winget-manifest.defaultLocale.1.10.0.schema.json
+
+PackageIdentifier: MrDDream.Snaplume
+PackageVersion: 1.1.1
+PackageLocale: en-US
+Publisher: Snaplume contributors
+PublisherUrl: https://github.com/MrDDream
+PublisherSupportUrl: https://github.com/MrDDream/Snaplume/issues
+Author: MrDDream
+PackageName: Snaplume
+PackageUrl: https://mrddream.github.io/Snaplume/
+License: MIT
+LicenseUrl: https://github.com/MrDDream/Snaplume/blob/main/LICENSE
+Copyright: Copyright (c) Snaplume contributors - MIT License
+ShortDescription: Free, open-source screenshots, annotations and screen recording. 100% offline.
+Description: |-
+  Snaplume captures a region, a window, a screen or a scrolling page, annotates it (arrows, shapes, text,
+  blur, numbered steps), records the screen as MP4 with sound and webcam, reads text (OCR) and QR codes,
+  and keeps everything in local workspaces. No account, no cloud, no telemetry.
+Moniker: snaplume
+Tags:
+- annotation
+- capture
+- ocr
+- screen-recorder
+- screenshot
+- scrolling-screenshot
+- snipping-tool
+ReleaseNotesUrl: https://github.com/MrDDream/Snaplume/releases/tag/v1.1.1
+ManifestType: defaultLocale
+ManifestVersion: 1.10.0
