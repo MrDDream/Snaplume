@@ -816,5 +816,20 @@
   "Workspace.OpenFolderTipSystem": "Apri la cartella delle acquisizioni nel gestore file",
   "Settings.Hotkeys.SystemShortcutHeader": "Scorciatoia di Windows",
   "Settings.Hotkeys.ReplaceSnipping": "Usa Win+Maiusc+S per Snaplume",
-  "Settings.Hotkeys.ReplaceSnippingDescription": "Win+Maiusc+S avvia una cattura di area di Snaplume invece dello Strumento di cattura. In una finestra eseguita come amministratore si apre comunque lo Strumento di cattura."
+  "Settings.Hotkeys.ReplaceSnippingDescription": "Win+Maiusc+S avvia una cattura di area di Snaplume invece dello Strumento di cattura. In una finestra eseguita come amministratore si apre comunque lo Strumento di cattura.",
+  "Borders.Button": "Bordi",
+  "Borders.ButtonTip": "Bordi e ombre pronti all'uso, applicati con un clic",
+  "Borders.Title": "Stili di bordo",
+  "Borders.None": "Nessuno",
+  "Borders.ThinBlack": "Contorno nero sottile",
+  "Borders.ThickBlack": "Contorno nero spesso",
+  "Borders.Gray": "Contorno grigio",
+  "Borders.WhiteFrame": "Cornice bianca con ombra",
+  "Borders.Shadow": "Ombra esterna",
+  "Borders.RoundedShadow": "Angoli arrotondati + ombra",
+  "Borders.RoundedBorder": "Contorno + angoli arrotondati",
+  "Borders.TornBottom": "Bordo strappato in basso",
+  "Borders.TornTopBottom": "Bordo strappato in alto e in basso",
+  "Borders.Advanced": "Impostazioni avanzate…",
+  "Borders.AdvancedTip": "Regola con precisione ombra, bordo, angoli, bordo strappato e sfondo"
 }

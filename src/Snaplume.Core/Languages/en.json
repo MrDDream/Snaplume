@@ -816,5 +816,20 @@
   "Workspace.OpenFolderTipSystem": "Open the screenshots folder in the file manager",
   "Settings.Hotkeys.SystemShortcutHeader": "Windows shortcut",
   "Settings.Hotkeys.ReplaceSnipping": "Use Win+Shift+S for Snaplume",
-  "Settings.Hotkeys.ReplaceSnippingDescription": "Win+Shift+S starts a Snaplume area capture instead of the Snipping Tool. In a window run as administrator, the Snipping Tool still opens."
+  "Settings.Hotkeys.ReplaceSnippingDescription": "Win+Shift+S starts a Snaplume area capture instead of the Snipping Tool. In a window run as administrator, the Snipping Tool still opens.",
+  "Borders.Button": "Borders",
+  "Borders.ButtonTip": "Ready-made borders and shadows, applied in one click",
+  "Borders.Title": "Border styles",
+  "Borders.None": "None",
+  "Borders.ThinBlack": "Thin black outline",
+  "Borders.ThickBlack": "Thick black outline",
+  "Borders.Gray": "Gray outline",
+  "Borders.WhiteFrame": "White frame with shadow",
+  "Borders.Shadow": "Drop shadow",
+  "Borders.RoundedShadow": "Rounded corners + shadow",
+  "Borders.RoundedBorder": "Outline + rounded corners",
+  "Borders.TornBottom": "Torn bottom edge",
+  "Borders.TornTopBottom": "Torn top and bottom edges",
+  "Borders.Advanced": "Advanced settings…",
+  "Borders.AdvancedTip": "Fine-tune the shadow, border, corners, torn edge and background"
 }

@@ -816,5 +816,20 @@
   "Workspace.OpenFolderTipSystem": "Ouvrir le dossier des captures dans le gestionnaire de fichiers",
   "Settings.Hotkeys.SystemShortcutHeader": "Raccourci de Windows",
   "Settings.Hotkeys.ReplaceSnipping": "Utiliser Win+Maj+S pour Snaplume",
-  "Settings.Hotkeys.ReplaceSnippingDescription": "Win+Maj+S lance une capture de zone de Snaplume au lieu de l'Outil Capture. Dans une fenêtre exécutée en administrateur, l'Outil Capture s'ouvre toujours."
+  "Settings.Hotkeys.ReplaceSnippingDescription": "Win+Maj+S lance une capture de zone de Snaplume au lieu de l'Outil Capture. Dans une fenêtre exécutée en administrateur, l'Outil Capture s'ouvre toujours.",
+  "Borders.Button": "Bordures",
+  "Borders.ButtonTip": "Bordures et ombres prêtes à l'emploi, appliquées en un clic",
+  "Borders.Title": "Styles de bordure",
+  "Borders.None": "Aucune",
+  "Borders.ThinBlack": "Contour noir fin",
+  "Borders.ThickBlack": "Contour noir épais",
+  "Borders.Gray": "Contour gris",
+  "Borders.WhiteFrame": "Cadre blanc avec ombre",
+  "Borders.Shadow": "Ombre portée",
+  "Borders.RoundedShadow": "Coins arrondis + ombre",
+  "Borders.RoundedBorder": "Contour + coins arrondis",
+  "Borders.TornBottom": "Bord déchiré en bas",
+  "Borders.TornTopBottom": "Bord déchiré en haut et en bas",
+  "Borders.Advanced": "Réglages avancés…",
+  "Borders.AdvancedTip": "Régler finement l'ombre, la bordure, les coins, le bord déchiré et le fond"
 }

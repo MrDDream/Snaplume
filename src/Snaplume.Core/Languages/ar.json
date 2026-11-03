@@ -816,5 +816,20 @@
   "Workspace.OpenFolderTipSystem": "فتح مجلد اللقطات في مدير الملفات",
   "Settings.Hotkeys.SystemShortcutHeader": "اختصار Windows",
   "Settings.Hotkeys.ReplaceSnipping": "استخدام Win+Shift+S لـ Snaplume",
-  "Settings.Hotkeys.ReplaceSnippingDescription": "يبدأ Win+Shift+S التقاط منطقة باستخدام Snaplume بدلاً من أداة القطع. في نافذة تعمل كمسؤول، تظل أداة القطع هي التي تفتح."
+  "Settings.Hotkeys.ReplaceSnippingDescription": "يبدأ Win+Shift+S التقاط منطقة باستخدام Snaplume بدلاً من أداة القطع. في نافذة تعمل كمسؤول، تظل أداة القطع هي التي تفتح.",
+  "Borders.Button": "الإطارات",
+  "Borders.ButtonTip": "إطارات وظلال جاهزة، تُطبَّق بنقرة واحدة",
+  "Borders.Title": "أنماط الإطار",
+  "Borders.None": "بلا",
+  "Borders.ThinBlack": "إطار أسود رفيع",
+  "Borders.ThickBlack": "إطار أسود سميك",
+  "Borders.Gray": "إطار رمادي",
+  "Borders.WhiteFrame": "إطار أبيض مع ظل",
+  "Borders.Shadow": "ظل خارجي",
+  "Borders.RoundedShadow": "زوايا مستديرة + ظل",
+  "Borders.RoundedBorder": "إطار + زوايا مستديرة",
+  "Borders.TornBottom": "حافة ممزقة في الأسفل",
+  "Borders.TornTopBottom": "حافة ممزقة في الأعلى والأسفل",
+  "Borders.Advanced": "إعدادات متقدمة…",
+  "Borders.AdvancedTip": "ضبط دقيق للظل والإطار والزوايا والحافة الممزقة والخلفية"
 }

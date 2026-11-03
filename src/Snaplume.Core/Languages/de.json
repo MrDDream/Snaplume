@@ -816,5 +816,20 @@
   "Workspace.OpenFolderTipSystem": "Screenshot-Ordner im Dateimanager öffnen",
   "Settings.Hotkeys.SystemShortcutHeader": "Windows-Tastenkombination",
   "Settings.Hotkeys.ReplaceSnipping": "Win+Umschalt+S für Snaplume verwenden",
-  "Settings.Hotkeys.ReplaceSnippingDescription": "Win+Umschalt+S startet eine Bereichsaufnahme von Snaplume statt des Snipping Tools. In einem als Administrator ausgeführten Fenster öffnet sich weiterhin das Snipping Tool."
+  "Settings.Hotkeys.ReplaceSnippingDescription": "Win+Umschalt+S startet eine Bereichsaufnahme von Snaplume statt des Snipping Tools. In einem als Administrator ausgeführten Fenster öffnet sich weiterhin das Snipping Tool.",
+  "Borders.Button": "Rahmen",
+  "Borders.ButtonTip": "Fertige Rahmen und Schatten, mit einem Klick angewendet",
+  "Borders.Title": "Rahmenstile",
+  "Borders.None": "Keiner",
+  "Borders.ThinBlack": "Dünne schwarze Kontur",
+  "Borders.ThickBlack": "Dicke schwarze Kontur",
+  "Borders.Gray": "Graue Kontur",
+  "Borders.WhiteFrame": "Weißer Rahmen mit Schatten",
+  "Borders.Shadow": "Schlagschatten",
+  "Borders.RoundedShadow": "Abgerundete Ecken + Schatten",
+  "Borders.RoundedBorder": "Kontur + abgerundete Ecken",
+  "Borders.TornBottom": "Reißkante unten",
+  "Borders.TornTopBottom": "Reißkante oben und unten",
+  "Borders.Advanced": "Erweiterte Einstellungen…",
+  "Borders.AdvancedTip": "Schatten, Rahmen, Ecken, Reißkante und Hintergrund genau einstellen"
 }

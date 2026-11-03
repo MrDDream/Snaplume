@@ -816,5 +816,20 @@
   "Workspace.OpenFolderTipSystem": "Abrir la carpeta de capturas en el gestor de archivos",
   "Settings.Hotkeys.SystemShortcutHeader": "Atajo de Windows",
   "Settings.Hotkeys.ReplaceSnipping": "Usar Win+Mayús+S para Snaplume",
-  "Settings.Hotkeys.ReplaceSnippingDescription": "Win+Mayús+S inicia una captura de zona de Snaplume en lugar de la Herramienta Recortes. En una ventana ejecutada como administrador, se sigue abriendo la Herramienta Recortes."
+  "Settings.Hotkeys.ReplaceSnippingDescription": "Win+Mayús+S inicia una captura de zona de Snaplume en lugar de la Herramienta Recortes. En una ventana ejecutada como administrador, se sigue abriendo la Herramienta Recortes.",
+  "Borders.Button": "Bordes",
+  "Borders.ButtonTip": "Bordes y sombras listos para usar, aplicados con un clic",
+  "Borders.Title": "Estilos de borde",
+  "Borders.None": "Ninguno",
+  "Borders.ThinBlack": "Contorno negro fino",
+  "Borders.ThickBlack": "Contorno negro grueso",
+  "Borders.Gray": "Contorno gris",
+  "Borders.WhiteFrame": "Marco blanco con sombra",
+  "Borders.Shadow": "Sombra paralela",
+  "Borders.RoundedShadow": "Esquinas redondeadas + sombra",
+  "Borders.RoundedBorder": "Contorno + esquinas redondeadas",
+  "Borders.TornBottom": "Borde rasgado abajo",
+  "Borders.TornTopBottom": "Borde rasgado arriba y abajo",
+  "Borders.Advanced": "Ajustes avanzados…",
+  "Borders.AdvancedTip": "Ajustar con precisión la sombra, el borde, las esquinas, el borde rasgado y el fondo"
 }
