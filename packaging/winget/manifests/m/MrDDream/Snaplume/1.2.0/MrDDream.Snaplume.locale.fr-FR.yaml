@@ -1,0 +1,21 @@
+# yaml-language-server: $schema=https://aka.ms/winget-manifest.locale.1.10.0.schema.json
+
+PackageIdentifier: MrDDream.Snaplume
+PackageVersion: 1.2.0
+PackageLocale: fr-FR
+Publisher: Snaplume contributors
+PackageName: Snaplume
+License: MIT
+ShortDescription: Captures d'écran, annotations et enregistrement d'écran, libres et gratuits. 100 % hors ligne.
+Description: |-
+  Snaplume capture une zone, une fenêtre, un écran ou une page défilante, l'annote (flèches, formes, texte,
+  flou, étapes numérotées), enregistre l'écran en MP4 avec le son et la webcam, lit le texte (OCR) et les
+  QR codes, et range tout dans des espaces de travail locaux. Sans compte, sans cloud, sans télémétrie.
+Tags:
+- annotation
+- capture
+- capture-d-ecran
+- enregistrement-ecran
+- ocr
+ManifestType: locale
+ManifestVersion: 1.10.0
