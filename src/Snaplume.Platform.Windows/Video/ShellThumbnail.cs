@@ -1,6 +1,7 @@
 using System.Runtime.InteropServices;
 using Snaplume.Imaging;
 using Snaplume.Platform.Windows.Native;
+using static Snaplume.Platform.Windows.Native.NativeMethods;
 
 namespace Snaplume.Platform.Windows.Video;
 
@@ -12,40 +13,11 @@ namespace Snaplume.Platform.Windows.Video;
 internal static class ShellThumbnail
 {
     private const int SIIGBF_BIGGERSIZEOK = 0x01;
-    private const int DIB_RGB_COLORS = 0;
 
     [StructLayout(LayoutKind.Sequential)]
     private struct SIZE
     {
         public int cx, cy;
-    }
-
-    [StructLayout(LayoutKind.Sequential)]
-    private struct BITMAP
-    {
-        public int bmType;
-        public int bmWidth;
-        public int bmHeight;
-        public int bmWidthBytes;
-        public ushort bmPlanes;
-        public ushort bmBitsPixel;
-        public IntPtr bmBits;
-    }
-
-    [StructLayout(LayoutKind.Sequential)]
-    private struct BITMAPINFOHEADER
-    {
-        public int biSize;
-        public int biWidth;
-        public int biHeight;
-        public ushort biPlanes;
-        public ushort biBitCount;
-        public uint biCompression;
-        public uint biSizeImage;
-        public int biXPelsPerMeter;
-        public int biYPelsPerMeter;
-        public uint biClrUsed;
-        public uint biClrImportant;
     }
 
     [ComImport]
@@ -61,18 +33,6 @@ internal static class ShellThumbnail
     private static extern void SHCreateItemFromParsingName(
         string path, IntPtr bindContext, [MarshalAs(UnmanagedType.LPStruct)] Guid riid,
         [MarshalAs(UnmanagedType.Interface)] out IShellItemImageFactory factory);
-
-    [DllImport("gdi32.dll")]
-    private static extern int GetObject(IntPtr handle, int size, out BITMAP bitmap);
-
-    [DllImport("gdi32.dll")]
-    private static extern int GetDIBits(IntPtr hdc, IntPtr bitmap, uint start, uint lines, byte[] bits, ref BITMAPINFOHEADER info, uint usage);
-
-    [DllImport("user32.dll")]
-    private static extern IntPtr GetDC(IntPtr hWnd);
-
-    [DllImport("user32.dll")]
-    private static extern int ReleaseDC(IntPtr hWnd, IntPtr hdc);
 
     /// <returns>The thumbnail (or the file type's icon), straight alpha; null if the shell failed.</returns>
     public static PixelBuffer? Get(string path, int size)

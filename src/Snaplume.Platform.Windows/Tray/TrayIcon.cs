@@ -106,8 +106,9 @@ public sealed class TrayIcon : ITray
         data.uCallbackMessage = CallbackMessage;
         data.hIcon = _appIcon;
         data.szTip = _tooltip;
-        // Fails while the task bar is not there yet (session start): TaskbarCreated comes once it is.
-        _added = Shell_NotifyIcon(NIM_ADD, ref data);
+        // Fails while the task bar is not there yet (session start): TaskbarCreated comes once it is. Also fails when
+        // the icon is still there (TaskbarCreated sent without an Explorer restart, e.g. a DPI change): it is updated.
+        _added = Shell_NotifyIcon(NIM_ADD, ref data) || Shell_NotifyIcon(NIM_MODIFY, ref data);
     }
 
     private IntPtr? OnMessage(uint message, IntPtr wParam, IntPtr lParam)

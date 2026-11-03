@@ -114,15 +114,24 @@ public sealed class VideoTools : IVideoTools
                 foreach (var image in images) image.Dispose();
                 throw new InvalidOperationException("Missing video frames.");
             }
-            for (int i = 0; i < images.Count; i++)
+            int done = 0; // images of the batch already decoded and disposed
+            try
             {
-                PixelBuffer frame;
-                using (var image = images[i])
+                while (done < images.Count)
                 {
-                    cancel.ThrowIfCancellationRequested();
-                    frame = new PixelBuffer(width, height, await ReadPixelsAsync(image, width, height).ConfigureAwait(false)).MakeOpaque();
+                    PixelBuffer frame;
+                    using (var image = images[done++])
+                    {
+                        cancel.ThrowIfCancellationRequested();
+                        frame = new PixelBuffer(width, height, await ReadPixelsAsync(image, width, height).ConfigureAwait(false)).MakeOpaque();
+                    }
+                    yield return frame;
                 }
-                yield return frame;
+            }
+            finally
+            {
+                // An error, a cancellation or a caller that stops early: the rest of the batch is released too.
+                for (int i = done; i < images.Count; i++) images[i].Dispose();
             }
         }
     }

@@ -5,6 +5,7 @@ using Avalonia.Threading;
 using Snaplume.Core;
 using Snaplume.Imaging;
 using Snaplume.Platform.Windows.Native;
+using static Snaplume.Platform.Windows.Native.NativeMethods;
 
 namespace Snaplume.Platform.Windows.Clipboard;
 
@@ -43,10 +44,11 @@ public sealed class ImageClipboard : IImageClipboard
     public async Task<PixelBuffer?> GetImageAsync()
     {
         var content = await OnUiAsync(ReadAsync);
+        // Decoding a big image takes a while: off the UI thread, once the clipboard is closed again.
         return content switch
         {
-            byte[] png => ImageIO.Decode(png),
-            string file => ImageIO.Load(file),
+            byte[] png => await Task.Run(() => ImageIO.Decode(png)),
+            string file => await Task.Run(() => ImageIO.Load(file)),
             PixelBuffer bitmap => bitmap,
             _ => null,
         };
@@ -195,18 +197,18 @@ public sealed class ImageClipboard : IImageClipboard
         ImageIO.CheckSize(width, height);
         var image = new PixelBuffer(width, height);
         // Negative height: top-down rows, as PixelBuffer.
-        var header = new NativeMethods.BITMAPINFOHEADER
+        var header = new BITMAPINFOHEADER
         {
-            biSize = Marshal.SizeOf<NativeMethods.BITMAPINFOHEADER>(), biWidth = width, biHeight = -height, biPlanes = 1, biBitCount = 32,
+            biSize = Marshal.SizeOf<BITMAPINFOHEADER>(), biWidth = width, biHeight = -height, biPlanes = 1, biBitCount = 32,
         };
-        var screen = NativeMethods.GetDC(IntPtr.Zero);
+        var screen = GetDC(IntPtr.Zero);
         try
         {
-            if (GetDIBits(screen, bitmap, 0, (uint)height, image.Pixels, ref header, 0) != height) return null;
+            if (GetDIBits(screen, bitmap, 0, (uint)height, image.Pixels, ref header, DIB_RGB_COLORS) != height) return null;
         }
         finally
         {
-            NativeMethods.ReleaseDC(IntPtr.Zero, screen);
+            ReleaseDC(IntPtr.Zero, screen);
         }
         return image.MakeOpaque();
     }
@@ -214,21 +216,7 @@ public sealed class ImageClipboard : IImageClipboard
     private static Task<T> OnUiAsync<T>(Func<Task<T>> action) =>
         Dispatcher.UIThread.CheckAccess() ? action() : Dispatcher.UIThread.InvokeAsync(action);
 
-    // ---- Win32 ----
-
-    private const uint GMEM_MOVEABLE = 0x2;
-
-    [StructLayout(LayoutKind.Sequential)]
-    private struct BITMAP
-    {
-        public int bmType;
-        public int bmWidth;
-        public int bmHeight;
-        public int bmWidthBytes;
-        public ushort bmPlanes;
-        public ushort bmBitsPixel;
-        public IntPtr bmBits;
-    }
+    // ---- Win32 (the GDI and global memory functions are in NativeMethods) ----
 
     [DllImport("user32.dll", CharSet = CharSet.Unicode, EntryPoint = "RegisterClipboardFormatW")]
     private static extern uint RegisterClipboardFormat(string name);
@@ -255,28 +243,6 @@ public sealed class ImageClipboard : IImageClipboard
     [return: MarshalAs(UnmanagedType.Bool)]
     private static extern bool IsClipboardFormatAvailable(uint format);
 
-    [DllImport("kernel32.dll", SetLastError = true)]
-    private static extern IntPtr GlobalAlloc(uint flags, UIntPtr size);
-
-    [DllImport("kernel32.dll")]
-    private static extern IntPtr GlobalLock(IntPtr memory);
-
-    [DllImport("kernel32.dll")]
-    [return: MarshalAs(UnmanagedType.Bool)]
-    private static extern bool GlobalUnlock(IntPtr memory);
-
-    [DllImport("kernel32.dll")]
-    private static extern UIntPtr GlobalSize(IntPtr memory);
-
-    [DllImport("kernel32.dll")]
-    private static extern IntPtr GlobalFree(IntPtr memory);
-
     [DllImport("shell32.dll", CharSet = CharSet.Unicode, EntryPoint = "DragQueryFileW")]
     private static extern uint DragQueryFile(IntPtr drop, uint index, StringBuilder? file, uint size);
-
-    [DllImport("gdi32.dll", EntryPoint = "GetObjectW")]
-    private static extern int GetObject(IntPtr handle, int size, out BITMAP bitmap);
-
-    [DllImport("gdi32.dll")]
-    private static extern int GetDIBits(IntPtr hdc, IntPtr bitmap, uint start, uint lines, byte[] bits, ref NativeMethods.BITMAPINFOHEADER info, uint usage);
 }

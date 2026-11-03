@@ -30,7 +30,10 @@ public sealed class MediaVideoPlayer : IVideoPlayer, IVideoPlayerSpeed
     private int _copying;
     private int _pending;
     private volatile bool _disposed;
-    private TaskCompletionSource<bool>? _opening;
+    private Opening? _opening;
+
+    /// <summary>An open waiting for the engine, with the source it gave the player.</summary>
+    private sealed record Opening(MediaSource Source, TaskCompletionSource<bool> Done);
 
     public MediaVideoPlayer()
     {
@@ -75,22 +78,26 @@ public sealed class MediaVideoPlayer : IVideoPlayer, IVideoPlayerSpeed
     {
         Error = null;
         HasEnded = false;
-        var opening = new TaskCompletionSource<bool>(TaskCreationOptions.RunContinuationsAsynchronously);
-        _opening = opening;
+        Opening? opening = null;
         try
         {
             var file = await StorageFile.GetFileFromPathAsync(Path.GetFullPath(path));
-            _player.Source = MediaSource.CreateFromStorageFile(file);
+            var source = MediaSource.CreateFromStorageFile(file);
+            // Registered only now, just before the player gets the source: until then, its events are those of the
+            // previous source. An open still waiting is superseded (it completes as not opened).
+            opening = new Opening(source, new TaskCompletionSource<bool>(TaskCreationOptions.RunContinuationsAsynchronously));
+            Interlocked.Exchange(ref _opening, opening)?.Done.TrySetResult(false);
+            _player.Source = source;
         }
         catch (Exception ex)
         {
             ErrorLog.Write($"Lecture de {path}", ex);
             Error = ex.Message;
-            _opening = null;
+            Finish(opening, false);
             StateChanged?.Invoke();
             return;
         }
-        await opening.Task;
+        await opening.Done.Task;
     }
 
     public void Play()
@@ -133,7 +140,7 @@ public sealed class MediaVideoPlayer : IVideoPlayer, IVideoPlayerSpeed
         _player.MediaFailed -= OnMediaFailed;
         _player.MediaEnded -= OnMediaEnded;
         _player.PlaybackSession.PlaybackStateChanged -= OnPlaybackStateChanged;
-        _opening?.TrySetResult(false);
+        Interlocked.Exchange(ref _opening, null)?.Done.TrySetResult(false);
         _player.Dispose();
         lock (_lock)
         {
@@ -148,8 +155,9 @@ public sealed class MediaVideoPlayer : IVideoPlayer, IVideoPlayerSpeed
 
     private void OnMediaOpened(MediaPlayer sender, object args)
     {
-        _opening?.TrySetResult(true);
-        _opening = null;
+        var opening = Volatile.Read(ref _opening);
+        if (IsLate(sender, opening)) return;
+        Finish(opening, true);
         StateChanged?.Invoke();
         // The first picture, shown before playing.
         _ = CopyFrameAsync();
@@ -157,11 +165,26 @@ public sealed class MediaVideoPlayer : IVideoPlayer, IVideoPlayerSpeed
 
     private void OnMediaFailed(MediaPlayer sender, MediaPlayerFailedEventArgs args)
     {
+        var opening = Volatile.Read(ref _opening);
+        if (IsLate(sender, opening)) return;
         Error = string.IsNullOrWhiteSpace(args.ErrorMessage) ? args.Error.ToString() : args.ErrorMessage;
         ErrorLog.Write("Lecteur vidéo", $"{args.Error}: {args.ErrorMessage} ({args.ExtendedErrorCode?.Message})");
-        _opening?.TrySetResult(false);
-        _opening = null;
+        Finish(opening, false);
         StateChanged?.Invoke();
+    }
+
+    /// <summary>
+    /// An event of the previous source, come late: <paramref name="opening"/> is waiting but the player does not
+    /// have its source yet. Such an event must neither complete the newer open nor report anything.
+    /// </summary>
+    private static bool IsLate(MediaPlayer sender, Opening? opening) =>
+        opening != null && !ReferenceEquals(Safe<object?>(() => sender.Source, null), opening.Source);
+
+    /// <summary>Completes <paramref name="opening"/> if it is still the open in progress (not superseded).</summary>
+    private void Finish(Opening? opening, bool opened)
+    {
+        if (opening != null && Interlocked.CompareExchange(ref _opening, null, opening) == opening)
+            opening.Done.TrySetResult(opened);
     }
 
     private void OnMediaEnded(MediaPlayer sender, object args)

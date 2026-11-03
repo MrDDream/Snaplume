@@ -172,7 +172,9 @@ public sealed class DesktopShell : IDesktopShell
 
     /// <summary>
     /// True when the "Snaplume" value of the Run key starts this executable (e.g. created by the
-    /// installer). A value starting another copy of Snaplume does not count.
+    /// installer). A value starting another copy of Snaplume does not count, nor does one whose executable no longer
+    /// exists (left by an uninstalled copy: the MSI package cannot clean the Run key of every user); saving the
+    /// setting turned off then removes it (<see cref="SetStartWithSession"/>).
     /// </summary>
     public bool StartsWithSession
     {
@@ -182,7 +184,8 @@ public sealed class DesktopShell : IDesktopShell
             {
                 using var key = Registry.CurrentUser.OpenSubKey(RunKey);
                 if (key?.GetValue(RunValue) is not string command || Environment.ProcessPath is not { } exe) return false;
-                return CommandExecutable(command) is { } target && IsSameFile(target, exe);
+                return CommandExecutable(command) is { } target && File.Exists(Environment.ExpandEnvironmentVariables(target))
+                       && IsSameFile(target, exe);
             }
             catch (Exception ex)
             {
@@ -192,7 +195,10 @@ public sealed class DesktopShell : IDesktopShell
         }
     }
 
-    /// <summary>Writes or removes the Run value (this executable, started in the tray). Throws on failure.</summary>
+    /// <summary>
+    /// Writes or removes the Run value (this executable, started in the tray). Turned off, the value is removed
+    /// whatever it starts, an orphan included. Throws on failure.
+    /// </summary>
     public void SetStartWithSession(bool enabled)
     {
         using var key = Registry.CurrentUser.OpenSubKey(RunKey, writable: true);
