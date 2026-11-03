@@ -9,6 +9,11 @@
     <Copyright>Contributeurs Snaplume — licence MIT</Copyright>
     <!-- Avalonia's build telemetry: Snaplume sends nothing anywhere, its build neither. -->
     <AvaloniaTelemetryOptOut>true</AvaloniaTelemetryOptOut>
+    <!--
+      Snaplume.App also targets Windows: restoring it on Linux (tests, Linux packages) needs the Windows targeting
+      packs. Only the net10.0 build is compiled there.
+    -->
+    <EnableWindowsTargeting Condition="'$(OS)' != 'Windows_NT'">true</EnableWindowsTargeting>
   </PropertyGroup>
 
   <!--
