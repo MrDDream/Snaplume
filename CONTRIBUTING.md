@@ -28,7 +28,7 @@ dotnet run --project src/Snaplume.App -f net10.0-windows10.0.19041.0   # Linux: 
 ## Pull requests
 
 - Keep each pull request focused on one change, and describe how you tested it.
-- Follow the existing code style (C# with nullable reference types, WPF with `DynamicResource` theme brushes).
+- Follow the existing code style (C# with nullable reference types, Avalonia with `DynamicResource` theme brushes and style classes).
 - Every user-visible string goes through the translation files: add the key to **all six** files in `src/Snaplume.Core/Languages/` (an English value is fine if you cannot translate it).
 - Check the change in both the light and the dark theme, and in Arabic (right-to-left) when it touches layout.
 - Snaplume is 100% offline: features that need an online service, an account or telemetry will not be accepted.

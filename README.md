@@ -26,7 +26,7 @@ English | [Français](README.fr.md)
 - **Fast by default.** Press <kbd>Print Screen</kbd>, click a window or drag a region, and the capture is already saved, named and in your gallery.
 - **Annotations stay editable.** Reopen a capture tomorrow and move that arrow, fix that typo or renumber those steps.
 - **Private by design.** No account, no cloud, no telemetry, no ads. Your screenshots never leave your PC.
-- **Free forever.** MIT licensed, built in the open with C# / .NET 10 / WPF.
+- **Free forever.** MIT licensed, built in the open with C# / .NET 10 / Avalonia.
 
 ## Features
 

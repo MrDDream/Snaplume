@@ -26,7 +26,7 @@
 - **Rapide par défaut.** Appuyez sur <kbd>Impr. écran</kbd>, cliquez sur une fenêtre ou tracez une zone : la capture est déjà enregistrée, nommée et dans votre galerie.
 - **Des annotations qui restent modifiables.** Rouvrez une capture le lendemain pour déplacer une flèche, corriger une faute ou renuméroter des étapes.
 - **Respect de la vie privée.** Pas de compte, pas de cloud, pas de télémétrie, pas de publicité. Vos captures ne quittent jamais votre PC.
-- **Gratuit, pour toujours.** Sous licence MIT, développé en C# / .NET 10 / WPF.
+- **Gratuit, pour toujours.** Sous licence MIT, développé en C# / .NET 10 / Avalonia.
 
 ## Fonctionnalités
 
