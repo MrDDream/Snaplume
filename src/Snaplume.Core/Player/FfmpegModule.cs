@@ -52,21 +52,14 @@ public static class FfmpegModule
 
     public static bool IsInstalled => File.Exists(ExecutablePath);
 
-    /// <summary>Where the archive waits while it downloads (emptied before and after).</summary>
-    private static string DownloadFolder => Path.Combine(Path.GetTempPath(), "Snaplume-ffmpeg");
+    /// <summary>Where the archive waits while it downloads (emptied before and after): a folder of the user's only.</summary>
+    private static string DownloadFolder => UpdateDownloader.PrivateFolder("ffmpeg");
 
     /// <summary>
     /// The first address of the download: a file of a BtbN release, over HTTPS; the redirect may also go to GitHub's
     /// storage for release files.
     /// </summary>
-    public static bool IsAllowedDownload(Uri uri)
-    {
-        if (!UpdatePackages.IsHttps(uri) || !string.Equals(uri.Host, "github.com", StringComparison.OrdinalIgnoreCase)) return false;
-        var address = uri.GetLeftPart(UriPartial.Path);
-        if (!address.StartsWith(DownloadPrefix, StringComparison.Ordinal)) return false;
-        var rest = address[DownloadPrefix.Length..].Split('/');
-        return rest.Length == 2 && rest.All(part => part.Length > 0 && part != "." && part != ".." && !part.Contains('%'));
-    }
+    public static bool IsAllowedDownload(Uri uri) => UpdatePackages.IsReleaseDownload(uri, DownloadPrefix);
 
     public static bool IsAllowedRedirect(Uri uri) => IsAllowedDownload(uri) || UpdatePackages.IsReleaseStorage(uri);
 

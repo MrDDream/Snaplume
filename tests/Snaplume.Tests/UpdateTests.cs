@@ -294,6 +294,51 @@ public class UpdateTests : IDisposable
         Assert.DoesNotContain(handler.Requested, u => u.Host == "example.com");
     }
 
+    [Fact]
+    public async Task TheVerifiedPackageComesWithItsSumAndAStalePartIsReplaced()
+    {
+        var handler = new FakeHandler();
+        handler.File(Download + "SHA256SUMS.txt", Sums(PackageBytes));
+        handler.File(Download + PackageName, PackageBytes);
+        File.WriteAllText(Path.Combine(_folder, PackageName + ".part"), "left by an interrupted download");
+
+        var download = await new UpdateDownloader(handler).DownloadVerifiedAsync(Plan(PackageBytes.Length), _folder, null,
+            TestContext.Current.CancellationToken);
+
+        Assert.Equal(PackageBytes, File.ReadAllBytes(download.Path));
+        Assert.Equal(Convert.ToHexStringLower(SHA256.HashData(PackageBytes)), download.Sha256);
+        Assert.False(File.Exists(download.Path + ".part"));
+        Assert.True(UpdateDownloader.HasSha256(download.Path, download.Sha256));
+        Assert.True(UpdateDownloader.HasSha256(download.Path, download.Sha256.ToUpperInvariant()));
+        Assert.False(UpdateDownloader.HasSha256(download.Path, "not hexadecimal"));
+        Assert.False(UpdateDownloader.HasSha256(download.Path, download.Sha256[..62]));
+        Assert.False(UpdateDownloader.HasSha256(Path.Combine(_folder, "missing.exe"), download.Sha256));
+        // Changed after the download: refused before it is run.
+        File.AppendAllText(download.Path, "!");
+        Assert.False(UpdateDownloader.HasSha256(download.Path, download.Sha256));
+    }
+
+    [Fact]
+    public void DownloadsGoToAFolderOfTheUsersOnly()
+    {
+        var folder = UpdateDownloader.PrivateFolderIn(Path.Combine(_folder, "cache"), "update");
+        Assert.True(Directory.Exists(folder));
+        Assert.Equal(folder, UpdateDownloader.PrivateFolderIn(Path.Combine(_folder, "cache"), "update"));
+        Assert.Throws<ArgumentException>(() => UpdateDownloader.PrivateFolderIn(_folder, ".."));
+        if (OperatingSystem.IsWindows()) return;
+
+        const UnixFileMode ownerOnly = UnixFileMode.UserRead | UnixFileMode.UserWrite | UnixFileMode.UserExecute;
+        Assert.Equal(ownerOnly, File.GetUnixFileMode(folder));
+        // A folder others may write to, or a link, is refused.
+        var shared = Path.Combine(_folder, "shared");
+        Directory.CreateDirectory(shared);
+        File.SetUnixFileMode(shared, ownerOnly | UnixFileMode.GroupRead | UnixFileMode.GroupWrite | UnixFileMode.GroupExecute
+                                     | UnixFileMode.OtherRead | UnixFileMode.OtherWrite | UnixFileMode.OtherExecute);
+        Assert.Throws<IOException>(() => UpdateDownloader.PrivateFolderIn(_folder, "shared"));
+        Directory.CreateSymbolicLink(Path.Combine(_folder, "link"), folder);
+        Assert.Throws<IOException>(() => UpdateDownloader.PrivateFolderIn(_folder, "link"));
+    }
+
     /// <summary>Progress&lt;T&gt; posts to a synchronization context; this one reports at once.</summary>
     private sealed class SyncProgress(Action<long> report) : IProgress<long>
     {

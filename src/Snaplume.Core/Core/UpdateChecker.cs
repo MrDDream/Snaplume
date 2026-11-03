@@ -1,4 +1,6 @@
+using System.Globalization;
 using System.Net.Http.Headers;
+using System.Reflection;
 using System.Text.Json;
 using System.Text.RegularExpressions;
 
@@ -26,8 +28,19 @@ public static partial class UpdateChecker
     /// <param name="Assets">Files of the release that may be downloaded (see <see cref="UpdatePackages"/>).</param>
     public sealed record Release(Version Version, string DisplayVersion, string Page, IReadOnlyList<ReleaseAsset> Assets)
     {
-        public bool IsNewer => Version > CurrentVersion;
+        public bool IsNewer => IsNewerThan(CurrentVersion, CurrentIsPreRelease);
+
+        /// <summary>A pre-release ("1.2.0-beta.1"): older than the final version of the same number.</summary>
+        public bool IsPreRelease => DisplayVersion.Contains('-');
+
+        internal bool IsNewerThan(Version current, bool currentIsPreRelease) =>
+            Version > current || (Version == current && currentIsPreRelease && !IsPreRelease);
     }
+
+    /// <summary>This copy is a pre-release: its informational version has a suffix ("1.2.0-beta.1+abc123").</summary>
+    private static bool CurrentIsPreRelease =>
+        typeof(UpdateChecker).Assembly.GetCustomAttribute<AssemblyInformationalVersionAttribute>()?.InformationalVersion is { } version
+        && version.Split('+')[0].Contains('-');
 
     public static Version CurrentVersion
     {
@@ -114,15 +127,19 @@ public static partial class UpdateChecker
         display = "";
         var match = tag == null ? null : VersionPattern().Match(tag.Trim());
         if (match is not { Success: true }) return false;
-        if (!int.TryParse(match.Groups[1].Value, out int major) || !int.TryParse(match.Groups[2].Value, out int minor)) return false;
+        if (!TryParseNumber(match.Groups[1].Value, out int major) || !TryParseNumber(match.Groups[2].Value, out int minor)) return false;
         int build = 0;
-        if (match.Groups[3].Success && !int.TryParse(match.Groups[3].Value, out build)) return false;
+        if (match.Groups[3].Success && !TryParseNumber(match.Groups[3].Value, out build)) return false;
         version = new Version(major, minor, build);
         display = tag!.Trim().TrimStart('v', 'V');
         return true;
     }
 
-    [GeneratedRegex(@"^[vV]?(\d{1,5})\.(\d{1,5})(?:\.(\d{1,5}))?(?:-[0-9A-Za-z.-]{1,30})?$")]
+    private static bool TryParseNumber(string text, out int value) =>
+        int.TryParse(text, NumberStyles.None, CultureInfo.InvariantCulture, out value);
+
+    /// <summary>ASCII digits only ("\d" would also take the digits of other scripts).</summary>
+    [GeneratedRegex(@"^[vV]?([0-9]{1,5})\.([0-9]{1,5})(?:\.([0-9]{1,5}))?(?:-[0-9A-Za-z.-]{1,30})?$")]
     private static partial Regex VersionPattern();
 }
 
