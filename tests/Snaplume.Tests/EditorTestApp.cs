@@ -82,8 +82,8 @@ internal static class TestImages
     {
         int count = 0;
         for (int y = Math.Max(0, area.Y); y < Math.Min(image.Height, area.Bottom); y++)
-        for (int x = Math.Max(0, area.X); x < Math.Min(image.Width, area.Right); x++)
-            if (!Near(At(image, x, y), color, tolerance)) count++;
+            for (int x = Math.Max(0, area.X); x < Math.Min(image.Width, area.Right); x++)
+                if (!Near(At(image, x, y), color, tolerance)) count++;
         return count;
     }
 

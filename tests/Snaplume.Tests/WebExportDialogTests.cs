@@ -98,7 +98,8 @@ public class WebExportDialogTests
     {
         using var scope = new Scope(new AppSettings(), ThemeVariant.Dark);
         var dialog = new WebExportDialog(TimeSpan.FromSeconds(60), null, null, Source, WebVideoExport.Offered(_ => true, null, windows: true),
-            hasFfmpeg: false) { FlowDirection = FlowDirection.RightToLeft };
+            hasFfmpeg: false)
+        { FlowDirection = FlowDirection.RightToLeft };
         // The interface language stays French: other tests running meanwhile read it.
         scope.Open(dialog);
         Assert.True(dialog.FindControl<StackPanel>("MoreFormatsPanel")!.IsVisible);
@@ -110,7 +111,8 @@ public class WebExportDialogTests
     {
         using var scope = new Scope(new AppSettings { WebExportFormat = "webm", WebExportTarget = "off" }, ThemeVariant.Dark);
         var dialog = new WebExportDialog(TimeSpan.FromSeconds(60), TimeSpan.FromSeconds(5), TimeSpan.FromSeconds(25), Source, Formats(),
-            hasFfmpeg: true) { FlowDirection = FlowDirection.RightToLeft };
+            hasFfmpeg: true)
+        { FlowDirection = FlowDirection.RightToLeft };
         scope.Open(dialog);
         Assert.True(dialog.FindControl<StackPanel>("QualityPanel")!.IsVisible);
         Assert.False(dialog.FindControl<StackPanel>("MegabytesPanel")!.IsVisible);

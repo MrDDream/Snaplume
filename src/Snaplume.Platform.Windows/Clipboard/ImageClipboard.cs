@@ -199,7 +199,11 @@ public sealed class ImageClipboard : IImageClipboard
         // Negative height: top-down rows, as PixelBuffer.
         var header = new BITMAPINFOHEADER
         {
-            biSize = Marshal.SizeOf<BITMAPINFOHEADER>(), biWidth = width, biHeight = -height, biPlanes = 1, biBitCount = 32,
+            biSize = Marshal.SizeOf<BITMAPINFOHEADER>(),
+            biWidth = width,
+            biHeight = -height,
+            biPlanes = 1,
+            biBitCount = 32,
         };
         var screen = GetDC(IntPtr.Zero);
         try

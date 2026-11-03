@@ -24,14 +24,14 @@ public class WebPTests
     {
         var image = new PixelBuffer(width, height);
         for (int y = 0; y < height; y++)
-        for (int x = 0; x < width; x++)
-        {
-            int i = y * image.Stride + x * 4;
-            image.Pixels[i] = (byte)(x * 255 / (width - 1));
-            image.Pixels[i + 1] = (byte)(y * 255 / (height - 1));
-            image.Pixels[i + 2] = (byte)((x + y) % 256);
-            image.Pixels[i + 3] = (byte)(x * 255 / (width - 1));
-        }
+            for (int x = 0; x < width; x++)
+            {
+                int i = y * image.Stride + x * 4;
+                image.Pixels[i] = (byte)(x * 255 / (width - 1));
+                image.Pixels[i + 1] = (byte)(y * 255 / (height - 1));
+                image.Pixels[i + 2] = (byte)((x + y) % 256);
+                image.Pixels[i + 3] = (byte)(x * 255 / (width - 1));
+            }
         return image;
     }
 

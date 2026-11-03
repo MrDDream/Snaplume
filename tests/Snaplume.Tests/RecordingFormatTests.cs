@@ -134,7 +134,10 @@ public class RecordingFormatTests
     {
         var settings = new AppSettings
         {
-            VideoFormat = "webp", VideoCompression = "huge", VideoCompressionMegabytes = double.NaN, WebExportQuality = "original",
+            VideoFormat = "webp",
+            VideoCompression = "huge",
+            VideoCompressionMegabytes = double.NaN,
+            WebExportQuality = "original",
         };
         settings.Sanitize();
         Assert.Equal("mp4", settings.VideoFormat); // animated WebP is not a recording format

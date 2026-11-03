@@ -34,7 +34,10 @@ public sealed class InputDialog : Window
         };
         var cancel = new Button
         {
-            Content = Loc.T("Workspace.Dialog.Cancel"), IsCancel = true, MinWidth = 90, Margin = new Thickness(8, 0, 0, 0),
+            Content = Loc.T("Workspace.Dialog.Cancel"),
+            IsCancel = true,
+            MinWidth = 90,
+            Margin = new Thickness(8, 0, 0, 0),
             HorizontalContentAlignment = HorizontalAlignment.Center,
         };
         cancel.Click += (_, _) => Close();

@@ -85,7 +85,11 @@ internal sealed class GdiScreenGrabber : IScreenGrabber
         Area = area;
         var header = new BITMAPINFOHEADER
         {
-            biSize = Marshal.SizeOf<BITMAPINFOHEADER>(), biWidth = area.Width, biHeight = -area.Height, biPlanes = 1, biBitCount = 32,
+            biSize = Marshal.SizeOf<BITMAPINFOHEADER>(),
+            biWidth = area.Width,
+            biHeight = -area.Height,
+            biPlanes = 1,
+            biBitCount = 32,
         };
         _memoryDc = CreateCompatibleDC(IntPtr.Zero);
         if (_memoryDc == IntPtr.Zero) throw new Win32Exception(Marshal.GetLastPInvokeError());

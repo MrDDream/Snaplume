@@ -85,14 +85,14 @@ public class CoreTests
     {
         var image = new PixelBuffer(w, h);
         for (int y = 0; y < h; y++)
-        for (int x = 0; x < w; x++)
-        {
-            int i = (y * w + x) * 4;
-            image.Pixels[i] = (byte)(x * 255 / w);
-            image.Pixels[i + 1] = (byte)(y * 255 / h);
-            image.Pixels[i + 2] = 128;
-            image.Pixels[i + 3] = alpha;
-        }
+            for (int x = 0; x < w; x++)
+            {
+                int i = (y * w + x) * 4;
+                image.Pixels[i] = (byte)(x * 255 / w);
+                image.Pixels[i + 1] = (byte)(y * 255 / h);
+                image.Pixels[i + 2] = 128;
+                image.Pixels[i + 3] = alpha;
+            }
         return image;
     }
 
@@ -137,13 +137,13 @@ public class CoreTests
         var matrix = writer.Encode("https://github.com/MrDDream/Snaplume");
         var image = new PixelBuffer(matrix.Width, matrix.Height);
         for (int y = 0; y < matrix.Height; y++)
-        for (int x = 0; x < matrix.Width; x++)
-        {
-            byte v = matrix[x, y] ? (byte)0 : (byte)255;
-            int i = (y * matrix.Width + x) * 4;
-            image.Pixels[i] = image.Pixels[i + 1] = image.Pixels[i + 2] = v;
-            image.Pixels[i + 3] = 255;
-        }
+            for (int x = 0; x < matrix.Width; x++)
+            {
+                byte v = matrix[x, y] ? (byte)0 : (byte)255;
+                int i = (y * matrix.Width + x) * 4;
+                image.Pixels[i] = image.Pixels[i + 1] = image.Pixels[i + 2] = v;
+                image.Pixels[i + 3] = 255;
+            }
         var codes = QrService.Decode(image, TestContext.Current.CancellationToken);
         Assert.Contains(codes, c => c.Text == "https://github.com/MrDDream/Snaplume" && c.Format == "QR_CODE");
         Assert.NotNull(QrService.AsWebLink(codes[0].Text));

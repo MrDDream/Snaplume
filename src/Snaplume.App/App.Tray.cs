@@ -1,7 +1,6 @@
 using Avalonia.Threading;
 using Snaplume.Core;
 using Snaplume.Platform;
-using Snaplume.Ui;
 using Snaplume.Workspace;
 
 namespace Snaplume;

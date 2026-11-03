@@ -119,18 +119,18 @@ public class EditorRenderingTests
         Assert.Equal(10, block);
         // Inside: each block of the grid anchored at the corner of the image has one color.
         for (int by = 20; by < 80; by += block)
-        for (int bx = 20; bx < 90; bx += block)
-        {
-            var first = At(image, bx, by);
-            for (int y = by; y < Math.Min(by + block, 80); y++)
-            for (int x = bx; x < Math.Min(bx + block, 96); x++)
-                Assert.Equal(first, At(image, x, y));
-        }
+            for (int bx = 20; bx < 90; bx += block)
+            {
+                var first = At(image, bx, by);
+                for (int y = by; y < Math.Min(by + block, 80); y++)
+                    for (int x = bx; x < Math.Min(bx + block, 96); x++)
+                        Assert.Equal(first, At(image, x, y));
+            }
         // The source pixels are gone, the rest of the image is untouched.
         int same = 0;
         for (int y = 20; y < 80; y++)
-        for (int x = 20; x < 90; x++)
-            if (At(image, x, y) == At(secret, x, y)) same++;
+            for (int x = 20; x < 90; x++)
+                if (At(image, x, y) == At(secret, x, y)) same++;
         Assert.True(same < 30, $"{same} pixels of the secret left");
         Assert.Equal(At(secret, 120, 100), At(image, 120, 100));
         Assert.Equal(At(secret, 5, 5), At(image, 5, 5));
@@ -147,7 +147,11 @@ public class EditorRenderingTests
         // The magnifier is below the pixelated area in the order: the lens shows it pixelated all the same.
         document.Annotations.Add(new MagnifierAnnotation
         {
-            Start = new(20, 20), End = new(60, 60), LensCenter = new(140, 80), Zoom = 2, LensShape = MagnifierShape.RoundedRect,
+            Start = new(20, 20),
+            End = new(60, 60),
+            LensCenter = new(140, 80),
+            Zoom = 2,
+            LensShape = MagnifierShape.RoundedRect,
             Connector = false,
         });
         document.Annotations.Add(new PixelateAnnotation { Start = new(0, 0), End = new(80, 80), Thickness = 8 });

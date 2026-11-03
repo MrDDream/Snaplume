@@ -50,7 +50,10 @@ public static class Dialogs
             // Escape answers like closing the window: Cancel, else No, else Ok.
             var button = new Button
             {
-                Content = Loc.T(key), MinWidth = 88, HorizontalContentAlignment = HorizontalAlignment.Center, IsCancel = answer == result,
+                Content = Loc.T(key),
+                MinWidth = 88,
+                HorizontalContentAlignment = HorizontalAlignment.Center,
+                IsCancel = answer == result,
             };
             if (accent) button.Classes.Add("accent");
             button.Click += (_, _) =>

@@ -226,7 +226,8 @@ public sealed class UpdateWindow : Window
             Close();
             App.Instance.QuitForUpdate(() => StartInstaller(download),
                 () => ShowPostponed(_release, _plan, window => window.ShowReadyToInstall(download, postponed: true)));
-        }), ("Dialog.Cancel", Close));
+        }
+        ), ("Dialog.Cancel", Close));
     }
 
     private bool StartInstaller(VerifiedDownload download)
@@ -299,11 +300,13 @@ public sealed class UpdateWindow : Window
             Close();
             App.Instance.QuitForUpdate(() => StartPortable(Path.Combine(folder, executable)),
                 () => ShowPostponed(_release, _plan, window => window.ShowPortableReady(folder, executable, postponed: true)));
-        }), ("Update.OpenFolder", () =>
+        }
+        ), ("Update.OpenFolder", () =>
         {
             Close();
             if (!FileOps.OpenWithDefaultApp(folder)) ErrorLog.Write("Ouverture du dossier de la mise à jour", folder);
-        }), ("Update.Close", Close));
+        }
+        ), ("Update.Close", Close));
     }
 
     /// <summary>The new copy waits for this one to release the single instance ("--restarted").</summary>
@@ -354,7 +357,8 @@ public sealed class UpdateWindow : Window
             {
                 Close();
                 App.Instance.Restart();
-            }), ("Update.Later", Close));
+            }
+            ), ("Update.Later", Close));
             return;
         }
         var command = Installer.ManualInstallCommand(path);
