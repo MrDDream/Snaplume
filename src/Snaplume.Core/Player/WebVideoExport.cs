@@ -49,6 +49,15 @@ public static class WebVideoExport
         return new WebFormatAvailability(format, WebEncoderRoute.Unavailable, Loc.T("Player.Web.MissingEncoder", MissingEncoderName(format, ffmpeg.Encoders)));
     }
 
+    /// <summary>
+    /// The formats the "Export / compress" dialog lists: MP4 H.264 alone until there is an ffmpeg (the module, one in
+    /// PATH, the system's package), every format with it; a format this ffmpeg cannot make is still listed, greyed with
+    /// the reason. HEVC belongs to the "more formats": without ffmpeg it is not listed even when Windows has its own
+    /// HEVC encoder (that encoder is still the one used once ffmpeg is there, see <see cref="Availability"/>).
+    /// </summary>
+    public static IReadOnlyList<WebFormatAvailability> Offered(Func<VideoCodec, bool> canTranscode, FfmpegInfo? ffmpeg, bool windows) =>
+        WebFormats.Offered(ffmpeg != null).Select(f => Availability(f, canTranscode, ffmpeg, windows)).ToList();
+
     /// <summary>What this ffmpeg lacks for the format, for the message.</summary>
     private static string MissingEncoderName(WebFormat format, IReadOnlySet<string> encoders) => format switch
     {

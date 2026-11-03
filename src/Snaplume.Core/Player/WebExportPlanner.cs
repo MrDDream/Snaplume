@@ -32,6 +32,12 @@ public static class WebFormats
 {
     public static readonly WebFormat[] All = { WebFormat.Mp4H264, WebFormat.Mp4Hevc, WebFormat.Mp4Av1, WebFormat.WebmVp9, WebFormat.WebP };
 
+    /// <summary>The format offered before ffmpeg is installed: MP4 H.264, encoded by the system.</summary>
+    public static readonly WebFormat[] Basic = { WebFormat.Mp4H264 };
+
+    /// <summary>The formats offered: <see cref="Basic"/> without ffmpeg, <see cref="All"/> with it.</summary>
+    public static IReadOnlyList<WebFormat> Offered(bool hasFfmpeg) => hasFfmpeg ? All : Basic;
+
     public static string Extension(WebFormat format) => format switch
     {
         WebFormat.WebmVp9 => ".webm",

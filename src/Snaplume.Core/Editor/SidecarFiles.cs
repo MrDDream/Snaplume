@@ -85,7 +85,10 @@ public static class SidecarFiles
         if (File.Exists(oldJson)) File.Move(oldJson, newJson, overwrite: true);
     }
 
-    /// <summary>The annotations follow a capture moved to another folder; a failure only loses them, not the capture.</summary>
+    /// <summary>
+    /// The annotations follow a capture moved to another folder, on another drive too (the capture keeps its dates
+    /// there, which the annotation file checks); a failure only loses them, not the capture.
+    /// </summary>
     public static void Move(string oldFile, string newFile)
     {
         try
@@ -94,8 +97,13 @@ public static class SidecarFiles
             if (!File.Exists(oldBase) && !File.Exists(oldJson)) return;
             var (newBase, newJson) = PathsOf(newFile);
             EnsureFolder(Path.GetDirectoryName(newJson)!);
-            if (File.Exists(oldBase)) File.Move(oldBase, newBase, overwrite: true);
-            if (File.Exists(oldJson)) File.Move(oldJson, newJson, overwrite: true);
+            foreach (var (from, to) in new[] { (oldBase, newBase), (oldJson, newJson) })
+            {
+                if (!File.Exists(from)) continue;
+                // Left by a capture deleted outside Snaplume: replaced.
+                if (File.Exists(to)) File.Delete(to);
+                FileOps.MoveFile(from, to);
+            }
         }
         catch (Exception ex)
         {

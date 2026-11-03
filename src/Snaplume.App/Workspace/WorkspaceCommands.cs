@@ -1,4 +1,5 @@
 using Avalonia.Controls;
+using Avalonia.Platform.Storage;
 using Snaplume.Core;
 using Snaplume.Imaging;
 using Snaplume.Ui;
@@ -13,6 +14,12 @@ public static class WorkspaceCommands
     public static void Select(Window owner, string name)
     {
         if (IsActive(name)) return;
+        if (Workspaces.IsCustom(name) && !Workspaces.IsAvailable(name))
+        {
+            // Its folder is on a drive or a share that cannot be reached: say so instead of switching to Base.
+            _ = Dialogs.ShowAsync(owner, MissingFolderMessage(name), Loc.T("Workspaces.Folder.MissingTitle"), DialogButtons.Ok, DialogIcon.Warning);
+            return;
+        }
         try
         {
             Workspaces.Select(name);
@@ -23,15 +30,23 @@ public static class WorkspaceCommands
         }
     }
 
-    /// <summary>Asks for a name, then creates the workspace and makes it the active one.</summary>
+    /// <summary>"The folder of « X » cannot be found: path...".</summary>
+    public static string MissingFolderMessage(string name) =>
+        Loc.T("Workspaces.Folder.Missing", Workspaces.DisplayName(name), Workspaces.FolderOf(name));
+
+    /// <summary>
+    /// Asks for a name and where the captures go (a sub-folder of the captures folder, or a folder chosen anywhere),
+    /// then creates the workspace and makes it the active one.
+    /// </summary>
     public static async Task CreateAsync(Window owner)
     {
         var title = Loc.T("Workspaces.New.Title");
-        var value = await InputDialog.AskAsync(owner, title, Loc.T("Workspaces.New.Label"), "", isFileName: false);
+        var choice = new WorkspaceFolderChoice();
+        var value = await InputDialog.AskAsync(owner, title, Loc.T("Workspaces.New.Label"), "", isFileName: false, extra: choice);
         if (string.IsNullOrWhiteSpace(value)) return;
         try
         {
-            Workspaces.Create(value.Trim());
+            Workspaces.Create(value.Trim(), choice.Folder);
         }
         catch (ArgumentException ex)
         {
@@ -76,6 +91,14 @@ public static class WorkspaceCommands
     {
         if (name.Length == 0) return;
         var title = Loc.T("Workspaces.Delete.Title");
+        if (Workspaces.IsCustom(name))
+        {
+            // A folder of the user's choice: only taken out of the list, its files stay where they are.
+            if (await Dialogs.ShowAsync(owner, Loc.T("Workspaces.Delete.ConfirmCustom", Workspaces.DisplayName(name), Workspaces.FolderOf(name)),
+                    Loc.T("Workspaces.Menu.Remove"), DialogButtons.YesNo, DialogIcon.Question, DialogResult.No) == DialogResult.Yes)
+                Workspaces.Delete(name);
+            return;
+        }
         if (CaptureGallery.IsAnyOpenIn(Workspaces.FolderOf(name)))
         {
             await Dialogs.ShowAsync(owner, Loc.T("Workspaces.CloseViewers"), title, DialogButtons.Ok, DialogIcon.Information);
@@ -144,8 +167,88 @@ public static class WorkspaceCommands
             .Any(part => part.Equals(".snaplume", StringComparison.OrdinalIgnoreCase) || part.Equals(".librecapture", StringComparison.OrdinalIgnoreCase));
     }
 
+    /// <summary>
+    /// "Change the folder...": picks another folder for the workspace, or (<paramref name="toDefault"/>) gives it back its
+    /// sub-folder of the captures folder; asks whether its captures move there or stay where they are.
+    /// </summary>
+    public static async Task ChangeFolderAsync(Window owner, string name, bool toDefault = false)
+    {
+        if (name.Length == 0) return; // Base: its folder is chosen in the settings
+        var title = Loc.T("Workspaces.Folder.Title", Workspaces.DisplayName(name));
+        var current = Workspaces.FolderOf(name);
+        if (CaptureGallery.IsAnyOpenIn(current))
+        {
+            await Dialogs.ShowAsync(owner, Loc.T("Workspaces.CloseViewers"), title, DialogButtons.Ok, DialogIcon.Information);
+            return;
+        }
+        string? target = toDefault ? Workspaces.DefaultFolderOf(name) : await PickFolderAsync(owner, title, current);
+        if (target == null || Workspaces.SamePath(target, current)) return;
+        try
+        {
+            target = Workspaces.CheckFolder(name, target);
+        }
+        catch (ArgumentException ex)
+        {
+            await Dialogs.ShowAsync(owner, ex.Message, title, DialogButtons.Ok, DialogIcon.Warning);
+            return;
+        }
+
+        // Its captures: moved along, or left where they are (the workspace then shows the new folder's files).
+        int count = await Task.Run(() => Workspaces.CountCaptures(current));
+        bool move = false;
+        if (count > 0)
+        {
+            var answer = await Dialogs.ShowAsync(owner, Loc.T("Workspaces.Folder.MoveQuestion", count, Workspaces.DisplayName(name), current, target),
+                title, DialogButtons.YesNoCancel, DialogIcon.Question, DialogResult.Yes);
+            if (answer is not (DialogResult.Yes or DialogResult.No)) return;
+            move = answer == DialogResult.Yes;
+        }
+        try
+        {
+            if (move)
+            {
+                var folder = target;
+                Directory.CreateDirectory(folder);
+                var (_, failed, firstError) = await Task.Run(() => Workspaces.MoveCaptures(name, folder));
+                if (failed > 0)
+                    await Dialogs.ShowAsync(owner, Loc.T("Workspaces.MoveSomeFailed", failed, firstError!.Message), title, DialogButtons.Ok, DialogIcon.Warning);
+            }
+            Workspaces.SetFolder(name, toDefault ? null : target);
+        }
+        catch (Exception ex)
+        {
+            await ShowErrorAsync(owner, Loc.T("Workspaces.Folder.Failed"), ex);
+        }
+    }
+
+    /// <summary>The folder picker of the system, opened on <paramref name="start"/> when it exists; null if cancelled.</summary>
+    public static async Task<string?> PickFolderAsync(Window owner, string title, string? start)
+    {
+        IStorageFolder? location = null;
+        try
+        {
+            if (start != null && Directory.Exists(start)) location = await owner.StorageProvider.TryGetFolderFromPathAsync(new Uri(Path.GetFullPath(start)));
+        }
+        catch (Exception)
+        {
+            // Opened at the system's default place.
+        }
+        var folders = await owner.StorageProvider.OpenFolderPickerAsync(new FolderPickerOpenOptions
+        {
+            Title = title,
+            AllowMultiple = false,
+            SuggestedStartLocation = location,
+        });
+        return folders.Count > 0 ? folders[0].TryGetLocalPath() : null;
+    }
+
     public static void OpenFolder(Window owner, string name)
     {
+        if (Workspaces.IsCustom(name) && !Workspaces.IsAvailable(name))
+        {
+            _ = Dialogs.ShowAsync(owner, MissingFolderMessage(name), Loc.T("Workspaces.Folder.MissingTitle"), DialogButtons.Ok, DialogIcon.Warning);
+            return;
+        }
         try
         {
             FileOps.OpenFolder(Workspaces.FolderOf(name));

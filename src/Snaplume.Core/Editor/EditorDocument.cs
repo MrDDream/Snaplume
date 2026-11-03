@@ -158,8 +158,9 @@ public sealed class EditorDocument
             if (json.Length > MaxSidecarLength) return null;
             var data = JsonSerializer.Deserialize<SidecarData>(File.ReadAllText(jsonPath), AnnotationJson.Options);
             var file = new FileInfo(path);
+            // The date within 2 seconds: a capture moved to a FAT or exFAT drive (USB stick) keeps it to 2 s only.
             if (data?.Annotations == null || data.Version < 1 || data.Version > SidecarData.CurrentVersion
-                || data.FileLength != file.Length || data.FileWriteTimeUtc != file.LastWriteTimeUtc
+                || data.FileLength != file.Length || (data.FileWriteTimeUtc - file.LastWriteTimeUtc).Duration() > TimeSpan.FromSeconds(2)
                 || (data.BaseFileLength != 0 && data.BaseFileLength != new FileInfo(basePath).Length))
                 return null;
 
@@ -476,13 +477,14 @@ public sealed class EditorDocument
     /// image rendered: too big, out of memory), then the base image is written, the flattened image and last
     /// the annotation file, replaced atomically. A sidecar that does not match its images is ignored.
     /// </summary>
-    public void Save(int jpegQuality = 90)
+    /// <param name="webpQuality">For a WebP capture: <see cref="ImageIO.WebPLossless"/>, or the quality of a lossy WebP.</param>
+    public void Save(int jpegQuality = 90, int webpQuality = ImageIO.WebPLossless)
     {
         var (basePath, jsonPath) = SidecarFiles.PathsOf(FilePath);
         var flattened = Flatten();
         if (Annotations.Count == 0 && Effects.IsEmpty)
         {
-            ImageIO.Save(flattened, FilePath, jpegQuality);
+            ImageIO.Save(flattened, FilePath, jpegQuality, webpQuality);
             SidecarFiles.Delete(FilePath);
         }
         else
@@ -501,7 +503,7 @@ public sealed class EditorDocument
                 _writtenRedaction = redaction;
             }
 
-            ImageIO.Save(flattened, FilePath, jpegQuality);
+            ImageIO.Save(flattened, FilePath, jpegQuality, webpQuality);
             WriteSidecarJson(jsonPath, new FileInfo(FilePath), new FileInfo(basePath).Length, annotationsJson, effectsJson);
         }
 

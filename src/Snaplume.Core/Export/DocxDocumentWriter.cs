@@ -1,6 +1,7 @@
 using DocumentFormat.OpenXml;
 using DocumentFormat.OpenXml.Packaging;
 using DocumentFormat.OpenXml.Wordprocessing;
+using Snaplume.Imaging;
 using A = DocumentFormat.OpenXml.Drawing;
 using DW = DocumentFormat.OpenXml.Drawing.Wordprocessing;
 using PIC = DocumentFormat.OpenXml.Drawing.Pictures;
@@ -57,8 +58,17 @@ internal static class DocxDocumentWriter
             var (width, height) = DocumentGenerator.Fit(image, maxWidth, Math.Max(40, maxHeight));
 
             var part = main.AddImagePart(PartType(image));
-            using (var file = new FileStream(image.Path, FileMode.Open, FileAccess.Read, FileShare.ReadWrite | FileShare.Delete))
+            if (image.MimeType == "image/webp")
+            {
+                // Older versions of Word do not show WebP: a PNG instead.
+                using var png = new MemoryStream(ImageIO.EncodePng(ImageIO.Load(image.Path)), writable: false);
+                part.FeedData(png);
+            }
+            else
+            {
+                using var file = new FileStream(image.Path, FileMode.Open, FileAccess.Read, FileShare.ReadWrite | FileShare.Delete);
                 part.FeedData(file);
+            }
 
             var picture = new Paragraph(
                 new ParagraphProperties(

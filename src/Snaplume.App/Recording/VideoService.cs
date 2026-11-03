@@ -541,6 +541,7 @@ public sealed class VideoService
             if (!restoring && Settings.ShowPanelAfterCapture) _app.ShowQuickPanel();
             var path = saved;
             _app.Tray?.ShowInfo(Loc.T("Video.Saved"), Loc.T("Video.SavedDetails", Path.GetFileName(path)), () => _app.OpenPlayer(path));
+            _app.Captures.WarnIfWorkspaceUnavailable();
         }
     }
 

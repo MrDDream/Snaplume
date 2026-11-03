@@ -128,6 +128,7 @@ public sealed class CaptureService
             if (nothingScrolled) ErrorLog.Write("Capture défilante", "Rien n'a défilé");
 
             if (!quiet && !stop.IsCancellationRequested) ShowResult(path, copied, tooLargeToCopy, nothingScrolled);
+            WarnIfWorkspaceUnavailable();
             return path;
         }
         catch (OperationCanceledException)
@@ -390,6 +391,17 @@ public sealed class CaptureService
     }
 
     /// <summary>
+    /// Captures and videos went to Base because the folder chosen for the active workspace cannot be reached (unplugged
+    /// drive, offline share): said after each of them, with the folder, until it is back or another workspace is chosen.
+    /// </summary>
+    internal void WarnIfWorkspaceUnavailable()
+    {
+        if (Workspaces.UnavailableActive is not { } name) return;
+        _app.Tray?.ShowWarning(Loc.T("Workspaces.Folder.FallbackTitle"),
+            Loc.T("Workspaces.Folder.Fallback", Workspaces.DisplayName(name), Workspaces.FolderOf(name)));
+    }
+
+    /// <summary>
     /// Saves into the active workspace (created again if it was deleted meanwhile). The folder and the
     /// name are chosen now; encoding and writing run in the background (a scrolling capture can take
     /// seconds to encode).
@@ -397,14 +409,14 @@ public sealed class CaptureService
     private Task<string> SaveToWorkspaceAsync(PixelBuffer image)
     {
         var folder = Workspaces.ActiveFolder;
-        var extension = Settings.ImageFormat == "jpg" ? ".jpg" : ".png";
+        var extension = Settings.ImageExtension;
         var baseName = FileOps.SanitizeFileName(Settings.FileNamePrefix) + TimeStamp();
-        int quality = Settings.JpegQuality;
+        int quality = Settings.JpegQuality, webpQuality = Settings.WebpQuality;
         return Task.Run(() =>
         {
             Directory.CreateDirectory(folder);
             var path = FileOps.UniquePath(folder, baseName, extension);
-            ImageIO.Save(image, path, quality);
+            ImageIO.Save(image, path, quality, webpQuality);
             return path;
         });
     }

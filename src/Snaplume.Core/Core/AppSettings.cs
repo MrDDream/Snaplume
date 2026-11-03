@@ -11,12 +11,31 @@ public sealed class AppSettings
     public string Theme { get; set; } = "auto";
     /// <summary>Root capture folder (the "Base" workspace).</summary>
     public string WorkspaceFolder { get; set; } = DefaultWorkspaceFolder;
-    /// <summary>Active workspace: a direct sub-folder of <see cref="WorkspaceFolder"/>, empty for the root.</summary>
+    /// <summary>Active workspace: a direct sub-folder of <see cref="WorkspaceFolder"/> or a custom one, empty for the root.</summary>
     public string ActiveWorkspace { get; set; } = "";
+    /// <summary>
+    /// Workspaces whose captures are in a folder of the user's choice (name → absolute path), anywhere; the others are
+    /// the sub-folders of <see cref="WorkspaceFolder"/>. Absent from older settings files: no custom folder.
+    /// </summary>
+    public Dictionary<string, string> WorkspaceFolders { get; set; } = new(StringComparer.OrdinalIgnoreCase);
     public string FileNamePrefix { get; set; } = "Capture_";
-    /// <summary>"png" or "jpg".</summary>
+    /// <summary>"png", "jpg" or "webp".</summary>
     public string ImageFormat { get; set; } = "png";
     public int JpegQuality { get; set; } = 90;
+    /// <summary>100: lossless WebP (the default); 10 to 99: lossy WebP of that quality (Imaging.ImageIO.WebPLossless).</summary>
+    public int WebpQuality { get; set; } = 100;
+
+    /// <summary>Extension of the captures saved in <see cref="ImageFormat"/> (".png", ".jpg" or ".webp").</summary>
+    [JsonIgnore]
+    public string ImageExtension => ImageFormat switch
+    {
+        "jpg" => ".jpg",
+        "webp" => ".webp",
+        _ => ".png",
+    };
+
+    /// <summary>"Show the workspaces" of the quick panel: the side panel is open.</summary>
+    public bool PanelWorkspacesOpen { get; set; }
 
     public bool OpenEditorAfterCapture { get; set; }
     public bool CopyToClipboardAfterCapture { get; set; } = true;
@@ -158,7 +177,7 @@ public sealed class AppSettings
         Language ??= defaults.Language;
         Theme ??= defaults.Theme;
         FileNamePrefix ??= defaults.FileNamePrefix;
-        ImageFormat = ImageFormat is "png" or "jpg" ? ImageFormat : defaults.ImageFormat;
+        ImageFormat = ImageFormat is "png" or "jpg" or "webp" ? ImageFormat : defaults.ImageFormat;
         HotkeyRegion ??= defaults.HotkeyRegion;
         HotkeyScreen ??= defaults.HotkeyScreen;
         HotkeyWindow ??= defaults.HotkeyWindow;
@@ -172,8 +191,16 @@ public sealed class AppSettings
 
         WorkspaceFolder = NormalizeFolder(WorkspaceFolder) ?? defaults.WorkspaceFolder;
         ActiveWorkspace = ActiveWorkspace?.Trim() is { } active && Workspaces.IsPlainName(active) ? active : "";
+        // Valid names and absolute folders only, names compared without case like the sub-folders.
+        var customFolders = new Dictionary<string, string>(StringComparer.OrdinalIgnoreCase);
+        foreach (var (name, folder) in WorkspaceFolders ?? new())
+        {
+            if (name is { } n && Workspaces.IsPlainName(n) && !n.StartsWith('.') && NormalizeFolder(folder) is { } full) customFolders.TryAdd(n, full);
+        }
+        WorkspaceFolders = customFolders;
 
         JpegQuality = Math.Clamp(JpegQuality, 10, 100);
+        WebpQuality = Math.Clamp(WebpQuality, 10, 100);
         DelaySeconds = Math.Clamp(DelaySeconds, 0, 60);
         VideoFramerate = Math.Clamp(VideoFramerate, 5, 60);
         VideoMicrophoneDevice = VideoMicrophoneDevice?.Trim() ?? defaults.VideoMicrophoneDevice;

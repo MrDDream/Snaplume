@@ -709,7 +709,8 @@ public partial class CaptureGallery : UserControl
         }
         try
         {
-            var summary = Workspaces.MoveFiles(paths, workspace);
+            // To another drive, a move is a copy: not on the UI thread.
+            var summary = await Task.Run(() => Workspaces.MoveFiles(paths, workspace));
             if (!string.IsNullOrEmpty(summary)) Message?.Invoke(summary);
         }
         catch (Exception ex)
@@ -727,7 +728,8 @@ public partial class CaptureGallery : UserControl
         foreach (var name in Workspaces.List().Where(n => !string.Equals(n, active, StringComparison.OrdinalIgnoreCase)))
         {
             // A TextBlock, so that an underscore in the name is not taken for an access key.
-            var item = new MenuItem { Header = new TextBlock { Text = Workspaces.DisplayName(name) } };
+            // A workspace whose folder cannot be reached (unplugged drive) is shown, greyed.
+            var item = new MenuItem { Header = new TextBlock { Text = Workspaces.DisplayName(name) }, IsEnabled = Workspaces.IsAvailable(name) };
             var target = name;
             item.Click += (_, _) => _ = MoveToWorkspaceAsync(SelectedPaths, target);
             MoveToMenu.Items.Add(item);

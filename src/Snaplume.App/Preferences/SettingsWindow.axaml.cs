@@ -67,9 +67,10 @@ public partial class SettingsWindow : Window
         {
             new("png", Loc.T("Settings.General.FormatPng")),
             new("jpg", Loc.T("Settings.General.FormatJpeg")),
+            new("webp", Loc.T("Settings.General.FormatWebp")),
         };
         FormatBox.ItemsSource = formats;
-        FormatBox.SelectedItem = settings.ImageFormat == "jpg" ? formats[1] : formats[0];
+        FormatBox.SelectedItem = formats.FirstOrDefault(f => Equals(f.Value, settings.ImageFormat)) ?? formats[0];
         PrefixBox.TextChanged += (_, _) => UpdatePrefixExample();
         FormatBox.SelectionChanged += (_, _) => UpdatePrefixExample();
         EditorCheck.IsChecked = settings.OpenEditorAfterCapture;

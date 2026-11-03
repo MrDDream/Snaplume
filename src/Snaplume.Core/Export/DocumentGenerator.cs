@@ -80,6 +80,7 @@ internal sealed record DocumentImage(string Path, int PixelWidth, int PixelHeigh
         ".jpg" or ".jpeg" => "image/jpeg",
         ".gif" => "image/gif",
         ".bmp" => "image/bmp",
+        ".webp" => "image/webp",
         _ => "image/png",
     };
 }

@@ -53,7 +53,7 @@ public partial class EditorWindow : Window
     };
 
     /// <summary>Formats the export can write, the first one being the default.</summary>
-    private static readonly string[] ExportExtensions = { ".png", ".jpg", ".bmp" };
+    private static readonly string[] ExportExtensions = { ".png", ".jpg", ".webp", ".bmp" };
 
     private static readonly Dictionary<Key, EditorTool> ToolKeys = new()
     {
@@ -1276,7 +1276,7 @@ public partial class EditorWindow : Window
         if (!EndPendingEdits()) return false;
         try
         {
-            _document.Save(AppServices.Settings.JpegQuality);
+            _document.Save(AppServices.Settings.JpegQuality, AppServices.Settings.WebpQuality);
             InfoText.Text = Loc.T("Editor.Saved");
             return true;
         }
@@ -1318,6 +1318,7 @@ public partial class EditorWindow : Window
         {
             new FilePickerFileType(Loc.T("Editor.ImageFormat", "PNG")) { Patterns = new[] { "*.png" } },
             new FilePickerFileType(Loc.T("Editor.ImageFormat", "JPEG")) { Patterns = new[] { "*.jpg", "*.jpeg" } },
+            new FilePickerFileType(Loc.T("Editor.ImageFormat", "WebP")) { Patterns = new[] { "*.webp" } },
             new FilePickerFileType(Loc.T("Editor.ImageFormat", "BMP")) { Patterns = new[] { "*.bmp" } },
         };
         var result = await StorageProvider.SaveFilePickerWithResultAsync(new FilePickerSaveOptions
@@ -1348,14 +1349,21 @@ public partial class EditorWindow : Window
         }
         try
         {
-            ImageIO.Save(_document.Flatten(), path, AppServices.Settings.JpegQuality);
-            InfoText.Text = Loc.T("Editor.Exported", Path.GetFileName(path));
+            ExportTo(path);
         }
         catch (Exception ex)
         {
             ErrorLog.Write("Export", ex);
             await Dialogs.ShowAsync(this, Loc.T("Editor.ExportError", ex.Message), "Snaplume", DialogButtons.Ok, DialogIcon.Error);
         }
+    }
+
+    /// <summary>Writes the image as it is now (annotations and effects included) to a file whose extension gives the format.</summary>
+    private void ExportTo(string path)
+    {
+        var settings = AppServices.Settings;
+        ImageIO.Save(_document.Flatten(), path, settings.JpegQuality, settings.WebpQuality);
+        InfoText.Text = Loc.T("Editor.Exported", Path.GetFileName(path));
     }
 
     /// <summary>Prints the image as it is now, annotations and effects included (a temporary PNG handed to the system).</summary>

@@ -29,7 +29,38 @@ public static class ShareService
             return;
         }
         var title = images.Count == 1 ? Path.GetFileName(images[0]) : Loc.T("Share.Print.JobName", images.Count);
-        await PrintFilesAsync(owner, images, title);
+        // Not every print path reads WebP (CUPS, Windows without its WebP codec): those go as temporary PNGs.
+        var temps = new List<string>();
+        try
+        {
+            var files = await Task.Run(() => images.Select(path =>
+            {
+                if (!Path.GetExtension(path).Equals(".webp", StringComparison.OrdinalIgnoreCase)) return path;
+                var temp = Path.Combine(Path.GetTempPath(), $"Snaplume-print-{Guid.NewGuid():N}.png");
+                temps.Add(temp);
+                File.WriteAllBytes(temp, ImageIO.EncodePng(ImageIO.Load(path)));
+                return temp;
+            }).ToList());
+            await PrintFilesAsync(owner, files, title);
+        }
+        catch (Exception ex)
+        {
+            await ShowPrintErrorAsync(owner, ex);
+        }
+        finally
+        {
+            foreach (var temp in temps)
+            {
+                try
+                {
+                    File.Delete(temp);
+                }
+                catch (Exception ex)
+                {
+                    ErrorLog.Write("Suppression du fichier temporaire d'impression", ex);
+                }
+            }
+        }
     }
 
     /// <summary>Prints one image held in memory (e.g. the editor's image with its annotations).</summary>

@@ -272,6 +272,26 @@ public class WebExportTests : IDisposable
         Assert.True(Of(WebFormat.WebP).IsAvailable);
     }
 
+    [Fact]
+    public void WithoutFfmpegOnlyH264IsOfferedEvenWithTheWindowsHevcEncoder()
+    {
+        // Windows with the HEVC Video Extensions, no ffmpeg: H.265 waits for the module like the other formats.
+        var offered = WebVideoExport.Offered(_ => true, null, windows: true);
+        Assert.Equal(new[] { WebFormat.Mp4H264 }, offered.Select(a => a.Format));
+        Assert.Equal(WebEncoderRoute.System, offered[0].Route);
+
+        // With ffmpeg, every format; those its build lacks stay listed with the reason, HEVC still by Windows.
+        var ffmpeg = Ffmpeg(FfmpegSource.Module, "libsvtav1", "libopus", "aac");
+        var all = WebVideoExport.Offered(_ => true, ffmpeg, windows: true);
+        Assert.Equal(WebFormats.All, all.Select(a => a.Format));
+        Assert.Equal(WebEncoderRoute.System, all.Single(a => a.Format == WebFormat.Mp4Hevc).Route);
+        Assert.Equal(Loc.T("Player.Web.MissingEncoder", "libvpx-vp9"), all.Single(a => a.Format == WebFormat.WebmVp9).Reason);
+
+        // Linux without ffmpeg: H.264 itself cannot be made, and says why.
+        var linux = Assert.Single(WebVideoExport.Offered(_ => false, null, windows: false));
+        Assert.False(linux.IsAvailable);
+    }
+
     // ---- ffmpeg detection ----
 
     [Fact]

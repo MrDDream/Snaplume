@@ -42,9 +42,10 @@ public partial class SettingsWindow
             FfmpegSource.System => Loc.T("Settings.Ffmpeg.System", Version(ffmpeg)),
             // The module exists but does not start (damaged): it can be installed again.
             _ when installed => Loc.T("Settings.Ffmpeg.Broken"),
-            _ when module => Loc.T("Settings.Ffmpeg.NotInstalled", FfmpegModule.Package.Size / 1048576.0),
-            _ => Loc.T("Settings.Ffmpeg.Missing"),
+            _ when module => Loc.T("Settings.Ffmpeg.NotInstalledAll", FfmpegModule.DownloadMegabytes),
+            _ => Loc.T("Settings.Ffmpeg.MissingAll"),
         };
+        // The formats are listed once there is an ffmpeg; before, the status says that only MP4 H.264 is offered.
         if (ffmpeg != null) ShowFfmpegFormats(ffmpeg);
         // An older module than the one this version downloads can be replaced.
         bool outdated = installed && FfmpegModule.InstalledVersion() != FfmpegModule.Package.Version;
@@ -58,9 +59,7 @@ public partial class SettingsWindow
     private void ShowFfmpegFormats(FfmpegInfo ffmpeg)
     {
         var video = AppServices.HasPlatform ? AppServices.Platform.Video : null;
-        var formats = WebFormats.All
-            .Select(f => WebVideoExport.Availability(f, c => video?.CanTranscode(c) == true, ffmpeg, OperatingSystem.IsWindows()))
-            .ToList();
+        var formats = WebVideoExport.Offered(c => video?.CanTranscode(c) == true, ffmpeg, OperatingSystem.IsWindows());
         string Names(IEnumerable<WebFormatAvailability> list) =>
             string.Join(", ", list.Select(a => Loc.T("Player.Web.Format." + WebFormats.Id(a.Format))));
         var available = formats.Where(a => a.IsAvailable).ToList();
@@ -90,7 +89,7 @@ public partial class SettingsWindow
         FfmpegProgress.Value = 0;
         FfmpegProgress.IsVisible = true;
         ShowFfmpegProgress(0, package.Size);
-        string? failure = null;
+        string? failure;
         try
         {
             var progress = new Progress<long>(received =>
@@ -104,26 +103,8 @@ public partial class SettingsWindow
                     FfmpegStatus.Text = Loc.T("Settings.Ffmpeg.Unpacking");
                 }
             });
-            await FfmpegModule.InstallAsync(progress, cancel.Token);
-        }
-        catch (OperationCanceledException) when (cancel.IsCancellationRequested)
-        {
-            // Back to the state before.
-        }
-        catch (UpdateVerificationException ex)
-        {
-            ErrorLog.Write("Vérification du module ffmpeg téléchargé", ex.Message);
-            failure = Loc.T("Settings.Ffmpeg.ChecksumMismatch");
-        }
-        catch (Exception ex) when (ex is System.Net.Http.HttpRequestException or TaskCanceledException)
-        {
-            ErrorLog.Write("Téléchargement du module ffmpeg", ex);
-            failure = Loc.T("Update.Offline");
-        }
-        catch (Exception ex)
-        {
-            ErrorLog.Write("Installation du module ffmpeg", ex);
-            failure = Loc.T("Settings.Ffmpeg.InstallFailed", ex.Message);
+            // Cancelled: back to the state before.
+            failure = await FfmpegModule.TryInstallAsync(progress, cancel.Token);
         }
         finally
         {
@@ -137,9 +118,8 @@ public partial class SettingsWindow
 
     private void ShowFfmpegProgress(long received, long total)
     {
-        double fraction = total > 0 ? Math.Clamp((double)received / total, 0, 1) : 0;
-        FfmpegProgress.Value = fraction;
-        FfmpegStatus.Text = Loc.T("Settings.Ffmpeg.Downloading") + "  " + Loc.T("Update.Progress", received / 1048576.0, total / 1048576.0, fraction * 100);
+        FfmpegProgress.Value = total > 0 ? Math.Clamp((double)received / total, 0, 1) : 0;
+        FfmpegStatus.Text = FfmpegModule.ProgressText(received, total);
     }
 
     private void OnCancelFfmpeg(object? sender, RoutedEventArgs e) => _ffmpegDownload?.Cancel();

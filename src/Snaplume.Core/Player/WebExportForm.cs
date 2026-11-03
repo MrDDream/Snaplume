@@ -29,7 +29,8 @@ public sealed class WebExportForm
     public TimeSpan In { get; }
     public TimeSpan Out { get; }
     public VideoInfo Source { get; }
-    public IReadOnlyList<WebFormatAvailability> Formats { get; }
+    /// <summary>The formats listed (<see cref="WebVideoExport.Offered"/>); replaced once the ffmpeg module is installed.</summary>
+    public IReadOnlyList<WebFormatAvailability> Formats { get; set; }
 
     public bool UseSelection { get; set; }
     public WebFormat Format { get; set; } = WebFormat.Mp4H264;

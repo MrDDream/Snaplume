@@ -118,7 +118,7 @@ public partial class App
         var active = Workspaces.ActiveName;
         var items = Workspaces.List()
             .Select(name => new TrayMenuItem(Workspaces.DisplayName(name), () => Dispatcher.UIThread.Post(() => SelectWorkspaceFromTray(name)),
-                Checked: string.Equals(name, active, StringComparison.OrdinalIgnoreCase)))
+                Enabled: Workspaces.IsAvailable(name), Checked: string.Equals(name, active, StringComparison.OrdinalIgnoreCase)))
             .ToList();
         items.Add(TrayMenuItem.Separator);
         items.Add(new(Loc.T("Tray.NewWorkspace"), () => Dispatcher.UIThread.Post(() => _ = CreateWorkspaceFromTrayAsync())));

@@ -13,7 +13,8 @@ public sealed class InputDialog : Window
     private bool _accepted;
 
     /// <param name="isFileName">Select the name without its extension, like file managers (otherwise the whole text).</param>
-    private InputDialog(string title, string label, string value, bool isFileName, bool hasOwner)
+    /// <param name="extra">More fields, under the text box (e.g. the folder of a new workspace).</param>
+    private InputDialog(string title, string label, string value, bool isFileName, bool hasOwner, Control? extra)
     {
         Title = title;
         Width = 420;
@@ -45,6 +46,11 @@ public sealed class InputDialog : Window
         var root = new StackPanel { Margin = new Thickness(16) };
         root.Children.Add(new TextBlock { Text = label, TextWrapping = Avalonia.Media.TextWrapping.Wrap });
         root.Children.Add(_input);
+        if (extra != null)
+        {
+            extra.Margin = new Thickness(0, 0, 0, 14);
+            root.Children.Add(extra);
+        }
         root.Children.Add(buttons);
         Content = root;
 
@@ -60,9 +66,11 @@ public sealed class InputDialog : Window
 
     /// <summary>Asks for a text; modal to <paramref name="owner"/>, or centered on the screen above everything without one.</summary>
     /// <returns>The text typed, or null if cancelled.</returns>
-    public static async Task<string?> AskAsync(Window? owner, string title, string label, string value, bool isFileName = true)
+    /// <param name="extra">More fields shown under the text box; the caller reads them afterwards.</param>
+    public static async Task<string?> AskAsync(Window? owner, string title, string label, string value, bool isFileName = true,
+        Control? extra = null)
     {
-        var dialog = new InputDialog(title, label, value, isFileName, owner is { IsVisible: true });
+        var dialog = new InputDialog(title, label, value, isFileName, owner is { IsVisible: true }, extra);
         if (owner is { IsVisible: true })
         {
             await dialog.ShowDialog(owner);

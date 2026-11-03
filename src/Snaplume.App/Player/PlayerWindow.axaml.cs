@@ -576,8 +576,7 @@ public partial class PlayerWindow : Window
             var (width, height) = VideoSize;
             info = await probe ?? new VideoInfo(width, height, 0, true, duration);
             if (info.Width <= 0 || info.Height <= 0) info = info with { Width = width, Height = height };
-            formats = await Task.Run(() => WebFormats.All
-                .Select(f => WebVideoExport.Availability(f, video.CanTranscode, ffmpeg, OperatingSystem.IsWindows())).ToList());
+            formats = await Task.Run(() => WebVideoExport.Offered(video.CanTranscode, ffmpeg, OperatingSystem.IsWindows()));
         }
         catch (Exception ex)
         {
@@ -586,9 +585,12 @@ public partial class PlayerWindow : Window
             return;
         }
         if (_closing || info.Width <= 0 || info.Height <= 0) return;
-        var dialog = new WebExportDialog(duration, _inPoint, _outPoint, info, formats, ffmpeg == null && FfmpegModule.IsSupported);
+        var dialog = new WebExportDialog(duration, _inPoint, _outPoint, info, formats, hasFfmpeg: ffmpeg != null);
         var settings = await dialog.ShowDialog<WebExportSettings?>(this);
         if (settings == null || _closing) return;
+        // The module may have been installed from the dialog: the ffmpeg it found then.
+        if (ffmpeg == null) ffmpeg = await FfmpegTools.DetectAsync();
+        if (_closing) return;
         if (settings.End - settings.Start < MinRange)
         {
             ShowOsd(Loc.T("Player.Osd.RangeTooShort"), 3);

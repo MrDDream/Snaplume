@@ -101,6 +101,48 @@ public static class FfmpegModule
         }
     }
 
+    /// <summary>
+    /// <see cref="InstallAsync"/> for the interface (Settings › Video, the "Export / compress" dialog): the failure is
+    /// logged and returned as a message ready to show; null when the module is installed, or the download cancelled.
+    /// </summary>
+    public static async Task<string?> TryInstallAsync(IProgress<long>? progress, CancellationToken cancel)
+    {
+        try
+        {
+            await InstallAsync(progress, cancel).ConfigureAwait(false);
+            return null;
+        }
+        catch (OperationCanceledException) when (cancel.IsCancellationRequested)
+        {
+            return null;
+        }
+        catch (UpdateVerificationException ex)
+        {
+            ErrorLog.Write("Vérification du module ffmpeg téléchargé", ex.Message);
+            return Loc.T("Settings.Ffmpeg.ChecksumMismatch");
+        }
+        catch (Exception ex) when (ex is HttpRequestException or TaskCanceledException)
+        {
+            ErrorLog.Write("Téléchargement du module ffmpeg", ex);
+            return Loc.T("Update.Offline");
+        }
+        catch (Exception ex)
+        {
+            ErrorLog.Write("Installation du module ffmpeg", ex);
+            return Loc.T("Settings.Ffmpeg.InstallFailed", ex.Message);
+        }
+    }
+
+    /// <summary>Size of the download in (decimal) megabytes, as file managers and browsers show it: about 81.</summary>
+    public static double DownloadMegabytes => Package.Size / 1_000_000.0;
+
+    /// <summary>"Downloading… 12.3 / 77.0 MB (16 %)", for the progress of <see cref="TryInstallAsync"/>.</summary>
+    public static string ProgressText(long received, long total)
+    {
+        double fraction = total > 0 ? Math.Clamp((double)received / total, 0, 1) : 0;
+        return Loc.T("Settings.Ffmpeg.Downloading") + "  " + Loc.T("Update.Progress", received / 1048576.0, total / 1048576.0, fraction * 100);
+    }
+
     /// <summary>Removes the module (an export using it must be finished: its files are in use until then).</summary>
     /// <exception cref="IOException">A file is still in use.</exception>
     public static void Uninstall(string? folder = null)

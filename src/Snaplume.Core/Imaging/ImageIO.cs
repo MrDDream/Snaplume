@@ -6,28 +6,80 @@ namespace Snaplume.Imaging;
 /// <summary>Image files: reading, writing and the size limit. Uses SkiaSharp, the same on every system.</summary>
 public static class ImageIO
 {
-    public static readonly string[] Extensions = { ".png", ".jpg", ".jpeg", ".bmp", ".gif" };
+    /// <summary>Image files (a WebP may also be an animation: see <see cref="IsAnimation"/>).</summary>
+    public static readonly string[] Extensions = { ".png", ".jpg", ".jpeg", ".bmp", ".gif", ".webp" };
 
     /// <summary>Videos: recordings, and the WebM exports of the player.</summary>
     public static readonly string[] VideoExtensions = { ".mp4", ".webm" };
 
+    /// <summary>Lossless WebP for <see cref="Save"/> (a lower value is the quality of a lossy WebP).</summary>
+    public const int WebPLossless = 100;
+
+    /// <summary>Animated WebP files already looked at, by full path: the header is read once per version of a file.</summary>
+    private static readonly System.Collections.Concurrent.ConcurrentDictionary<string, (DateTime Modified, long Length, bool Animated)> WebPKinds =
+        new(OperatingSystem.IsWindows() ? StringComparer.OrdinalIgnoreCase : StringComparer.Ordinal);
+
+    /// <summary>Most entries of <see cref="WebPKinds"/> before it starts again (a few bytes each).</summary>
+    private const int MaxWebPKinds = 8192;
+
+    private static bool HasExtension(string path, string[] extensions) =>
+        extensions.Contains(Path.GetExtension(path), StringComparer.OrdinalIgnoreCase);
+
     /// <summary>
-    /// Animated WebP exported by the player: shown in the workspace (its first frame as thumbnail) and opened in the
-    /// default application, but not an image to edit, print or put in a document.
+    /// An animated WebP (exported by the player): shown in the workspace (its first frame as thumbnail) and opened in
+    /// the default application, but not an image to edit, print or put in a document. A WebP of one frame is an image.
     /// </summary>
-    public static readonly string[] AnimationExtensions = { ".webp" };
-
     public static bool IsAnimation(string path) =>
-        AnimationExtensions.Contains(Path.GetExtension(path), StringComparer.OrdinalIgnoreCase);
+        Path.GetExtension(path).Equals(".webp", StringComparison.OrdinalIgnoreCase) && IsAnimatedWebP(path);
 
-    public static bool IsImage(string path) =>
-        Extensions.Contains(Path.GetExtension(path), StringComparer.OrdinalIgnoreCase);
+    /// <summary>An image to edit, copy, read (OCR, QR codes), print...: by its extension, an animated WebP excepted.</summary>
+    public static bool IsImage(string path) => HasExtension(path, Extensions) && !IsAnimation(path);
 
-    public static bool IsVideo(string path) =>
-        VideoExtensions.Contains(Path.GetExtension(path), StringComparer.OrdinalIgnoreCase);
+    public static bool IsVideo(string path) => HasExtension(path, VideoExtensions);
 
-    /// <summary>Files shown in the workspace: images, videos and animations.</summary>
-    public static bool IsCapture(string path) => IsImage(path) || IsVideo(path) || IsAnimation(path);
+    /// <summary>Files shown in the workspace: images, animations and videos (by their extension only: no file is read).</summary>
+    public static bool IsCapture(string path) => HasExtension(path, Extensions) || IsVideo(path);
+
+    /// <summary>
+    /// True for a WebP of several frames. Its header says so (the animation flag of the "VP8X" chunk): only a file with
+    /// that flag is decoded further, to count its frames. The answer is kept while the file keeps its date and length.
+    /// </summary>
+    private static bool IsAnimatedWebP(string path)
+    {
+        try
+        {
+            var info = new FileInfo(path);
+            if (!info.Exists) return false;
+            var key = info.FullName;
+            if (WebPKinds.TryGetValue(key, out var known) && known.Modified == info.LastWriteTimeUtc && known.Length == info.Length)
+                return known.Animated;
+            bool animated;
+            using (var stream = new FileStream(path, FileMode.Open, FileAccess.Read, FileShare.ReadWrite | FileShare.Delete))
+            {
+                Span<byte> header = stackalloc byte[21];
+                animated = stream.ReadAtLeast(header, header.Length, throwOnEndOfStream: false) == header.Length && HasAnimationFlag(header);
+                if (animated)
+                {
+                    stream.Position = 0;
+                    using var codec = SKCodec.Create(stream);
+                    animated = codec?.FrameCount > 1;
+                }
+            }
+            if (WebPKinds.Count >= MaxWebPKinds) WebPKinds.Clear();
+            WebPKinds[key] = (info.LastWriteTimeUtc, info.Length, animated);
+            return animated;
+        }
+        catch (Exception)
+        {
+            // Unreadable for now (locked, deleted meanwhile): an image, as its extension says.
+            return false;
+        }
+    }
+
+    /// <summary>"RIFF" size "WEBP", then a "VP8X" chunk whose flags have the animation bit (0x02).</summary>
+    internal static bool HasAnimationFlag(ReadOnlySpan<byte> header) =>
+        header.Length >= 21 && header[..4].SequenceEqual("RIFF"u8) && header[8..12].SequenceEqual("WEBP"u8)
+        && header[12..16].SequenceEqual("VP8X"u8) && (header[20] & 0x02) != 0;
 
     /// <summary>Largest image handled (250 megapixels, 1 GB in memory as BGRA).</summary>
     public const long MaxPixels = 250_000_000;
@@ -40,7 +92,7 @@ public static class ImageIO
             throw new InvalidDataException(Loc.T("App.ImageTooLarge", width, height));
     }
 
-    /// <summary>Loads an image file (first frame of a GIF) without locking it, as BGRA.</summary>
+    /// <summary>Loads an image file (first frame of a GIF or an animated WebP) without locking it, as BGRA.</summary>
     /// <exception cref="InvalidDataException">Not a readable image, or too large.</exception>
     public static PixelBuffer Load(string path) => Decode(File.ReadAllBytes(path));
 
@@ -82,14 +134,17 @@ public static class ImageIO
 
     /// <summary>
     /// Saves atomically (a temporary file renamed over the target); the format follows the extension
-    /// (PNG, JPEG with <paramref name="jpegQuality"/>, BMP). Keeps the creation date of the replaced file.
+    /// (PNG, JPEG with <paramref name="jpegQuality"/>, WebP with <paramref name="webpQuality"/>, BMP). Keeps the
+    /// creation date of the replaced file.
     /// </summary>
-    public static void Save(PixelBuffer image, string path, int jpegQuality = 90)
+    /// <param name="webpQuality"><see cref="WebPLossless"/>, or the quality of a lossy WebP (10 to 99).</param>
+    public static void Save(PixelBuffer image, string path, int jpegQuality = 90, int webpQuality = WebPLossless)
     {
         var extension = Path.GetExtension(path).ToLowerInvariant();
         byte[] data = extension switch
         {
             ".jpg" or ".jpeg" => Encode(image, SKEncodedImageFormat.Jpeg, Math.Clamp(jpegQuality, 10, 100)),
+            ".webp" => EncodeWebP(image, webpQuality),
             ".bmp" => EncodeBmp(image),
             _ => EncodePng(image),
         };
@@ -125,6 +180,28 @@ public static class ImageIO
     /// come out as small, and the encoding takes about 40 % less time.
     /// </summary>
     private static readonly SKPngEncoderOptions PngOptions = new(SKPngEncoderFilterFlags.Sub | SKPngEncoderFilterFlags.Up, 6);
+
+    /// <summary>
+    /// WebP, transparency kept: lossless at <see cref="WebPLossless"/> (exact pixels, usually much smaller than PNG),
+    /// else lossy at that quality (10 to 99; the transparency itself stays lossless).
+    /// </summary>
+    public static byte[] EncodeWebP(PixelBuffer image, int quality = WebPLossless)
+    {
+        // Lossless: the "quality" is the effort spent compressing; 75 is libwebp's default.
+        var options = quality >= WebPLossless
+            ? new SKWebpEncoderOptions(SKWebpEncoderCompression.Lossless, 75)
+            : new SKWebpEncoderOptions(SKWebpEncoderCompression.Lossy, Math.Clamp(quality, 10, 99));
+        var info = new SKImageInfo(image.Width, image.Height, SKColorType.Bgra8888, SKAlphaType.Unpremul);
+        unsafe
+        {
+            fixed (byte* p = image.Pixels)
+            {
+                using var pixmap = new SKPixmap(info, (IntPtr)p, image.Stride);
+                using var data = pixmap.Encode(options) ?? throw new InvalidOperationException("Encoding WebP failed");
+                return data.ToArray();
+            }
+        }
+    }
 
     private static byte[] Encode(PixelBuffer image, SKEncodedImageFormat format, int quality)
     {
