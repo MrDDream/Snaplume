@@ -110,7 +110,7 @@ arabic.VCRuntimeFailed=تعذّر تثبيت وقت تشغيل Microsoft Visual 
 
 [Tasks]
 Name: "desktopicon"; Description: "{cm:CreateDesktopIcon}"; GroupDescription: "{cm:AdditionalIcons}"; Flags: unchecked
-Name: "startup"; Description: "{cm:AutoStartProgram,{#AppName}}"; GroupDescription: "{cm:AutoStartProgramGroupDescription}"; Flags: unchecked
+Name: "startup"; Description: "{cm:AutoStartProgram,{#AppName}}"; GroupDescription: "{cm:AutoStartProgramGroupDescription}"
 
 [Files]
 ; The "portable" marker must never be installed (settings go to %APPDATA%\Snaplume).

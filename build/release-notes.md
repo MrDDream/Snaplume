@@ -29,7 +29,7 @@
 
 | Package | File | Best for |
 |---|---|---|
-| **Installer** | [`Snaplume-Setup-{{VERSION}}.exe`](https://github.com/MrDDream/Snaplume/releases/download/v{{VERSION}}/Snaplume-Setup-{{VERSION}}.exe) | Most users: per-user setup (no administrator rights needed, all-users install available), Start menu shortcut, optional desktop shortcut and start with Windows, uninstaller. |
+| **Installer** | [`Snaplume-Setup-{{VERSION}}.exe`](https://github.com/MrDDream/Snaplume/releases/download/v{{VERSION}}/Snaplume-Setup-{{VERSION}}.exe) | Most users: per-user setup (no administrator rights needed, all-users install available), Start menu shortcut, start with Windows (checked by default), optional desktop shortcut, uninstaller. |
 | **Portable** | [`Snaplume-{{VERSION}}-portable.zip`](https://github.com/MrDDream/Snaplume/releases/download/v{{VERSION}}/Snaplume-{{VERSION}}-portable.zip) | USB sticks and locked-down PCs: unzip the `Snaplume` folder anywhere and run `Snaplume.exe`; settings stay in the folder. |
 | **MSI** | [`Snaplume-{{VERSION}}-x64.msi`](https://github.com/MrDDream/Snaplume/releases/download/v{{VERSION}}/Snaplume-{{VERSION}}-x64.msi) | IT departments: all-users installation in `Program Files` for Intune, Group Policy, SCCM or `msiexec /i Snaplume-{{VERSION}}-x64.msi /qn` (add `DESKTOPSHORTCUT=1` for a desktop shortcut). Administrator rights required. |
 
