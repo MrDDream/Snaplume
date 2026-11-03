@@ -147,6 +147,8 @@ public sealed class VideoService
                 // Moved or resized meanwhile; it stays where it is from now on.
                 area = _area;
                 _frame?.EndMoving();
+                // The bar took the focus for its options: the recorded window gets it back (the frame lets the point through).
+                if (!systemChooses) platform.Pointer.ActivateWindowAt(area.X + area.Width / 2, area.Y + area.Height / 2);
             }
             if (!systemChooses)
             {

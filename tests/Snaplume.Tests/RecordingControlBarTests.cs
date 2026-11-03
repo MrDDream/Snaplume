@@ -29,6 +29,9 @@ public class RecordingControlBarTests
         var bar = scope.Open(new RecordingControlBar(Area, showOptions: true, Monitors, clickZoom: true));
 
         Assert.True(bar.IsChoosing);
+        // Kept with the test results to look at the bar; never committed.
+        Snaplume.Imaging.ImageIO.Save(Snaplume.Imaging.AvaloniaImages.ToPixelBuffer(bar.CaptureRenderedFrame()!),
+            Path.Combine(AppContext.BaseDirectory, "recording-options-bar.png"));
         Assert.False(Toggle(bar, "MicrophoneToggle").IsChecked);
         Assert.True(Toggle(bar, "SystemAudioToggle").IsChecked);
         Assert.False(Toggle(bar, "WebcamToggle").IsChecked);
