@@ -1,6 +1,7 @@
 using Avalonia;
 using Avalonia.Controls;
 using Avalonia.Controls.ApplicationLifetimes;
+using Avalonia.Input;
 using Avalonia.Markup.Xaml;
 using Avalonia.Styling;
 using Avalonia.Threading;
@@ -375,6 +376,20 @@ public partial class App : Application
         Register("delayed", "Settings.Hotkeys.Delayed", Settings.HotkeyDelayed, () => _ = Captures.CaptureAsync(CaptureKind.Region, Settings.DelaySeconds));
         Register("video", "Settings.Hotkeys.Video", Settings.HotkeyVideo, () => _ = Videos.ToggleAsync());
         Register("text", "Ocr.CaptureText", Settings.HotkeyText, () => _ = Captures.CaptureTextAsync());
+        if (Settings.ReplaceSnippingShortcut && Platform.Has(PlatformFeatures.ReplaceSystemCapture))
+        {
+            bool replaced;
+            try
+            {
+                replaced = hotkeys.ReplaceSystemCapture(() => Dispatcher.UIThread.Post(() => _ = Captures.CaptureAsync(CaptureKind.Region)));
+            }
+            catch (Exception ex)
+            {
+                ErrorLog.Write("Remplacement de Win+Maj+S", ex);
+                replaced = false;
+            }
+            if (!replaced) failed.Add(new Hotkey(KeyModifiers.Meta | KeyModifiers.Shift, Key.S).DisplayName);
+        }
 
         if (!showWarnings) return;
         if (failed.Count > 0)

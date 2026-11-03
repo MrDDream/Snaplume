@@ -813,5 +813,8 @@
   "Share.Email.FailedSystem": "L'applicazione di posta non è riuscita a preparare il messaggio.\n\nI file verranno mostrati nel gestore file: trascinali in un nuovo messaggio.",
   "Share.Email.NoClientSystem": "Su questo computer non è configurata alcuna applicazione di posta.\n\nI file verranno mostrati nel gestore file: trascinali in un nuovo messaggio della tua webmail.",
   "Tray.CaptureArea": "Acquisisci un'area dello schermo",
-  "Workspace.OpenFolderTipSystem": "Apri la cartella delle acquisizioni nel gestore file"
+  "Workspace.OpenFolderTipSystem": "Apri la cartella delle acquisizioni nel gestore file",
+  "Settings.Hotkeys.SystemShortcutHeader": "Scorciatoia di Windows",
+  "Settings.Hotkeys.ReplaceSnipping": "Usa Win+Maiusc+S per Snaplume",
+  "Settings.Hotkeys.ReplaceSnippingDescription": "Win+Maiusc+S avvia una cattura di area di Snaplume invece dello Strumento di cattura. In una finestra eseguita come amministratore si apre comunque lo Strumento di cattura."
 }

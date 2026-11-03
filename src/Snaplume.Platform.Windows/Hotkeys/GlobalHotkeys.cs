@@ -19,6 +19,7 @@ public sealed class GlobalHotkeys : IGlobalHotkeys
     private readonly MessageWindow _window;
     private readonly Dictionary<int, Action> _actions = new();
     private int _nextId = 1;
+    private SnippingShortcutHook? _snippingHook;
 
     public GlobalHotkeys()
     {
@@ -54,12 +55,24 @@ public sealed class GlobalHotkeys : IGlobalHotkeys
         return true;
     }
 
+    /// <summary>Also gives Win+Shift+S back to the system.</summary>
     public void UnregisterAll()
     {
         foreach (var id in _actions.Keys) UnregisterHotKey(_window.Handle, id);
         _actions.Clear();
         // Ids are only unique among the registered shortcuts: start again (they would otherwise grow at every settings change).
         _nextId = 1;
+        ReplaceSystemCapture(null);
+    }
+
+    /// <summary>Win+Shift+S runs <paramref name="action"/> instead of opening the Snipping Tool.</summary>
+    public bool ReplaceSystemCapture(Action? action)
+    {
+        _snippingHook?.Dispose();
+        _snippingHook = null;
+        if (action == null) return true;
+        _snippingHook = SnippingShortcutHook.Start(action);
+        return _snippingHook != null;
     }
 
     private void OnHotkey(int id)

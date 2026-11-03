@@ -813,5 +813,8 @@
   "Share.Email.FailedSystem": "The e-mail application could not prepare the message.\n\nThe files will be shown in the file manager: drag them into a new message.",
   "Share.Email.NoClientSystem": "No e-mail application is set up on this computer.\n\nThe files will be shown in the file manager: drag them into a new message of your webmail.",
   "Tray.CaptureArea": "Capture a screen region",
-  "Workspace.OpenFolderTipSystem": "Open the screenshots folder in the file manager"
+  "Workspace.OpenFolderTipSystem": "Open the screenshots folder in the file manager",
+  "Settings.Hotkeys.SystemShortcutHeader": "Windows shortcut",
+  "Settings.Hotkeys.ReplaceSnipping": "Use Win+Shift+S for Snaplume",
+  "Settings.Hotkeys.ReplaceSnippingDescription": "Win+Shift+S starts a Snaplume area capture instead of the Snipping Tool. In a window run as administrator, the Snipping Tool still opens."
 }

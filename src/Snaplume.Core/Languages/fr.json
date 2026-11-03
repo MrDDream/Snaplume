@@ -813,5 +813,8 @@
   "Share.Email.FailedSystem": "L'application de messagerie n'a pas pu préparer le message.\n\nLes fichiers vont s'afficher dans le gestionnaire de fichiers : faites-les glisser dans un nouveau message.",
   "Share.Email.NoClientSystem": "Aucune application de messagerie n'est configurée sur cet ordinateur.\n\nLes fichiers vont s'afficher dans le gestionnaire de fichiers : faites-les glisser dans un nouveau message de votre messagerie web.",
   "Tray.CaptureArea": "Capturer une zone de l'écran",
-  "Workspace.OpenFolderTipSystem": "Ouvrir le dossier des captures dans le gestionnaire de fichiers"
+  "Workspace.OpenFolderTipSystem": "Ouvrir le dossier des captures dans le gestionnaire de fichiers",
+  "Settings.Hotkeys.SystemShortcutHeader": "Raccourci de Windows",
+  "Settings.Hotkeys.ReplaceSnipping": "Utiliser Win+Maj+S pour Snaplume",
+  "Settings.Hotkeys.ReplaceSnippingDescription": "Win+Maj+S lance une capture de zone de Snaplume au lieu de l'Outil Capture. Dans une fenêtre exécutée en administrateur, l'Outil Capture s'ouvre toujours."
 }

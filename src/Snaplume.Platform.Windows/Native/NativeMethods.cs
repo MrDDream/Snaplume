@@ -270,6 +270,100 @@ internal static class NativeMethods
     [DllImport("user32.dll")]
     public static extern short GetAsyncKeyState(int key);
 
+    // ---- Win+Shift+S taken over: low-level keyboard hook ----
+
+    public const int WH_KEYBOARD_LL = 13;
+    public const int WM_KEYDOWN = 0x0100;
+    public const int WM_KEYUP = 0x0101;
+    public const int WM_SYSKEYDOWN = 0x0104;
+    public const int WM_SYSKEYUP = 0x0105;
+    public const uint WM_QUIT = 0x0012;
+    public const uint WM_APP = 0x8000;
+    public const uint LLKHF_INJECTED = 0x10;
+    public const uint INPUT_KEYBOARD = 1;
+    public const uint KEYEVENTF_KEYUP = 0x0002;
+    public const int VK_SHIFT = 0x10;
+    public const int VK_CONTROL = 0x11;
+    public const int VK_MENU = 0x12;
+    public const int VK_LWIN = 0x5B;
+    public const int VK_RWIN = 0x5C;
+    /// <summary>Unassigned key: pressing it between Win down and up keeps the Start menu closed.</summary>
+    public const ushort VK_UNASSIGNED_E8 = 0xE8;
+
+    public delegate IntPtr LowLevelKeyboardProc(int code, IntPtr wParam, IntPtr lParam);
+
+    [StructLayout(LayoutKind.Sequential)]
+    public struct KBDLLHOOKSTRUCT
+    {
+        public uint vkCode;
+        public uint scanCode;
+        public uint flags;
+        public uint time;
+        public IntPtr dwExtraInfo;
+    }
+
+    [StructLayout(LayoutKind.Sequential)]
+    public struct KEYBDINPUT
+    {
+        public ushort wVk;
+        public ushort wScan;
+        public uint dwFlags;
+        public uint time;
+        public IntPtr dwExtraInfo;
+    }
+
+    /// <summary>INPUT with its keyboard member; the mouse member keeps the size of the native union.</summary>
+    [StructLayout(LayoutKind.Sequential)]
+    public struct KEYBOARD_INPUT
+    {
+        public uint type;
+        public KeyboardUnion u;
+    }
+
+    [StructLayout(LayoutKind.Explicit)]
+    public struct KeyboardUnion
+    {
+        [FieldOffset(0)] public KEYBDINPUT ki;
+        [FieldOffset(0)] public MOUSEINPUT mi;
+    }
+
+    [StructLayout(LayoutKind.Sequential)]
+    public struct MSG
+    {
+        public IntPtr hwnd;
+        public uint message;
+        public IntPtr wParam;
+        public IntPtr lParam;
+        public uint time;
+        public POINT pt;
+    }
+
+    [DllImport("user32.dll", SetLastError = true)]
+    public static extern uint SendInput(uint count, KEYBOARD_INPUT[] inputs, int size);
+
+    [DllImport("user32.dll", SetLastError = true)]
+    public static extern IntPtr SetWindowsHookEx(int hook, LowLevelKeyboardProc proc, IntPtr module, uint threadId);
+
+    [DllImport("user32.dll")]
+    [return: MarshalAs(UnmanagedType.Bool)]
+    public static extern bool UnhookWindowsHookEx(IntPtr hook);
+
+    [DllImport("user32.dll")]
+    public static extern IntPtr CallNextHookEx(IntPtr hook, int code, IntPtr wParam, IntPtr lParam);
+
+    [DllImport("kernel32.dll", CharSet = CharSet.Unicode)]
+    public static extern IntPtr GetModuleHandle(string? name);
+
+    [DllImport("kernel32.dll")]
+    public static extern uint GetCurrentThreadId();
+
+    [DllImport("user32.dll")]
+    public static extern int GetMessage(out MSG message, IntPtr hWnd, uint min, uint max);
+
+    [DllImport("user32.dll", SetLastError = true)]
+    [return: MarshalAs(UnmanagedType.Bool)]
+    public static extern bool PostThreadMessage(uint threadId, uint message, IntPtr wParam, IntPtr lParam);
+
     [DllImport("user32.dll")]
     public static extern IntPtr WindowFromPoint(POINT point);
 

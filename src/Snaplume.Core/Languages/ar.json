@@ -813,5 +813,8 @@
   "Share.Email.FailedSystem": "تعذّر على تطبيق البريد الإلكتروني تحضير الرسالة.\n\nستُعرض الملفات في مدير الملفات: اسحبها إلى رسالة جديدة.",
   "Share.Email.NoClientSystem": "لم يتم إعداد أي تطبيق بريد إلكتروني على هذا الكمبيوتر.\n\nستُعرض الملفات في مدير الملفات: اسحبها إلى رسالة جديدة في بريدك على الويب.",
   "Tray.CaptureArea": "التقاط منطقة من الشاشة",
-  "Workspace.OpenFolderTipSystem": "فتح مجلد اللقطات في مدير الملفات"
+  "Workspace.OpenFolderTipSystem": "فتح مجلد اللقطات في مدير الملفات",
+  "Settings.Hotkeys.SystemShortcutHeader": "اختصار Windows",
+  "Settings.Hotkeys.ReplaceSnipping": "استخدام Win+Shift+S لـ Snaplume",
+  "Settings.Hotkeys.ReplaceSnippingDescription": "يبدأ Win+Shift+S التقاط منطقة باستخدام Snaplume بدلاً من أداة القطع. في نافذة تعمل كمسؤول، تظل أداة القطع هي التي تفتح."
 }

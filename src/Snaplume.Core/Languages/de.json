@@ -813,5 +813,8 @@
   "Share.Email.FailedSystem": "Die E-Mail-Anwendung konnte die Nachricht nicht vorbereiten.\n\nDie Dateien werden im Dateimanager angezeigt: Ziehen Sie sie in eine neue Nachricht.",
   "Share.Email.NoClientSystem": "Auf diesem Computer ist keine E-Mail-Anwendung eingerichtet.\n\nDie Dateien werden im Dateimanager angezeigt: Ziehen Sie sie in eine neue Nachricht Ihres Webmail-Dienstes.",
   "Tray.CaptureArea": "Bildschirmbereich aufnehmen",
-  "Workspace.OpenFolderTipSystem": "Screenshot-Ordner im Dateimanager öffnen"
+  "Workspace.OpenFolderTipSystem": "Screenshot-Ordner im Dateimanager öffnen",
+  "Settings.Hotkeys.SystemShortcutHeader": "Windows-Tastenkombination",
+  "Settings.Hotkeys.ReplaceSnipping": "Win+Umschalt+S für Snaplume verwenden",
+  "Settings.Hotkeys.ReplaceSnippingDescription": "Win+Umschalt+S startet eine Bereichsaufnahme von Snaplume statt des Snipping Tools. In einem als Administrator ausgeführten Fenster öffnet sich weiterhin das Snipping Tool."
 }

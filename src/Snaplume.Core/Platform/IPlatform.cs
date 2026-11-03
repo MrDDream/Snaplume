@@ -25,6 +25,8 @@ public enum PlatformFeatures
     StartWithSession = 1 << 6,
     /// <summary>The active window can be captured without user interaction.</summary>
     ActiveWindow = 1 << 7,
+    /// <summary>The system's own capture shortcut (Win+Shift+S) can be taken over, see <see cref="IGlobalHotkeys.ReplaceSystemCapture"/>.</summary>
+    ReplaceSystemCapture = 1 << 8,
 }
 
 /// <summary>
@@ -149,7 +151,15 @@ public interface IGlobalHotkeys : IDisposable
     /// <returns>False if the shortcut is taken by another application.</returns>
     bool Register(string id, string description, Hotkey hotkey, Action action);
 
+    /// <summary>Unregisters every shortcut, and gives the system's capture shortcut back (see <see cref="ReplaceSystemCapture"/>).</summary>
     void UnregisterAll();
+
+    /// <summary>
+    /// Runs <paramref name="action"/> instead of the system's own capture tool when its shortcut is pressed
+    /// (Win+Shift+S on Windows); null gives the shortcut back to the system.
+    /// </summary>
+    /// <returns>False if this system cannot do it (no <see cref="PlatformFeatures.ReplaceSystemCapture"/>).</returns>
+    bool ReplaceSystemCapture(Action? action) => false;
 }
 
 // ---- Video ----

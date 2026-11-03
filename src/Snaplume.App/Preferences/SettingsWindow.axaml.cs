@@ -104,6 +104,7 @@ public partial class SettingsWindow : Window
         DelayedHotkey.Hotkey = Parse(settings.HotkeyDelayed);
         VideoHotkey.Hotkey = Parse(settings.HotkeyVideo);
         TextHotkey.Hotkey = Parse(settings.HotkeyText);
+        SnippingCheck.IsChecked = settings.ReplaceSnippingShortcut;
 
         VersionText.Text = Loc.T("Settings.About.Version", typeof(App).Assembly.GetName().Version?.ToString(3));
         AutoUpdateCheck.IsChecked = settings.CheckForUpdates;
@@ -141,6 +142,7 @@ public partial class SettingsWindow : Window
         bool hotkeys = platform.Has(PlatformFeatures.GlobalHotkeys) && platform.Hotkeys.IsSupported;
         HotkeysUnsupported.IsVisible = !hotkeys;
         HotkeysCard.IsVisible = hotkeys;
+        SnippingSection.IsVisible = hotkeys && platform.Has(PlatformFeatures.ReplaceSystemCapture);
         bool printScreenTaken;
         try
         {
@@ -504,6 +506,7 @@ public partial class SettingsWindow : Window
         Result.HotkeyDelayed = DelayedHotkey.Hotkey.ToString();
         Result.HotkeyVideo = VideoHotkey.Hotkey.ToString();
         Result.HotkeyText = TextHotkey.Hotkey.ToString();
+        Result.ReplaceSnippingShortcut = SnippingCheck.IsChecked == true;
         Result.Language = (LanguageBox.SelectedItem as ChoiceItem)?.Value as string ?? "";
         Result.Theme = (ThemeBox.SelectedItem as ChoiceItem)?.Value as string ?? ThemeManager.Auto;
         Result.CheckForUpdates = AutoUpdateCheck.IsChecked == true;

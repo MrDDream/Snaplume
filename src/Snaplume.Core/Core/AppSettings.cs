@@ -37,6 +37,8 @@ public sealed class AppSettings
     public string HotkeyVideo { get; set; } = "Ctrl+Alt+PrintScreen";
     /// <summary>Text capture (OCR); none by default, PrintScreen combinations are all taken.</summary>
     public string HotkeyText { get; set; } = "";
+    /// <summary>Win+Shift+S captures an area with Snaplume instead of opening the Snipping Tool (Windows).</summary>
+    public bool ReplaceSnippingShortcut { get; set; }
     /// <summary>OCR language tag ("fr-FR"...), empty for the system language.</summary>
     public string OcrLanguage { get; set; } = "";
 

@@ -813,5 +813,8 @@
   "Share.Email.FailedSystem": "La aplicación de correo no pudo preparar el mensaje.\n\nLos archivos se mostrarán en el gestor de archivos: arrástrelos a un nuevo mensaje.",
   "Share.Email.NoClientSystem": "No hay ninguna aplicación de correo configurada en este equipo.\n\nLos archivos se mostrarán en el gestor de archivos: arrástrelos a un nuevo mensaje de su correo web.",
   "Tray.CaptureArea": "Capturar un área de la pantalla",
-  "Workspace.OpenFolderTipSystem": "Abrir la carpeta de capturas en el gestor de archivos"
+  "Workspace.OpenFolderTipSystem": "Abrir la carpeta de capturas en el gestor de archivos",
+  "Settings.Hotkeys.SystemShortcutHeader": "Atajo de Windows",
+  "Settings.Hotkeys.ReplaceSnipping": "Usar Win+Mayús+S para Snaplume",
+  "Settings.Hotkeys.ReplaceSnippingDescription": "Win+Mayús+S inicia una captura de zona de Snaplume en lugar de la Herramienta Recortes. En una ventana ejecutada como administrador, se sigue abriendo la Herramienta Recortes."
 }

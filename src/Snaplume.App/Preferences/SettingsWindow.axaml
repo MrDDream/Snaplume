@@ -452,6 +452,22 @@
                             </Border>
                         </StackPanel>
                     </Border>
+
+                    <!-- Win+Shift+S: Snaplume instead of the Snipping Tool (Windows) -->
+                    <StackPanel Name="SnippingSection">
+                        <TextBlock Classes="card-header" Text="{l:T Settings.Hotkeys.SystemShortcutHeader}" />
+                        <Border Classes="card">
+                            <Border Classes="row last">
+                                <DockPanel>
+                                    <ToggleSwitch Name="SnippingCheck" DockPanel.Dock="Right" />
+                                    <StackPanel>
+                                        <TextBlock Classes="row-title" Text="{l:T Settings.Hotkeys.ReplaceSnipping}" />
+                                        <TextBlock Classes="row-description" Text="{l:T Settings.Hotkeys.ReplaceSnippingDescription}" />
+                                    </StackPanel>
+                                </DockPanel>
+                            </Border>
+                        </Border>
+                    </StackPanel>
                 </StackPanel>
 
                 <!-- About -->
