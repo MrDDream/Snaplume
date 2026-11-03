@@ -1018,5 +1018,13 @@
   "Recording.GripTitle": "Move the recorded area",
   "Video.OriginalNotMoved": "{0} is converted, but its original video couldn't be moved into the workspace. It was kept here: {1}",
   "Video.OriginalNotMovedTitle": "Original video not moved",
-  "Video.StopTimeout": "The recorder did not finish the video."
+  "Video.StopTimeout": "The recorder did not finish the video.",
+  "App.SettingsResetText": "The settings file could not be read: Snaplume is using the default settings.",
+  "App.SettingsResetTextBackup": "The settings file could not be read: Snaplume is using the default settings. A copy of the old file is kept here:\n{0}",
+  "App.SettingsResetTitle": "Settings reset",
+  "Gallery.Import.Failed": "Could not add the files",
+  "Update.Postponed": "An editor still has unsaved changes: Snaplume did not close and the update is waiting. Save or close the editor, then try again.",
+  "Workspaces.ConversionRunning": "A video recording is being converted into this workspace: wait until the conversion ends.",
+  "Workspaces.Folder.PickFailed": "Could not open the folder picker",
+  "Workspaces.Folder.TooBroad": "“{0}” is too general a folder for a workspace (a drive, a personal or system folder). Choose a folder kept for these captures, for example one of its sub-folders."
 }

@@ -1018,5 +1018,13 @@
   "Recording.GripTitle": "Déplacer la zone enregistrée",
   "Video.OriginalNotMoved": "{0} est convertie, mais sa vidéo d'origine n'a pas pu être déplacée dans l'espace de travail. Elle est conservée ici : {1}",
   "Video.OriginalNotMovedTitle": "Vidéo d'origine non déplacée",
-  "Video.StopTimeout": "L'enregistreur n'a pas terminé la vidéo."
+  "Video.StopTimeout": "L'enregistreur n'a pas terminé la vidéo.",
+  "App.SettingsResetText": "Le fichier des paramètres était illisible : Snaplume a repris les réglages par défaut.",
+  "App.SettingsResetTextBackup": "Le fichier des paramètres était illisible : Snaplume a repris les réglages par défaut. Une copie de l'ancien fichier est gardée ici :\n{0}",
+  "App.SettingsResetTitle": "Paramètres réinitialisés",
+  "Gallery.Import.Failed": "Impossible d'ajouter les fichiers",
+  "Update.Postponed": "Un éditeur a encore des modifications non enregistrées : Snaplume ne s'est pas fermé et la mise à jour attend. Enregistrez ou fermez l'éditeur, puis réessayez.",
+  "Workspaces.ConversionRunning": "Un enregistrement vidéo est en cours de conversion vers cet espace de travail : attendez la fin de la conversion.",
+  "Workspaces.Folder.PickFailed": "Impossible d'ouvrir le choix du dossier",
+  "Workspaces.Folder.TooBroad": "« {0} » est un dossier trop général pour un espace de travail (un lecteur, un dossier personnel ou du système). Choisissez un dossier réservé à ces captures, par exemple l'un de ses sous-dossiers."
 }

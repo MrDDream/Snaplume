@@ -1018,5 +1018,13 @@
   "Recording.GripTitle": "Sposta l'area registrata",
   "Video.OriginalNotMoved": "{0} è stato convertito, ma il video originale non è stato spostato nell'area di lavoro. È stato conservato qui: {1}",
   "Video.OriginalNotMovedTitle": "Video originale non spostato",
-  "Video.StopTimeout": "Il registratore non ha completato il video."
+  "Video.StopTimeout": "Il registratore non ha completato il video.",
+  "App.SettingsResetText": "Il file delle impostazioni non era leggibile: Snaplume usa le impostazioni predefinite.",
+  "App.SettingsResetTextBackup": "Il file delle impostazioni non era leggibile: Snaplume usa le impostazioni predefinite. Una copia del vecchio file è conservata qui:\n{0}",
+  "App.SettingsResetTitle": "Impostazioni ripristinate",
+  "Gallery.Import.Failed": "Impossibile aggiungere i file",
+  "Update.Postponed": "Un editor ha ancora modifiche non salvate: Snaplume non si è chiuso e l'aggiornamento è in attesa. Salva o chiudi l'editor, poi riprova.",
+  "Workspaces.ConversionRunning": "Una registrazione video è in fase di conversione verso quest'area di lavoro: attendi la fine della conversione.",
+  "Workspaces.Folder.PickFailed": "Impossibile aprire la scelta della cartella",
+  "Workspaces.Folder.TooBroad": "«{0}» è una cartella troppo generica per un'area di lavoro (un'unità, una cartella personale o di sistema). Scegli una cartella riservata a queste acquisizioni, ad esempio una delle sue sottocartelle."
 }

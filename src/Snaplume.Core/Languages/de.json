@@ -1018,5 +1018,13 @@
   "Recording.GripTitle": "Aufgenommenen Bereich verschieben",
   "Video.OriginalNotMoved": "{0} wurde konvertiert, aber das Originalvideo konnte nicht in den Arbeitsbereich verschoben werden. Es wurde hier aufbewahrt: {1}",
   "Video.OriginalNotMovedTitle": "Originalvideo nicht verschoben",
-  "Video.StopTimeout": "Die Aufnahme hat das Video nicht abgeschlossen."
+  "Video.StopTimeout": "Die Aufnahme hat das Video nicht abgeschlossen.",
+  "App.SettingsResetText": "Die Einstellungsdatei war nicht lesbar: Snaplume verwendet die Standardeinstellungen.",
+  "App.SettingsResetTextBackup": "Die Einstellungsdatei war nicht lesbar: Snaplume verwendet die Standardeinstellungen. Eine Kopie der alten Datei liegt hier:\n{0}",
+  "App.SettingsResetTitle": "Einstellungen zurückgesetzt",
+  "Gallery.Import.Failed": "Die Dateien konnten nicht hinzugefügt werden",
+  "Update.Postponed": "Ein Editor hat noch ungespeicherte Änderungen: Snaplume wurde nicht beendet, das Update wartet. Speichern oder schließen Sie den Editor und versuchen Sie es dann erneut.",
+  "Workspaces.ConversionRunning": "Eine Videoaufnahme wird gerade in diesen Arbeitsbereich konvertiert: Warten Sie, bis die Konvertierung abgeschlossen ist.",
+  "Workspaces.Folder.PickFailed": "Die Ordnerauswahl konnte nicht geöffnet werden",
+  "Workspaces.Folder.TooBroad": "„{0}“ ist ein zu allgemeiner Ordner für einen Arbeitsbereich (ein Laufwerk, ein persönlicher oder ein Systemordner). Wählen Sie einen Ordner nur für diese Aufnahmen, zum Beispiel einen seiner Unterordner."
 }
