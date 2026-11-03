@@ -7,7 +7,8 @@
 
     1. Publishes src/Snaplume.App (net10.0) for linux-x64 and linux-arm64: self-contained (users need no .NET
        install), single executable "Snaplume", plus the native libraries a single file cannot carry
-       (libSkiaSharp.so, libHarfBuzzSharp.so).
+       (libSkiaSharp.so, libHarfBuzzSharp.so). Trimmed (see Snaplume.App.csproj) and ReadyToRun, as on Windows:
+       smaller than the plain publish, and precompiled (startup about twice as fast as with the JIT alone).
     2. Stages the package tree in <OutputDir>/staging/<arch>:
          opt/snaplume/                         Snaplume, *.so, LICENSE
          share/applications/                   io.github.mrddream.Snaplume.desktop
@@ -48,6 +49,8 @@ param(
     [string]$NfpmPath,
     # Publish and stage only; no .deb/.rpm.
     [switch]$SkipPackages,
+    # Publish without trimming and ReadyToRun (the plain publish used before).
+    [switch]$NoTrim,
     # Keep <OutputDir>/staging after building the packages.
     [switch]$KeepStaging
 )
@@ -157,6 +160,8 @@ foreach ($arch in $Architectures) {
         '--self-contained', 'true',
         '-p:PublishSingleFile=true',
         '-p:IncludeNativeLibrariesForSelfExtract=false',
+        "-p:PublishTrimmed=$(-not $NoTrim)",
+        "-p:PublishReadyToRun=$(-not $NoTrim)",
         '-p:DebugType=none',
         '-p:DebugSymbols=false',
         "-p:Version=$Version",

@@ -11,6 +11,15 @@
     <AvaloniaTelemetryOptOut>true</AvaloniaTelemetryOptOut>
   </PropertyGroup>
 
+  <!--
+    Trimmed publish (see Snaplume.App.csproj): the trim analysis warns about every System.Text.Json call of Snaplume's
+    own assemblies, which are not trimmed, so nothing it says applies.
+  -->
+  <PropertyGroup Condition="'$(PublishTrimmed)' == 'true'">
+    <EnableTrimAnalyzer>false</EnableTrimAnalyzer>
+    <SuppressTrimAnalysisWarnings>true</SuppressTrimAnalysisWarnings>
+  </PropertyGroup>
+
   <!-- One version of each package for the whole solution. -->
   <PropertyGroup>
     <AvaloniaVersion>12.1.4</AvaloniaVersion>

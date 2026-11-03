@@ -24,6 +24,20 @@
     <DefineConstants>$(DefineConstants);SNAPLUME_WINDOWS</DefineConstants>
   </PropertyGroup>
 
+  <!--
+    Trimmed publish (build/build-release.ps1 and build-linux.ps1 pass PublishTrimmed=true): only the assemblies marked
+    trimmable (the .NET libraries, Avalonia, SkiaSharp, the Windows SDK projection...) lose what is never called;
+    Snaplume's own assemblies and the others (ScreenRecorderLib, ZXing...) are kept whole, so the settings, annotations
+    and presets keep being read and written by System.Text.Json's reflection on their types, as before. The trimmed
+    libraries lose their precompiled code: trimming goes with ReadyToRun, or startup is twice as slow.
+  -->
+  <PropertyGroup Condition="'$(PublishTrimmed)' == 'true'">
+    <TrimMode>partial</TrimMode>
+    <JsonSerializerIsReflectionEnabledByDefault>true</JsonSerializerIsReflectionEnabledByDefault>
+    <!-- [ComImport] interfaces (shell thumbnails of videos) need the built-in COM interop, off by default when trimming. -->
+    <BuiltInComInteropSupport>true</BuiltInComInteropSupport>
+  </PropertyGroup>
+
   <ItemGroup>
     <AvaloniaResource Include="Assets\**" />
   </ItemGroup>

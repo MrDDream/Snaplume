@@ -6,10 +6,11 @@
     Works with PowerShell 7 and Windows PowerShell 5.1.
 
     1. Publishes src/Snaplume.App/Snaplume.App.csproj (its Windows target framework) for win-x64, self-contained
-       (users need no .NET install), ReadyToRun. Default layout "SingleFile": Snaplume.exe (single-file bundle)
-       next to the few files that cannot be bundled: ScreenRecorderLib.dll (mixed-mode C++/CLI assembly, excluded
-       from the bundle by build/SingleFile.targets), Avalonia's native libraries (Skia, HarfBuzz, ANGLE).
-       "Folder" is the classic layout.
+       (users need no .NET install), trimmed (see the trimming notes in Snaplume.App.csproj) and ReadyToRun
+       (precompiled: startup twice as fast as with the JIT alone). Default layout "SingleFile": Snaplume.exe
+       (single-file bundle) next to the few files that cannot be bundled: ScreenRecorderLib.dll (mixed-mode C++/CLI
+       assembly, excluded from the bundle by build/SingleFile.targets), Avalonia's native libraries (Skia, HarfBuzz,
+       ANGLE). "Folder" is the classic layout.
        The Linux packages are built by build/build-linux.ps1.
     2. Adds the Microsoft Visual C++ 2015-2022 x64 runtime needed by ScreenRecorderLib (C++/CLI):
        - "AppLocal": the redistributable DLLs from Visual Studio's VC\Redist\MSVC\<ver>\x64\Microsoft.VC14x.CRT
@@ -58,6 +59,8 @@ param(
     # Path to wix.exe (WiX Toolset 5: dotnet tool install --global wix --version 5.0.2), instead of searching for it.
     [string]$WixPath,
     [switch]$SkipMsi,
+    # Publish without trimming (bigger: Snaplume.exe is about 214 MB instead of 76 MB).
+    [switch]$NoTrim,
     # Keep the intermediate folders (<OutputDir>\staging).
     [switch]$KeepStaging
 )
@@ -166,8 +169,10 @@ foreach ($dir in @((Join-Path $projectDir "bin\$Configuration"), (Join-Path $pro
 $env:SatelliteResourceLanguages = 'en;fr;de;es;it;ar'
 
 Write-Step 'Restore'
-# PublishReadyToRun must also be set at restore time: it pulls the crossgen runtime pack (--no-restore below).
-Invoke-Native $Dotnet @('restore', $ProjectPath, '-r', 'win-x64', '-p:PublishReadyToRun=true')
+# PublishReadyToRun and PublishTrimmed must also be set at restore time: they pull the crossgen and ILLink packs
+# (--no-restore below).
+$trim = "-p:PublishTrimmed=$(if ($NoTrim) { 'false' } else { 'true' })"
+Invoke-Native $Dotnet @('restore', $ProjectPath, '-r', 'win-x64', '-p:PublishReadyToRun=true', $trim)
 
 Write-Step 'Publish'
 $publishArgs = @(
@@ -180,6 +185,7 @@ $publishArgs = @(
     '-o', $PublishDir,
     "-p:Version=$Version",
     '-p:PublishReadyToRun=true',
+    $trim,
     '-p:DebugType=none',
     '-p:GenerateDocumentationFile=false'
 )
