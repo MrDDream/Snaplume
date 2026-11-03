@@ -56,15 +56,21 @@ internal sealed class FfmpegVideoTools : IVideoTools
         if (_ffmpeg.Value is not { } ffmpeg) return null;
         try
         {
-            var result = await ExternalTools.RunAsync(ffmpeg, new[] { "-hide_banner", "-nostdin", "-i", path }, TimeSpan.FromSeconds(15), cancel,
-                environment: ExternalTools.CLocale).ConfigureAwait(false);
-            return FfmpegTools.ParseInputInfo(result.Errors);
+            return await ProbeWithAsync(ffmpeg, path, cancel).ConfigureAwait(false);
         }
         catch (TimeoutException ex)
         {
             ErrorLog.Write($"Lecture des propriétés de {path}", ex);
             return null;
         }
+    }
+
+    /// <exception cref="TimeoutException">ffmpeg did not answer in time.</exception>
+    private static async Task<VideoInfo?> ProbeWithAsync(string ffmpeg, string path, CancellationToken cancel)
+    {
+        var result = await ExternalTools.RunAsync(ffmpeg, FfmpegArguments.Probe(path), TimeSpan.FromSeconds(15), cancel,
+            environment: ExternalTools.CLocale).ConfigureAwait(false);
+        return FfmpegTools.ParseInputInfo(result.Errors);
     }
 
     public async Task ExportClipAsync(string source, string destination, TimeSpan start, TimeSpan end, IProgress<double>? progress, CancellationToken cancel)
@@ -136,7 +142,8 @@ internal sealed class FfmpegVideoTools : IVideoTools
             await foreach (var f in RunRawAsync(ffmpeg, FfmpegArguments.RawFrames(source, time, null, 1, width, height), width, height, 1, cancel)
                                .ConfigureAwait(false))
                 frame = f;
-            frame ??= last;
+            // Past the end, the last picture stands in: a copy, since the caller may keep or change each one.
+            frame ??= last != null ? Copy(last) : null;
             if (frame == null) throw new InvalidDataException($"No picture at {time} in {source}");
             last = frame;
             yield return frame;
@@ -217,11 +224,7 @@ internal sealed class FfmpegVideoTools : IVideoTools
         return _videoEncoder = FfmpegArguments.VideoEncoders.FirstOrDefault(available.Contains) ?? "mpeg4";
     }
 
-    /// <summary>ffmpeg prints the streams of the input on its error output ("Stream #0:1: Audio: aac").</summary>
-    private static async Task<bool> HasAudioAsync(string ffmpeg, string source, CancellationToken cancel)
-    {
-        var result = await ExternalTools.RunAsync(ffmpeg, new[] { "-hide_banner", "-nostdin", "-i", source }, TimeSpan.FromSeconds(15), cancel)
-            .ConfigureAwait(false);
-        return result.Errors.Contains(": Audio:", StringComparison.Ordinal);
-    }
+    /// <summary>The probe's streams ("Stream #0:1: Audio: aac").</summary>
+    private static async Task<bool> HasAudioAsync(string ffmpeg, string source, CancellationToken cancel) =>
+        (await ProbeWithAsync(ffmpeg, source, cancel).ConfigureAwait(false))?.HasAudio == true;
 }

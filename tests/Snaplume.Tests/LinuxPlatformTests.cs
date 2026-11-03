@@ -282,8 +282,18 @@ public class LinuxPlatformTests
     [InlineData("/home/me/My Apps/snaplume", "\"/home/me/My Apps/snaplume\"")]
     [InlineData("/x/100%/a$b", "\"/x/100%%/a\\\\$b\"")]
     [InlineData("/x/q\"uote", "\"/x/q\\\\\"uote\"")]
+    [InlineData("/x/a\nb\tc\rd", "\"/x/a\\nb\\tc\\rd\"")]
+    [InlineData("/x/back\\slash\n", "\"/x/back\\\\\\\\slash\\n\"")]
     public void Desktop_exec_arguments_are_quoted(string argument, string expected) =>
         Assert.Equal(expected, DesktopFiles.ExecArgument(argument));
+
+    [Fact]
+    public void Autostart_entry_keeps_a_line_break_of_the_path_in_its_line()
+    {
+        var entry = DesktopFiles.AutostartEntry("/opt/odd\nname/Snaplume", "Snaplume", "Comment");
+        Assert.Contains("Exec=\"/opt/odd\\nname/Snaplume\" --tray\n", entry);
+        Assert.Equal(9, entry.Split('\n', StringSplitOptions.RemoveEmptyEntries).Length);
+    }
 
     [Fact]
     public void Autostart_entry_starts_in_the_tray()
@@ -329,8 +339,40 @@ public class LinuxPlatformTests
         const string all = "Office_Laser accepting requests since Mon 01 Jan 2026 10:00:00 AM CET\nPDF accepting requests since Tue\n";
         Assert.Equal(new[] { "Office_Laser", "PDF" }, DesktopFiles.ParsePrinters(all));
         Assert.Empty(DesktopFiles.ParsePrinters("lpstat: No destinations added.\n"));
+        // A printer refusing jobs is followed by its indented reason, which is no printer.
+        const string rejecting = "Office_Laser accepting requests since Mon\nOld not accepting requests since Tue -\n\tRejecting Jobs\n  Paper jam\nPDF accepting requests since Wed\n";
+        Assert.Equal(new[] { "Office_Laser", "Old", "PDF" }, DesktopFiles.ParsePrinters(rejecting));
         Assert.Equal("Office_Laser", DesktopFiles.ParseDefaultPrinter("system default destination: Office_Laser\n"));
         Assert.Null(DesktopFiles.ParseDefaultPrinter("no system default destination\n"));
+    }
+
+    [Fact]
+    public void Print_folders_older_than_a_day_are_removed()
+    {
+        var temp = Directory.CreateTempSubdirectory("snaplume-test-");
+        try
+        {
+            var now = DateTime.UtcNow;
+            DirectoryInfo Make(string name, double ageDays)
+            {
+                var folder = temp.CreateSubdirectory(name);
+                File.WriteAllText(Path.Combine(folder.FullName, "a.pdf"), "x");
+                folder.LastWriteTimeUtc = now.AddDays(-ageDays);
+                return folder;
+            }
+            var old = Make("snaplume-print-old", 2);
+            var recent = Make("snaplume-print-recent", 0.5);
+            var other = Make("someone-else", 3);
+            LinuxDesktopShell.CleanStalePrintFolders(temp.FullName, now);
+            Assert.False(Directory.Exists(old.FullName));
+            Assert.True(Directory.Exists(recent.FullName));
+            Assert.True(Directory.Exists(other.FullName));
+            LinuxDesktopShell.CleanStalePrintFolders(Path.Combine(temp.FullName, "missing"), now); // no exception
+        }
+        finally
+        {
+            temp.Delete(true);
+        }
     }
 
     [Fact]

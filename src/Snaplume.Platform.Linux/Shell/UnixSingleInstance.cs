@@ -18,7 +18,8 @@ internal sealed class UnixSingleInstance : ISingleInstance
     internal const int MaxMessageBytes = 64 * 1024;
 
     private readonly string _folder;
-    private int _lockFd = -1;
+    /// <summary>The open lock file, whose flock this process holds; null when not acquired.</summary>
+    private FileStream? _lock;
     private Socket? _listener;
     private volatile bool _disposed;
 
@@ -27,21 +28,34 @@ internal sealed class UnixSingleInstance : ISingleInstance
     private string LockPath => Path.Combine(_folder, "snaplume.lock");
     private string SocketPath => Path.Combine(_folder, "snaplume.sock");
 
+    /// <summary>errno of a non-blocking flock on a file another process holds (Linux, every architecture .NET runs on).</summary>
+    private const int EWOULDBLOCK = 11;
+
     public bool TryAcquire()
     {
+        if (OperatingSystem.IsWindows()) return true;
         try
         {
             Directory.CreateDirectory(_folder);
             EnsurePrivate(_folder);
-            int fd = LibC.open(LockPath, LibC.O_RDWR | LibC.O_CREAT | LibC.O_CLOEXEC | LibC.O_NOFOLLOW, 0b110_000_000);
-            if (fd < 0) throw new IOException($"open({LockPath}) failed, errno {System.Runtime.InteropServices.Marshal.GetLastPInvokeError()}");
-            if (LibC.flock(fd, LibC.LOCK_EX | LibC.LOCK_NB) != 0)
+            if (new FileInfo(LockPath).LinkTarget != null) throw new IOException($"{LockPath} is a symbolic link");
+            try
             {
-                LibC.close(fd);
+                // On Unix, .NET opens with O_CLOEXEC and takes FileShare.None as a non-blocking exclusive flock.
+                _lock = new FileStream(LockPath, new FileStreamOptions
+                {
+                    Mode = FileMode.OpenOrCreate,
+                    Access = FileAccess.ReadWrite,
+                    Share = FileShare.None,
+                    UnixCreateMode = UnixFileMode.UserRead | UnixFileMode.UserWrite,
+                });
+                return true;
+            }
+            catch (IOException ex) when (ex.HResult == EWOULDBLOCK)
+            {
+                // Held by the first instance.
                 return false;
             }
-            _lockFd = fd;
-            return true;
         }
         catch (Exception ex)
         {
@@ -81,7 +95,7 @@ internal sealed class UnixSingleInstance : ISingleInstance
 
     public void Listen(Action<string[]> received)
     {
-        if (OperatingSystem.IsWindows() || _lockFd < 0 || !IsFolderPrivate()) return;
+        if (OperatingSystem.IsWindows() || _lock == null || !IsFolderPrivate()) return;
         try
         {
             // This process holds the lock: a socket file left there belongs to a dead instance.
@@ -197,11 +211,8 @@ internal sealed class UnixSingleInstance : ISingleInstance
                 // Removed at the next start anyway.
             }
         }
-        if (_lockFd >= 0)
-        {
-            LibC.flock(_lockFd, LibC.LOCK_UN);
-            LibC.close(_lockFd);
-            _lockFd = -1;
-        }
+        // Closing releases the flock.
+        _lock?.Dispose();
+        _lock = null;
     }
 }

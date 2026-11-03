@@ -104,11 +104,13 @@ internal static class ExternalTools
             await process.WaitForExitAsync(timer.Token).ConfigureAwait(false);
             return new ToolResult(process.ExitCode, output.ToArray(), await errorTask.ConfigureAwait(false));
         }
-        catch (OperationCanceledException)
+        catch (Exception ex)
         {
+            // Whatever went wrong (time limit, cancellation, a read error...), the program must not outlive the call.
             Kill(process);
-            if (cancel.IsCancellationRequested) throw;
-            throw new TimeoutException($"{Path.GetFileName(executable)} did not finish within {timeout.TotalSeconds:0} s");
+            if (ex is OperationCanceledException && !cancel.IsCancellationRequested)
+                throw new TimeoutException($"{Path.GetFileName(executable)} did not finish within {timeout.TotalSeconds:0} s");
+            throw;
         }
     }
 
