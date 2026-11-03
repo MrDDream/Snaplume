@@ -111,7 +111,7 @@ overrides:
       - libxext6
       - libxfixes3
       - libfontconfig1
-      - libicu76 | libicu74 | libicu72 | libicu70
+      - libicu78 | libicu77 | libicu76 | libicu74 | libicu72 | libicu70
       - libssl3t64 | libssl3
       - libglib2.0-0t64 | libglib2.0-0
       - libglib2.0-bin
@@ -132,6 +132,10 @@ overrides:
       - wl-clipboard
       - xclip
       - cups-client
+      # pactl (microphone list), pkexec (update installation), xdg-user-dir (downloads folder).
+      - pulseaudio-utils
+      - pkexec | policykit-1
+      - xdg-user-dirs
       - xdg-desktop-portal-gnome | xdg-desktop-portal-kde | xdg-desktop-portal-gtk
     suggests:
       - gnome-shell-extension-appindicator
@@ -165,6 +169,9 @@ overrides:
       - wl-clipboard
       - xclip
       - cups-client
+      - pulseaudio-utils
+      - polkit
+      - xdg-user-dirs
     suggests:
       - gnome-shell-extension-appindicator
       - tesseract-langpack-fra

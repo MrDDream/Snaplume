@@ -49,19 +49,21 @@ Everything Snaplume loads in process or runs is declared, so that every feature 
 | Purpose | Debian / Ubuntu | Fedora |
 |---|---|---|
 | X11 capture, windows, pointer, shortcuts, click highlight (P/Invoke) | `libx11-6`, `libxtst6`, `libxrandr2`, `libxi6`, `libxext6`, `libxfixes3` | `libX11`, `libXtst`, `libXrandr`, `libXi`, `libXext`, `libXfixes` |
-| .NET runtime needs (globalization, HTTPS for the update check) | `libicu76 \| libicu74 \| libicu72 \| libicu70`, `libssl3t64 \| libssl3` | `libicu`, `openssl-libs` |
+| .NET runtime needs (globalization, HTTPS for the update check) | `libicu78 \| libicu77 \| libicu76 \| libicu74 \| libicu72 \| libicu70`, `libssl3t64 \| libssl3` | `libicu`, `openssl-libs` |
 | Fonts for Skia and the documents | `libfontconfig1`, `fonts-noto-core \| fonts-dejavu-core` | `fontconfig`, `google-noto-sans-fonts` |
 | Video recording and playback (GStreamer, in process) | `libgstreamer1.0-0`, `libgstreamer-plugins-base1.0-0`, `gstreamer1.0-plugins-base`, `gstreamer1.0-plugins-good`, `gstreamer1.0-pulseaudio`, `gstreamer1.0-plugins-ugly \| gstreamer1.0-plugins-bad` (H.264: x264enc or openh264enc) | `gstreamer1`, `gstreamer1-plugins-base`, `gstreamer1-plugins-good`, `(gstreamer1-plugin-openh264 or gstreamer1-plugins-ugly)` |
 | Screen recording under Wayland (pipewiresrc) | `gstreamer1.0-pipewire` | `pipewire-gstreamer` |
 | Clips, GIF frames, thumbnails | `ffmpeg` | `(ffmpeg-free or ffmpeg)` |
 | Text recognition (OCR) | `tesseract-ocr` (English included) | `tesseract` |
 | Trash (`gio trash`), D-Bus | `libglib2.0-bin`, `libglib2.0-0t64 \| libglib2.0-0` | `glib2` |
-| Open files, e-mail (`xdg-open`, `xdg-email`, `xdg-user-dir`) | `xdg-utils` | `xdg-utils` |
+| Open files, e-mail (`xdg-open`, `xdg-email`) | `xdg-utils` | `xdg-utils` |
 | Wayland: screenshots, wheel, shortcuts, screencast | `xdg-desktop-portal` | `xdg-desktop-portal` |
 
 Recommended: `gstreamer1.0-libav` / `gstreamer1-plugin-libav` (AAC sound; Opus is used otherwise),
 `wl-clipboard` (clipboard under Wayland), `xclip`, `cups-client` (printing; without it the PDF opens in the
-viewer), a portal backend (`xdg-desktop-portal-gnome`, `-kde` or `-gtk`). Suggested: the GNOME AppIndicator
+viewer), `pulseaudio-utils` (`pactl`: the list of microphones), `pkexec` (Debian 12+, Ubuntu 22.04+; `policykit-1`
+before) or `polkit` (installing updates), `xdg-user-dirs` (`xdg-user-dir`: the downloads folder; `~/Downloads`
+otherwise), a portal backend (`xdg-desktop-portal-gnome`, `-kde` or `-gtk`). Suggested: the GNOME AppIndicator
 extension (the notification-area icon needs it on GNOME) and more Tesseract languages
 (`tesseract-ocr-fra`, `tesseract-langpack-fra`…).
 
