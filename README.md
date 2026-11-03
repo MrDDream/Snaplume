@@ -4,10 +4,10 @@
 
 # Snaplume
 
-**Free, open-source screenshots, annotations and screen recording for Windows. 100% offline.**
+**Free, open-source screenshots, annotations and screen recording for Windows and Linux. 100% offline.**
 
 [![License: MIT](https://img.shields.io/badge/license-MIT-7C3AED)](LICENSE)
-[![Platform: Windows 10 | 11](https://img.shields.io/badge/platform-Windows%2010%20%7C%2011%20x64-2563EB)](#download)
+[![Platform: Windows 10 | 11 · Linux](https://img.shields.io/badge/platform-Windows%2010%20%7C%2011%20%C2%B7%20Linux-2563EB)](#download)
 [![.NET 10](https://img.shields.io/badge/.NET-10-512BD4)](https://dotnet.microsoft.com/)
 [![Latest release](https://img.shields.io/github/v/release/MrDDream/Snaplume?sort=semver&label=release&color=16A34A)](https://github.com/MrDDream/Snaplume/releases/latest)
 [![Languages: 6](https://img.shields.io/badge/languages-6-F59E0B)](#languages-and-themes)
@@ -22,7 +22,7 @@ English | [Français](README.fr.md)
 
 ## Why Snaplume
 
-- **One small app for the whole job.** Capture, annotate, record, organize and share without juggling three tools.
+- **One small app for the whole job.** Capture, annotate, record, organize and share without juggling three tools, on Windows and Linux.
 - **Fast by default.** Press <kbd>Print Screen</kbd>, click a window or drag a region, and the capture is already saved, named and in your gallery.
 - **Annotations stay editable.** Reopen a capture tomorrow and move that arrow, fix that typo or renumber those steps.
 - **Private by design.** No account, no cloud, no telemetry, no ads. Your screenshots never leave your PC.
@@ -37,8 +37,9 @@ English | [Français](README.fr.md)
 - **Full screen, all screens, active window**, and **repeat last region** in one keystroke.
 - **Timer** (3, 5 or 10 s from the menus; the delay of the timer hotkey is set in Settings) to catch context menus and tooltips.
 - **Scrolling capture**: Snaplume scrolls the window for you and stitches a single tall image.
-- **Text capture (OCR)**: select an area and its text goes to the clipboard, using the offline Windows OCR engine.
+- **Text capture (OCR)**: select an area and its text goes to the clipboard, using the offline OCR engine of Windows (Tesseract on Linux).
 - **QR code and barcode reading**, offline, from the screen or from any capture.
+- **Win+Shift+S for Snaplume** (option): the Windows shortcut opens Snaplume's region capture instead of the Snipping Tool.
 - Multi-monitor and high-DPI aware (Per-Monitor v2): captures are pixel-exact on every screen.
 
 ### Editor
@@ -49,32 +50,36 @@ English | [Français](README.fr.md)
 - **54 vector stamps**: symbols (approved, rejected, warning, bug…), text stamps (APPROVED, CONFIDENTIAL, DRAFT…) and mouse cursors.
 - **Highlighter, pixelate, spotlight, magnifier** to guide the eye and hide what must stay private.
 - **Insert images, like in Paint**: paste (<kbd>Ctrl</kbd>+<kbd>V</kbd>), open a file, drag and drop, or take a new capture of an area, then move and resize it before it is placed. Drop it beside the capture and the capture grows to hold both.
-- **Crop, resize** (pixels or percent), and **effects**: shadow, border, rounded corners, torn edge.
+- **Crop, resize** (pixels or percent), **borders** in one click (black outline, white frame, shadow, rounded corners, torn edges, with a preview of your capture) and finer **effects**. Rounded corners, torn edges and shadows stay **transparent** in PNG and WebP.
 - **Presets per tool**: one click on a tool offers its saved styles; add your own.
 - Undo / redo (up to 100 steps), and annotations that **stay editable** after saving.
-- Export to **PNG, JPEG or BMP**, **print**, or **send by e-mail** through your local mail client.
+- Export to **PNG, JPEG, WebP or BMP**, **print**, or **send by e-mail** through your local mail client.
 
 ### Video
 
-- **MP4 recording** of a region (or the area of a window) or a full screen, with **system audio and/or microphone**, after a 3-second countdown; pause and resume from the control bar.
-- **Click highlighting** and a **webcam overlay**; the floating control bar and the red frame are kept out of the video.
+- **Recording** of a region (or the area of a window) or a full screen. Before recording, a bar lets you choose the **microphone**, the **system sound**, the **webcam** (device, corner, size), **zoom on clicks** (the video zooms in briefly where you click) and the **size of the area** (1280 × 720, 1920 × 1080…) with a frame you can move; then a 3-second countdown, pause and resume.
+- **Click highlighting** and a **webcam overlay**; the floating bars and the red frame are kept out of the video.
+- **Format and compression of recordings** (Settings › Video): MP4 H.264, or H.265 recorded directly when the PC has an encoder; AV1 and WebM are converted right after the recording; a quality preset or a **maximum file size** (Discord 10 MB, e-mail 20 MB, your own size).
 - **Built-in player** inspired by mpv: minimal black window, on-screen messages, keyboard-driven.
 - **Trim** (in / out points) and export the extract to MP4, turn a video or an extract into an animated **GIF** (frame rate, size, speed, loop), or save the current **frame** as a screenshot.
+- **Export / compress** (<kbd>C</kbd> in the player): MP4 H.264, H.265, AV1, WebM or animated WebP, under a maximum size: Snaplume lowers the resolution and frame rate rather than blurring the picture, and tells you in advance when a video is too long for that size.
+- **Optional ffmpeg module** for the web formats: downloaded on demand from Settings › Video (about 81 MB, LGPL build), checked against a SHA-256 written in Snaplume before it is installed; an ffmpeg already in the PATH is used as is. On Linux, the system's ffmpeg is used.
 
 ### Organize and share
 
-- **"My screenshots" panel** docked in the corner of the screen, and a full **workspace window**.
-- **Workspaces** are plain sub-folders: create, rename, delete, and move captures between them by drag and drop.
+- **"My screenshots" panel** docked against the taskbar in the corner of the screen, with the **workspaces in a side panel**, and a full **workspace window**.
+- **Workspaces** are folders: sub-folders of the captures folder by default, or **any folder you choose** (another drive, a project folder, a network share). Create, rename, change the folder, remove, and move captures between them by drag and drop; removing a workspace with its own folder never deletes your files.
 - Drag captures straight into mail, chat or documents; drop images in to import them.
 - **Document generator**: turn a selection of captures into a **PDF, Word (DOCX) or HTML** document, in the order you choose.
 - **Print** a selection (one capture per page, each page in the orientation of its image) or **e-mail** it through your mail client.
-- Automatic file names, PNG or JPEG, configurable folder (default: `Pictures\Snaplume`).
+- Automatic file names, PNG, JPEG or WebP, configurable folder (default: `Pictures\Snaplume`).
+- **Updates**: Snaplume can check for a new version, then download and install it (installer, MSI, portable copy, .deb or .rpm), the file being checked before use.
 
 ### Languages and themes
 
 - **6 languages**: English, French, German, Spanish, Italian and Arabic (with a right-to-left interface).
-- **Light, dark or automatic** theme, following Windows even while the app is running.
-- **Portable mode**, **installer**, tray icon, configurable global hotkeys, start with Windows, and a scriptable **command line**.
+- **Light, dark or automatic** theme, following the system even while the app is running.
+- **Portable mode**, **installer** (start with Windows checked by default), **Linux packages**, tray icon, configurable global hotkeys, keyboard navigation, and a scriptable **command line**.
 
 ## Screenshots
 
@@ -114,7 +119,6 @@ Get the latest version from the [**Releases page**](https://github.com/MrDDream/
 | **Installer** | `Snaplume-Setup-<version>.exe` | Most users: classic setup with a Start menu shortcut and an uninstaller. |
 | **Portable** | `Snaplume-<version>-portable.zip` | USB sticks and locked-down PCs: unzip anywhere and run `Snaplume.exe`; settings stay in the folder. |
 | **MSI** | `Snaplume-<version>-x64.msi` | IT departments: all-users installation in `Program Files`, for Intune, Group Policy or `msiexec /i Snaplume-<version>-x64.msi /qn` (`DESKTOPSHORTCUT=1` adds a desktop shortcut). |
-
 | **Linux (Debian, Ubuntu…)** | `snaplume_<version>-1_amd64.deb` (or `arm64`) | `sudo apt install ./snaplume_<version>-1_amd64.deb`: the dependencies (GStreamer, ffmpeg, Tesseract…) come with it. |
 | **Linux (Fedora…)** | `snaplume-<version>-1.x86_64.rpm` (or `aarch64`) | `sudo dnf install ./snaplume-<version>-1.x86_64.rpm`. |
 
@@ -145,7 +149,7 @@ All are self-contained: **no .NET installation needed**. Each release also ships
 | Capture text (OCR) | none by default, set it in Settings |
 
 > [!TIP]
-> A hotkey can belong to only one application. If another tool (Windows Snipping Tool, OneDrive, Dropbox…) already uses <kbd>Print Screen</kbd>, Snaplume tells you. On Windows 11, also turn off *Settings › Accessibility › Keyboard › Use the Print screen key to open screen capture*.
+> A hotkey can belong to only one application. If another tool (Windows Snipping Tool, OneDrive, Dropbox…) already uses <kbd>Print Screen</kbd>, Snaplume tells you. On Windows 11, also turn off *Settings › Accessibility › Keyboard › Use the Print screen key to open screen capture*. To use <kbd>Win</kbd>+<kbd>Shift</kbd>+<kbd>S</kbd> for Snaplume, turn on the option in Settings › Hotkeys.
 
 ### While selecting a region
 
@@ -167,7 +171,7 @@ All are self-contained: **no .NET installation needed**. Each release also ships
 
 <kbd>Space</kbd> or <kbd>P</kbd> play / pause · <kbd>←</kbd> <kbd>→</kbd> ±5 s (<kbd>Shift</kbd> ±1 s) · <kbd>↑</kbd> <kbd>↓</kbd> ±1 min · <kbd>Home</kbd> back to the start · <kbd>,</kbd> <kbd>.</kbd> previous / next frame · <kbd>[</kbd> <kbd>]</kbd> speed (<kbd>Shift</kbd> halve / double) · <kbd>Backspace</kbd> normal speed · <kbd>9</kbd> <kbd>0</kbd> volume · <kbd>M</kbd> mute · <kbd>L</kbd> loop · <kbd>F</kbd> or <kbd>Enter</kbd> full screen · <kbd>Esc</kbd> leave full screen, cancel an export, or close
 
-<kbd>I</kbd> / <kbd>O</kbd> start / end of the extract (<kbd>Shift</kbd>+<kbd>I</kbd> / <kbd>Shift</kbd>+<kbd>O</kbd> clear) · <kbd>E</kbd> export the extract (MP4) · <kbd>G</kbd> make a GIF · <kbd>S</kbd> save the frame · <kbd>Ctrl</kbd>+<kbd>O</kbd> open in the default player · <kbd>F1</kbd> help · <kbd>Q</kbd> close
+<kbd>I</kbd> / <kbd>O</kbd> start / end of the extract (<kbd>Shift</kbd>+<kbd>I</kbd> / <kbd>Shift</kbd>+<kbd>O</kbd> clear) · <kbd>E</kbd> export the extract (MP4) · <kbd>C</kbd> export / compress (H.264, H.265, AV1, WebM, WebP, maximum size) · <kbd>G</kbd> make a GIF · <kbd>S</kbd> save the frame · <kbd>Ctrl</kbd>+<kbd>O</kbd> open in the default player · <kbd>F1</kbd> help · <kbd>Q</kbd> close
 
 Mouse: click play / pause · double-click full screen · <kbd>Wheel</kbd> ±10 s · <kbd>Ctrl</kbd>+<kbd>Wheel</kbd> volume
 
@@ -204,7 +208,10 @@ Snaplume.exe --record screen --duration 30 --exit                 # 30-second sc
 Snaplume works **100% offline**:
 
 - no account, no sign-in, no cloud upload, no telemetry, no analytics, no ads;
-- the only network request is the **update check**, and only when you ask for it (Settings › About) or turn on its daily check (off by default); it asks GitHub for the latest version and sends nothing else. When a new version is out, "Download and install" fetches the package that fits your installation (installer, MSI, portable zip, .deb or .rpm) from the project's GitHub releases only, and checks its SHA-256 against the published list before using it;
+- the network is used only when you ask for it, and only with GitHub:
+  - the **update check** (Settings › About, or its daily check, off by default) asks for the latest version and sends nothing else;
+  - "Download and install" fetches the package that fits your installation (installer, MSI, portable zip, .deb or .rpm) from the project's releases, into a folder of your own, and checks its SHA-256 against the published list, again right before installing it;
+  - the optional **ffmpeg module** is downloaded only when you click Install, and checked against a SHA-256 written in Snaplume;
 - OCR uses the text recognition engine built into Windows (Tesseract on Linux), QR codes are decoded locally;
 - e-mail goes through **your** mail client, and the document generator writes local files;
 - captures are plain files in a folder you choose (default `Pictures\Snaplume`), settings are a JSON file in `%APPDATA%\Snaplume` (or next to the app in portable mode).
@@ -247,8 +254,10 @@ See [packaging/linux/README.md](packaging/linux/README.md) for the dependencies.
 ```text
 Snaplume.slnx
 src/Snaplume.Core/              code shared by every system (net10.0)
-  Editor/       annotation model, rendering, effects, magnifier, stamps, presets, undo/redo
+  Editor/       annotation model, rendering, effects and borders, magnifier, stamps, presets, undo/redo
   Capturing/    scrolling capture and stitcher, selection model and geometry
+  Player/       video export: GIF, web formats, maximum size, ffmpeg module, recording formats
+  Recording/    zoom on clicks, GIF encoder
   Export/       document generator (PDF, Word, HTML)
   Imaging/      images in memory, image files, text outlines (SkiaSharp, HarfBuzz)
   Platform/     interfaces of the services each system provides
@@ -261,18 +270,20 @@ src/Snaplume.Platform.Linux/    X11, Wayland portals (D-Bus), GStreamer, ffmpeg,
 tests/Snaplume.Tests/           xUnit tests, Avalonia headless rendering
 build/          release scripts (Windows: zip, Inno Setup, MSI; Linux: .deb/.rpm), checksums
 packaging/linux/                nfpm configuration, .desktop file, AppStream metadata, icons
+packaging/winget/               winget manifests and how to submit them
 docs/           website (GitHub Pages), mockups and branding
 tools/          icon generator
 ```
 
 ## Roadmap
 
-Version 1.0 brings everything listed above. Ideas for later, contributions welcome:
+Version 1.2 brings everything listed above. Ideas for later, contributions welcome:
 
+- [x] Linux version (.deb and .rpm, x64 and ARM64)
+- [ ] winget package (manifests ready in `packaging/winget`) and Scoop
 - [ ] Code-signed builds (no more SmartScreen warning)
-- [ ] winget and Scoop packages
 - [ ] More interface languages
-- [ ] ARM64 build
+- [ ] Windows ARM64 build
 
 Online services (upload, sharing links, accounts) are **intentionally out of scope**.
 
@@ -286,13 +297,20 @@ Snaplume stands on the shoulders of these open-source projects:
 
 | Project | Used for | License |
 |---|---|---|
-| [ScreenRecorderLib](https://github.com/sskodje/ScreenRecorderLib) | MP4 screen recording (Media Foundation) | MIT |
+| [Avalonia](https://avaloniaui.net/) | Interface on Windows and Linux | MIT |
+| [SkiaSharp](https://github.com/mono/SkiaSharp) and HarfBuzzSharp | Image files, drawing, text shaping | MIT |
+| [ScreenRecorderLib](https://github.com/sskodje/ScreenRecorderLib) | Screen recording on Windows (Media Foundation) | MIT |
+| [GStreamer](https://gstreamer.freedesktop.org/) | Screen recording and playback on Linux (system packages) | LGPL |
+| [FFmpeg](https://ffmpeg.org/) | Web formats and compression (optional module, [BtbN LGPL build](https://github.com/BtbN/FFmpeg-Builds) on Windows; system package on Linux) | LGPL |
+| [Tesseract](https://github.com/tesseract-ocr/tesseract) | Text recognition on Linux (system package) | Apache-2.0 |
+| [Tmds.DBus.Protocol](https://github.com/tmds/Tmds.DBus) | Desktop portals and notifications on Linux | MIT |
 | [ZXing.Net](https://github.com/micjahn/ZXing.Net) | QR code and barcode reading | Apache-2.0 |
 | [Open XML SDK](https://github.com/dotnet/Open-XML-SDK) | DOCX document generation | MIT |
 | [Inno Setup](https://jrsoftware.org/isinfo.php) | Windows installer | Inno Setup License |
 | [WiX Toolset](https://wixtoolset.org/) | MSI package | MS-RL |
+| [nfpm](https://nfpm.goreleaser.com/) | .deb and .rpm packages | MIT |
 
-PDF files are written by Snaplume's own PDF writer, and text recognition uses the OCR engine built into Windows (`Windows.Media.Ocr`). The feature set is inspired by Screenpresso; Snaplume is an independent project with no affiliation.
+PDF files are written by Snaplume's own PDF writer, and text recognition uses the OCR engine built into Windows (`Windows.Media.Ocr`) or Tesseract on Linux. The feature set is inspired by Screenpresso; Snaplume is an independent project with no affiliation.
 
 ## License
 
