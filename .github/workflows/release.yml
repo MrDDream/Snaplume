@@ -67,15 +67,29 @@ jobs:
         env:
           INNO_VERSION: '6.7.1'
         run: |
-          choco install innosetup --version $env:INNO_VERSION --force --allow-downgrade -y --no-progress
-          if ($LASTEXITCODE -ne 0) { throw "choco install innosetup failed ($LASTEXITCODE)." }
-          $iscc = @("${env:ProgramFiles(x86)}\Inno Setup 6\ISCC.exe", "$env:ProgramFiles\Inno Setup 6\ISCC.exe") |
-            Where-Object { Test-Path $_ } | Select-Object -First 1
-          if (-not $iscc) { throw 'ISCC.exe not found after installing Inno Setup.' }
-          $installed = (Get-Item -LiteralPath $iscc).VersionInfo.ProductVersion
-          if (-not "$installed".StartsWith($env:INNO_VERSION)) { throw "Inno Setup $installed found at $iscc, expected $env:INNO_VERSION." }
+          function Find-Iscc {
+            @("${env:ProgramFiles(x86)}\Inno Setup 6\ISCC.exe", "$env:ProgramFiles\Inno Setup 6\ISCC.exe") |
+              Where-Object { Test-Path $_ } | Select-Object -First 1
+          }
+          function Get-InnoVersion([string]$path) {
+            $info = (Get-Item -LiteralPath $path).VersionInfo
+            "$($info.FileMajorPart).$($info.FileMinorPart).$($info.FileBuildPart)"
+          }
+          $iscc = Find-Iscc
+          $installed = if ($iscc) { Get-InnoVersion $iscc } else { '' }
+          if ($installed -ne $env:INNO_VERSION) {
+            Write-Host "Inno Setup '$installed' found; installing $env:INNO_VERSION."
+            choco install innosetup --version $env:INNO_VERSION --force --allow-downgrade -y --no-progress
+            # 1641 and 3010: installed, a restart is pending (not needed here).
+            if ($LASTEXITCODE -notin 0, 1641, 3010) { throw "choco install innosetup failed ($LASTEXITCODE)." }
+            $iscc = Find-Iscc
+            if (-not $iscc) { throw 'ISCC.exe not found after installing Inno Setup.' }
+            $installed = Get-InnoVersion $iscc
+          }
+          if ($installed -ne $env:INNO_VERSION) { throw "Inno Setup $installed found at $iscc, expected $env:INNO_VERSION." }
           Write-Host "Inno Setup $installed ($iscc)"
           "iscc=$iscc" >> $env:GITHUB_OUTPUT
+          $global:LASTEXITCODE = 0
 
       - name: Install WiX Toolset 5
         run: |
