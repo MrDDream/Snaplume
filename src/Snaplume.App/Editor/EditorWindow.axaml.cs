@@ -12,6 +12,7 @@ using Avalonia.Platform.Storage;
 using Avalonia.Threading;
 using Avalonia.VisualTree;
 using Snaplume.Core;
+using Snaplume.Export;
 using Snaplume.Imaging;
 using Snaplume.Ui;
 using IconPath = Avalonia.Controls.Shapes.Path;
@@ -172,6 +173,8 @@ public partial class EditorWindow : Window
     // Border gallery: its tiles, the reduced capture they are drawn from, and the document state they show
     // (the samples keep the background and the torn shape of the current effects, see BorderPreset.ApplyTo).
     private readonly List<(Button Tile, BorderPreset Preset)> _borderTiles = new();
+    /// <summary>The effects of the samples, which own their outlines and shadows: disposed with the tiles.</summary>
+    private readonly List<EffectsLayout> _borderLayouts = new();
     private Bitmap? _borderSample;
     private (long Version, Color Background, int Seed)? _bordersShown;
 
@@ -181,8 +184,10 @@ public partial class EditorWindow : Window
     // Closing: the question is asked after cancelling the first close, then the window closes for good.
     private bool _closeConfirmed;
     private bool _closeAsking;
-    /// <summary>A command waiting for a dialog (save before e-mail...): a second one waits for it to end.</summary>
+    /// <summary>A command is running (saving, copying, a dialog of its own...): the others wait for it to end (see <see cref="TryBeginCommand"/>).</summary>
     private bool _busy;
+    /// <summary>The window was asked to close while a command was running: closed once it ends.</summary>
+    private bool _closePending;
 
     /// <summary>For the XAML previewer only.</summary>
     public EditorWindow() => InitializeComponent();
@@ -200,7 +205,7 @@ public partial class EditorWindow : Window
         foreach (var (color, name) in Palette)
             PalettePanel.Children.Add(Swatch(color, name, () => SetCurrentColor(color, applyToSelection: true)));
         ThicknessBox.ItemsSource = Thicknesses.Select(t => Loc.T("Effects.Pixels", t)).ToArray();
-        FontSizeBox.ItemsSource = FontSizes.Select(f => f.ToString("0", Loc.Culture) + " pt").ToArray();
+        FontSizeBox.ItemsSource = FontSizes.Select(f => Loc.T("Editor.FontSizeValue", f)).ToArray();
         LensZoomBox.ItemsSource = LensZooms.Select(z => z.ToString("0.#", Loc.Culture) + " ×").ToArray();
         BuildEffectSwatches();
         SetCurrentColor(Palette[0].Color, applyToSelection: false);
@@ -244,7 +249,7 @@ public partial class EditorWindow : Window
 
     private void WireEvents()
     {
-        SaveButton.Click += (_, _) => Save();
+        SaveButton.Click += (_, _) => _ = SaveAsync();
         CopyButton.Click += (_, _) => _ = CopyAsync();
         ExportButton.Click += (_, _) => _ = ExportAsync();
         PrintButton.Click += (_, _) => _ = PrintAsync();
@@ -1015,20 +1020,25 @@ public partial class EditorWindow : Window
     {
         BordersButton.IsChecked = false;
         // The samples hold a reduced copy of the capture and their shadows: made again at the next opening.
+        ClearBorderTiles();
+        _bordersShown = null;
+    }
+
+    /// <summary>Removes the samples of the gallery and frees what they hold (the reduced capture, their outlines and shadows).</summary>
+    private void ClearBorderTiles()
+    {
         BordersPanel.Children.Clear();
         _borderTiles.Clear();
+        foreach (var layout in _borderLayouts) layout.Dispose();
+        _borderLayouts.Clear();
         _borderSample?.Dispose();
         _borderSample = null;
-        _bordersShown = null;
     }
 
     /// <summary>One sample per preset: the capture (annotations included) reduced once, with the effects of the preset.</summary>
     private void BuildBordersPanel()
     {
-        BordersPanel.Children.Clear();
-        _borderTiles.Clear();
-        _borderSample?.Dispose();
-        _borderSample = null;
+        ClearBorderTiles();
         var effects = _document.Effects;
         _bordersShown = (_document.Version, effects.Background, effects.TornSeed);
         try
@@ -1059,7 +1069,10 @@ public partial class EditorWindow : Window
             {
                 var bounds = new Rect(0, 0, image.PixelSize.Width, image.PixelSize.Height);
                 if (EffectsRenderer.Sample(effects, image.PixelSize.Width, image.PixelSize.Height) is { } layout)
+                {
+                    _borderLayouts.Add(layout);
                     sample.SetDrawing(dc => layout.Render(dc, d => d.DrawImage(image, bounds)), new Size(layout.OutputWidth, layout.OutputHeight));
+                }
                 else
                     sample.SetDrawing(dc => dc.DrawImage(image, bounds), bounds.Size);
             }
@@ -1135,28 +1148,51 @@ public partial class EditorWindow : Window
 
     private async Task InsertFromFileAsync()
     {
-        var folder = await StorageProvider.TryGetFolderFromPathAsync(new Uri(Path.GetDirectoryName(Path.GetFullPath(_document.FilePath))!));
-        var files = await StorageProvider.OpenFilePickerAsync(new FilePickerOpenOptions
+        if (!TryBeginCommand()) return;
+        string? path;
+        try
         {
-            Title = Loc.T("Editor.Insert.FileTitle"),
-            AllowMultiple = false,
-            SuggestedStartLocation = folder,
-            FileTypeFilter = new[]
+            var folder = await StorageProvider.TryGetFolderFromPathAsync(new Uri(Path.GetDirectoryName(Path.GetFullPath(_document.FilePath))!));
+            var files = await StorageProvider.OpenFilePickerAsync(new FilePickerOpenOptions
             {
-                new FilePickerFileType(Loc.T("Editor.Insert.FileFilter")) { Patterns = ImageIO.Extensions.Select(x => "*" + x).ToArray() },
-            },
-        });
-        if (files.Count > 0 && files[0].TryGetLocalPath() is { } path) await InsertFileAsync(path);
+                Title = Loc.T("Editor.Insert.FileTitle"),
+                AllowMultiple = false,
+                SuggestedStartLocation = folder,
+                FileTypeFilter = new[]
+                {
+                    new FilePickerFileType(Loc.T("Editor.Insert.FileFilter")) { Patterns = ImageIO.Extensions.Select(x => "*" + x).ToArray() },
+                },
+            });
+            path = files.Count > 0 ? files[0].TryGetLocalPath() : null;
+        }
+        catch (Exception ex)
+        {
+            // The system's file dialog could not open.
+            ErrorLog.Write("Choix de l'image à insérer", ex);
+            await Dialogs.ShowAsync(this, Loc.T("Editor.Insert.Error", ex.Message), Loc.T("Editor.Insert.Title"), DialogButtons.Ok, DialogIcon.Error);
+            return;
+        }
+        finally
+        {
+            EndCommand();
+        }
+        if (path != null) await InsertFileAsync(path);
     }
 
     /// <summary>A new capture of an area of the screen, this window hidden meanwhile.</summary>
     private async Task InsertCaptureAsync()
     {
-        if (!EndPendingEdits()) return;
+        if (_busy || !EndPendingEdits()) return;
         AnnotCanvas.CancelOperation();
-        var image = await App.Instance.Captures.PickImageAsync(this);
+        var pick = await App.Instance.Captures.PickImageAsync(this);
         Activate();
-        if (image != null) await InsertImageAsync(image);
+        if (pick.Busy)
+        {
+            // Another capture, or a video choosing its area, holds the screen.
+            await Dialogs.ShowAsync(this, Loc.T("Editor.Insert.CaptureBusy"), Loc.T("Editor.Insert.Title"), DialogButtons.Ok, DialogIcon.Information);
+            return;
+        }
+        if (pick.Image != null) await InsertImageAsync(pick.Image);
     }
 
     private void OnImageDragOver(object? sender, DragEventArgs e)
@@ -1177,18 +1213,24 @@ public partial class EditorWindow : Window
     private static string? DroppedImage(DragEventArgs e) =>
         e.DataTransfer.TryGetFiles()?.Select(f => f.TryGetLocalPath()).FirstOrDefault(p => p != null && ImageIO.IsImage(p));
 
+    /// <summary>Reads the image file in the background (a big photo takes a while to decode), then inserts it.</summary>
     private async Task InsertFileAsync(string path)
     {
+        if (!TryBeginCommand()) return;
         PixelBuffer image;
         try
         {
-            image = ImageIO.Load(path);
+            image = await Task.Run(() => ImageIO.Load(path));
         }
         catch (Exception ex)
         {
             ErrorLog.Write("Lecture de l'image à insérer", ex);
             await Dialogs.ShowAsync(this, Loc.T("Editor.Insert.ReadError", ex.Message), Loc.T("Editor.Insert.Title"), DialogButtons.Ok, DialogIcon.Error);
             return;
+        }
+        finally
+        {
+            EndCommand();
         }
         await InsertImageAsync(image);
     }
@@ -1269,32 +1311,86 @@ public partial class EditorWindow : Window
 
     // ---- Commands ----
 
-    /// <summary>Saves the capture and its annotations; the error, if any, is shown without waiting.</summary>
-    private bool Save()
+    /// <summary>
+    /// Starts a command that must run alone (saving, copying, exporting, printing...): the command buttons are disabled
+    /// until <see cref="EndCommand"/>. False, nothing done, when another one is running.
+    /// </summary>
+    private bool TryBeginCommand()
     {
+        if (_busy) return false;
+        SetBusy(true);
+        return true;
+    }
+
+    /// <summary>The command is over; a close asked meanwhile happens now.</summary>
+    private void EndCommand()
+    {
+        SetBusy(false);
+        if (!_closePending) return;
+        _closePending = false;
+        Dispatcher.UIThread.Post(Close);
+    }
+
+    private void SetBusy(bool busy)
+    {
+        _busy = busy;
+        foreach (var button in new Button[] { SaveButton, CopyButton, ExportButton, PrintButton, EmailButton, ReadTextButton, ResizeButton, InsertButton })
+            button.IsEnabled = !busy;
+    }
+
+    /// <summary>Saves the capture and its annotations (encoded and written in the background); the error, if any, is shown.</summary>
+    /// <returns>True when saved.</returns>
+    private async Task<bool> SaveAsync()
+    {
+        if (_busy) return false;
         ApplyPendingSlider();
-        if (!EndPendingEdits()) return false;
+        if (!EndPendingEdits() || !TryBeginCommand()) return false;
         try
         {
-            _document.Save(AppServices.Settings.JpegQuality, AppServices.Settings.WebpQuality);
+            return await WriteDocumentAsync();
+        }
+        finally
+        {
+            EndCommand();
+        }
+    }
+
+    /// <summary>
+    /// Saves for a command already running (<see cref="SaveAsync"/>, before an e-mail or a close): what is saved is read
+    /// now; the images are encoded and the files written in the background, the editing may go on meanwhile.
+    /// </summary>
+    private async Task<bool> WriteDocumentAsync()
+    {
+        try
+        {
+            var settings = AppServices.Settings;
+            var job = _document.PrepareSave(settings.JpegQuality, settings.WebpQuality);
+            await Task.Run(job.Write);
+            _document.CompleteSave(job);
             InfoText.Text = Loc.T("Editor.Saved");
             return true;
         }
         catch (Exception ex)
         {
             ErrorLog.Write("Enregistrement", ex);
-            _ = Dialogs.ShowAsync(this, Loc.T("Editor.SaveError", ex.Message), "Snaplume", DialogButtons.Ok, DialogIcon.Error);
+            await Dialogs.ShowAsync(this, Loc.T("Editor.SaveError", ex.Message), "Snaplume", DialogButtons.Ok, DialogIcon.Error);
             return false;
         }
     }
 
     private async Task CopyAsync()
     {
-        if (!EndPendingEdits()) return;
+        if (_busy || !EndPendingEdits() || !TryBeginCommand()) return;
         try
         {
             var image = _document.Flatten();
-            if (!await App.Instance.Platform.Clipboard.SetImageAsync(image, ImageIO.EncodePng(image)))
+            if (Capturing.ClipboardCopy.IsTooLarge(image))
+            {
+                ErrorLog.Write("Copie dans le presse-papiers", $"{image.Width} x {image.Height} px : trop grande, non copiée");
+                await Dialogs.ShowAsync(this, Loc.T("Editor.CopyTooLarge", image.Width, image.Height), "Snaplume", DialogButtons.Ok, DialogIcon.Warning);
+                return;
+            }
+            if (!await Capturing.ClipboardCopy.CopyAsync(App.Instance.Platform.Clipboard, image))
             {
                 // The clipboard stayed locked by another application.
                 ErrorLog.Write("Copie dans le presse-papiers", "Presse-papiers occupé");
@@ -1309,123 +1405,117 @@ public partial class EditorWindow : Window
             ErrorLog.Write("Copie dans le presse-papiers", ex);
             await Dialogs.ShowAsync(this, Loc.T("Editor.CopyFailed", ex.Message), "Snaplume", DialogButtons.Ok, DialogIcon.Error);
         }
+        finally
+        {
+            EndCommand();
+        }
     }
 
     private async Task ExportAsync()
     {
-        if (!EndPendingEdits()) return;
-        var choices = new[]
-        {
-            new FilePickerFileType(Loc.T("Editor.ImageFormat", "PNG")) { Patterns = new[] { "*.png" } },
-            new FilePickerFileType(Loc.T("Editor.ImageFormat", "JPEG")) { Patterns = new[] { "*.jpg", "*.jpeg" } },
-            new FilePickerFileType(Loc.T("Editor.ImageFormat", "WebP")) { Patterns = new[] { "*.webp" } },
-            new FilePickerFileType(Loc.T("Editor.ImageFormat", "BMP")) { Patterns = new[] { "*.bmp" } },
-        };
-        var result = await StorageProvider.SaveFilePickerWithResultAsync(new FilePickerSaveOptions
-        {
-            Title = Loc.T("Editor.ExportTitle"),
-            SuggestedFileName = Path.GetFileNameWithoutExtension(_document.FilePath),
-            FileTypeChoices = choices,
-            DefaultExtension = "png",
-            ShowOverwritePrompt = true,
-        });
-        if (result.File?.TryGetLocalPath() is not { } path) return;
-
-        var extension = Path.GetExtension(path).ToLowerInvariant();
-        if (!ExportExtensions.Contains(extension) && extension != ".jpeg")
-        {
-            // Unsupported extension typed by hand: the format chosen in the list is added.
-            int index = Math.Max(0, Array.FindIndex(choices, c => c.Name == result.SelectedFileType?.Name));
-            path += ExportExtensions[Math.Clamp(index, 0, ExportExtensions.Length - 1)];
-            if (File.Exists(path) && await Dialogs.ShowAsync(this, Loc.T("Editor.ExportOverwrite", Path.GetFileName(path)), "Snaplume",
-                    DialogButtons.YesNo, DialogIcon.Warning, DialogResult.No) != DialogResult.Yes)
-                return;
-        }
-        if (string.Equals(Path.GetFullPath(path), Path.GetFullPath(_document.FilePath), OperatingSystem.IsWindows() ? StringComparison.OrdinalIgnoreCase : StringComparison.Ordinal))
-        {
-            // Overwriting the capture would bypass its editable annotations: that is what Save is for.
-            await Dialogs.ShowAsync(this, Loc.T("Editor.ExportSameFile"), "Snaplume", DialogButtons.Ok, DialogIcon.Warning);
-            return;
-        }
+        if (_busy || !EndPendingEdits() || !TryBeginCommand()) return;
         try
         {
-            ExportTo(path);
+            var choices = new[]
+            {
+                new FilePickerFileType(Loc.T("Editor.ImageFormat", "PNG")) { Patterns = new[] { "*.png" } },
+                new FilePickerFileType(Loc.T("Editor.ImageFormat", "JPEG")) { Patterns = new[] { "*.jpg", "*.jpeg" } },
+                new FilePickerFileType(Loc.T("Editor.ImageFormat", "WebP")) { Patterns = new[] { "*.webp" } },
+                new FilePickerFileType(Loc.T("Editor.ImageFormat", "BMP")) { Patterns = new[] { "*.bmp" } },
+            };
+            var result = await StorageProvider.SaveFilePickerWithResultAsync(new FilePickerSaveOptions
+            {
+                Title = Loc.T("Editor.ExportTitle"),
+                SuggestedFileName = Path.GetFileNameWithoutExtension(_document.FilePath),
+                FileTypeChoices = choices,
+                DefaultExtension = "png",
+                ShowOverwritePrompt = true,
+            });
+            if (result.File?.TryGetLocalPath() is not { } path) return;
+
+            var extension = Path.GetExtension(path).ToLowerInvariant();
+            if (!ExportExtensions.Contains(extension) && extension != ".jpeg")
+            {
+                // Unsupported extension typed by hand: the format chosen in the list is added.
+                int index = Math.Max(0, Array.FindIndex(choices, c => c.Name == result.SelectedFileType?.Name));
+                path += ExportExtensions[Math.Clamp(index, 0, ExportExtensions.Length - 1)];
+                if (File.Exists(path) && await Dialogs.ShowAsync(this, Loc.T("Editor.ExportOverwrite", Path.GetFileName(path)), "Snaplume",
+                        DialogButtons.YesNo, DialogIcon.Warning, DialogResult.No) != DialogResult.Yes)
+                    return;
+            }
+            if (string.Equals(Path.GetFullPath(path), Path.GetFullPath(_document.FilePath), OperatingSystem.IsWindows() ? StringComparison.OrdinalIgnoreCase : StringComparison.Ordinal))
+            {
+                // Overwriting the capture would bypass its editable annotations: that is what Save is for.
+                await Dialogs.ShowAsync(this, Loc.T("Editor.ExportSameFile"), "Snaplume", DialogButtons.Ok, DialogIcon.Warning);
+                return;
+            }
+            await ExportToAsync(path);
         }
         catch (Exception ex)
         {
             ErrorLog.Write("Export", ex);
             await Dialogs.ShowAsync(this, Loc.T("Editor.ExportError", ex.Message), "Snaplume", DialogButtons.Ok, DialogIcon.Error);
         }
+        finally
+        {
+            EndCommand();
+        }
     }
 
-    /// <summary>Writes the image as it is now (annotations and effects included) to a file whose extension gives the format.</summary>
-    private void ExportTo(string path)
+    /// <summary>
+    /// Writes the image as it is now (annotations and effects included) to a file whose extension gives the format:
+    /// rendered here, encoded and written in the background.
+    /// </summary>
+    private async Task ExportToAsync(string path)
     {
         var settings = AppServices.Settings;
-        ImageIO.Save(_document.Flatten(), path, settings.JpegQuality, settings.WebpQuality);
+        int jpegQuality = settings.JpegQuality, webpQuality = settings.WebpQuality;
+        var image = _document.Flatten();
+        await Task.Run(() => ImageIO.Save(image, path, jpegQuality, webpQuality));
         InfoText.Text = Loc.T("Editor.Exported", Path.GetFileName(path));
     }
 
-    /// <summary>Prints the image as it is now, annotations and effects included (a temporary PNG handed to the system).</summary>
+    /// <summary>Prints the image as it is now, annotations and effects included (see <see cref="ShareService.PrintAsync(Window, PixelBuffer, string)"/>).</summary>
     private async Task PrintAsync()
     {
-        if (_busy || !EndPendingEdits()) return;
+        if (_busy || !EndPendingEdits() || !TryBeginCommand()) return;
         AnnotCanvas.CancelOperation();
-        var folder = Path.Combine(Path.GetTempPath(), "Snaplume");
-        var temp = Path.Combine(folder, $"print-{Guid.NewGuid():N}.png");
-        _busy = true;
         try
         {
-            Directory.CreateDirectory(folder);
-            // Rendered before the print dialog, even if it is cancelled: the orientation of the page comes from the image.
-            ImageIO.Save(_document.Flatten(), temp);
-            var handle = TryGetPlatformHandle()?.Handle ?? IntPtr.Zero;
-            await App.Instance.Platform.Shell.PrintImagesAsync(new[] { temp }, Path.GetFileName(_document.FilePath), handle);
-        }
-        catch (Exception ex)
-        {
-            ErrorLog.Write("Impression", ex);
-            await Dialogs.ShowAsync(this, Loc.T("Editor.PrintError", ex.Message), "Snaplume", DialogButtons.Ok, DialogIcon.Error);
+            PixelBuffer image;
+            try
+            {
+                // Rendered before the print dialog, even if it is cancelled: the orientation of the page comes from the image.
+                image = _document.Flatten();
+            }
+            catch (Exception ex)
+            {
+                ErrorLog.Write("Impression", ex);
+                await Dialogs.ShowAsync(this, Loc.T("Editor.PrintError", ex.Message), "Snaplume", DialogButtons.Ok, DialogIcon.Error);
+                return;
+            }
+            await ShareService.PrintAsync(this, image, Path.GetFileName(_document.FilePath));
         }
         finally
         {
-            _busy = false;
-            try { File.Delete(temp); }
-            catch (Exception ex) { ErrorLog.Write("Suppression de l'image imprimée", ex); }
+            EndCommand();
         }
     }
 
-    /// <summary>Sends the capture file by e-mail, saved first if the user wants the changes in it.</summary>
+    /// <summary>Sends the capture file by e-mail (see <see cref="ShareService.Email"/>), saved first if the user wants the changes in it.</summary>
     private async Task EmailAsync()
     {
-        if (_busy || !EndPendingEdits()) return;
+        if (_busy || !EndPendingEdits() || !TryBeginCommand()) return;
         AnnotCanvas.CancelOperation();
-        _busy = true;
         try
         {
             if (_document.IsDirty)
             {
                 var answer = await Dialogs.ShowAsync(this, Loc.T("Editor.SaveBeforeEmailQuestion"), "Snaplume",
                     DialogButtons.YesNoCancel, DialogIcon.Question, DialogResult.Yes);
-                if (answer == DialogResult.Cancel || (answer == DialogResult.Yes && !Save())) return;
+                if (answer == DialogResult.Cancel || (answer == DialogResult.Yes && !await WriteDocumentAsync())) return;
             }
-            var shell = App.Instance.Platform.Shell;
-            var file = Path.GetFullPath(_document.FilePath);
-            if (!shell.CanEmail)
-            {
-                await ShowFilesForWebmailAsync(file, Loc.T("Share.Email.NoClient"));
-                return;
-            }
-            try
-            {
-                shell.Email(new[] { file }, Path.GetFileName(file));
-            }
-            catch (InvalidOperationException ex)
-            {
-                // No mail application after all: the message says what to do.
-                ErrorLog.Write("Envoi par e-mail", ex);
-                await ShowFilesForWebmailAsync(file, ex.Message);
-            }
+            ShareService.Email(this, new[] { _document.FilePath });
         }
         catch (Exception ex)
         {
@@ -1434,28 +1524,14 @@ public partial class EditorWindow : Window
         }
         finally
         {
-            _busy = false;
+            EndCommand();
         }
     }
 
-    /// <summary>Without a mail application: explains how to attach the file to a webmail and shows it in the file manager.</summary>
-    private async Task ShowFilesForWebmailAsync(string file, string message)
-    {
-        await Dialogs.ShowAsync(this, message, Loc.T("Share.Email.Title"), DialogButtons.Ok, DialogIcon.Information);
-        try
-        {
-            App.Instance.Platform.Shell.Reveal(file);
-        }
-        catch (Exception ex)
-        {
-            ErrorLog.Write("Affichage de la capture à envoyer", ex);
-        }
-    }
-
-    /// <summary>Text of the image as it is now, annotations included.</summary>
+    /// <summary>Text of the image as it is now, annotations included (recognized in the background by the text window).</summary>
     private void ReadText()
     {
-        if (!EndPendingEdits()) return;
+        if (_busy || !EndPendingEdits()) return;
         try
         {
             App.Instance.ShowOcr(_document.Flatten());
@@ -1467,35 +1543,34 @@ public partial class EditorWindow : Window
         }
     }
 
+    /// <summary>Asks the new size, then resizes (the resampling in the background, see <see cref="EditorDocument.ResizeAsync"/>).</summary>
     private async Task ResizeAsync()
     {
-        if (_busy || !EndPendingEdits()) return;
+        if (_busy || !EndPendingEdits() || !TryBeginCommand()) return;
         AnnotCanvas.CancelOperation();
-        var dialog = new ResizeDialog(_document);
-        _busy = true;
-        bool accepted;
         try
         {
-            accepted = await dialog.ShowAsync(this);
+            var dialog = new ResizeDialog(_document);
+            if (!await dialog.ShowAsync(this)) return;
+            try
+            {
+                // False when the size is the same, or when the image changed meanwhile (undo...): nothing to say.
+                if (!await _document.ResizeAsync(dialog.NewWidth, dialog.NewHeight)) return;
+            }
+            catch (Exception ex)
+            {
+                // Mostly not enough memory for a huge image; the document is left as it was.
+                ErrorLog.Write("Redimensionnement", ex);
+                await Dialogs.ShowAsync(this, Loc.T("Editor.ResizeError", ex.Message), "Snaplume", DialogButtons.Ok, DialogIcon.Error);
+                return;
+            }
+            ZoomToFit(onlyShrink: true);
+            InfoText.Text = Loc.T("Editor.Resized", dialog.NewWidth, dialog.NewHeight);
         }
         finally
         {
-            _busy = false;
+            EndCommand();
         }
-        if (!accepted) return;
-        try
-        {
-            _document.Resize(dialog.NewWidth, dialog.NewHeight);
-        }
-        catch (Exception ex)
-        {
-            // Mostly not enough memory for a huge image; the document is left as it was.
-            ErrorLog.Write("Redimensionnement", ex);
-            await Dialogs.ShowAsync(this, Loc.T("Editor.ResizeError", ex.Message), "Snaplume", DialogButtons.Ok, DialogIcon.Error);
-            return;
-        }
-        ZoomToFit(onlyShrink: true);
-        InfoText.Text = Loc.T("Editor.Resized", dialog.NewWidth, dialog.NewHeight);
     }
 
     private void Undo()
@@ -1531,9 +1606,9 @@ public partial class EditorWindow : Window
             return;
         }
         if (AnnotCanvas.IsDragging || AnnotCanvas.Selected is not { } selected) return;
-        _document.PushUndo();
+        var before = _document.BeginChange();
         _document.Annotations.Remove(selected);
-        _document.NotifyChanged();
+        _document.CommitChange(before);
     }
 
     private void Nudge(Vector offset)
@@ -1546,10 +1621,10 @@ public partial class EditorWindow : Window
         }
         if (AnnotCanvas.IsDragging || AnnotCanvas.Selected is not { } selected) return;
         bool sameStep = ReferenceEquals(selected, _nudged) && _document.Version == _nudgeVersion;
-        if (!sameStep) _document.PushUndo();
+        var before = sameStep ? null : _document.BeginChange();
         selected.Translate(offset);
-        if (sameStep) _document.AmendLastChange();
-        else _document.NotifyChanged();
+        if (before == null) _document.AmendLastChange();
+        else _document.CommitChange(before);
         _nudged = selected;
         _nudgeVersion = _document.Version;
     }
@@ -1566,7 +1641,7 @@ public partial class EditorWindow : Window
         {
             e.Handled = true;
             bool typing = _textEditor != null;
-            if (modifiers == KeyModifiers.Control) Save();
+            if (modifiers == KeyModifiers.Control) _ = SaveAsync();
             else _ = ExportAsync();
             if (typing) AnnotCanvas.Focus();
             return;
@@ -1616,6 +1691,11 @@ public partial class EditorWindow : Window
                 if (EffectsPopup.IsOpen)
                 {
                     EffectsPopup.IsOpen = false;
+                    break;
+                }
+                if (BordersPopup.IsOpen)
+                {
+                    BordersPopup.IsOpen = false;
                     break;
                 }
                 if (AnnotCanvas.CancelOperation()) break;
@@ -1690,6 +1770,13 @@ public partial class EditorWindow : Window
             e.Cancel = true;
             return;
         }
+        if (_busy)
+        {
+            // A save (or another command) is running: the window closes once it is over, asking first if needed.
+            _closePending = true;
+            e.Cancel = true;
+            return;
+        }
         if (!_document.IsDirty)
         {
             base.OnClosing(e);
@@ -1702,17 +1789,26 @@ public partial class EditorWindow : Window
     private async Task AskThenCloseAsync()
     {
         _closeAsking = true;
+        // No other command meanwhile: the save below must be the last one.
+        SetBusy(true);
         try
         {
             var answer = await Dialogs.ShowAsync(this, Loc.T("Editor.SaveChangesQuestion"), "Snaplume",
                 DialogButtons.YesNoCancel, DialogIcon.Question, DialogResult.Yes);
-            if (answer == DialogResult.Cancel || (answer == DialogResult.Yes && !Save())) return;
+            if (answer == DialogResult.Cancel || (answer == DialogResult.Yes && !await WriteDocumentAsync())) return;
         }
         finally
         {
             _closeAsking = false;
+            SetBusy(false);
         }
         _closeConfirmed = true;
         Close();
+    }
+
+    protected override void OnClosed(EventArgs e)
+    {
+        base.OnClosed(e);
+        ClearBorderTiles();
     }
 }

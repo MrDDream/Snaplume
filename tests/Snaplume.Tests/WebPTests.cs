@@ -138,7 +138,7 @@ public class WebPTests
     }
 
     [AvaloniaFact]
-    public void Editor_exports_webp_and_keeps_the_annotations_of_a_webp_capture()
+    public async Task Editor_exports_webp_and_keeps_the_annotations_of_a_webp_capture()
     {
         using var folder = new TempFolder();
         var path = folder.File("capture.webp");
@@ -164,7 +164,7 @@ public class WebPTests
         try
         {
             var export = folder.File("export.webp");
-            typeof(EditorWindow).GetMethod("ExportTo", BindingFlags.Instance | BindingFlags.NonPublic)!.Invoke(window, new object[] { export });
+            await (Task)typeof(EditorWindow).GetMethod("ExportToAsync", BindingFlags.Instance | BindingFlags.NonPublic)!.Invoke(window, new object[] { export })!;
             Assert.Equal("WEBP", Encoding.ASCII.GetString(File.ReadAllBytes(export), 8, 4));
             var exported = ImageIO.Load(export);
             Assert.Equal((200, 120), (exported.Width, exported.Height));

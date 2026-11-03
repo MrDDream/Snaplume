@@ -33,6 +33,11 @@ public sealed class VideoService
     /// be opened (busy, unplugged): the recording starts again without it.
     /// </summary>
     private static readonly TimeSpan WebcamStartupWindow = TimeSpan.FromSeconds(4);
+    /// <summary>
+    /// A recorder that has not reported the end of its file this long after being stopped is given up: the file is kept
+    /// as it is, and Snaplume can record again.
+    /// </summary>
+    private static readonly TimeSpan StopTimeout = TimeSpan.FromSeconds(30);
 
     private readonly App _app;
     private readonly ScreenOperation _operation = new();
@@ -44,6 +49,8 @@ public sealed class VideoService
     private TaskCompletionSource<string?>? _completion;
     /// <summary>Cancels a start waiting for the system (permission dialog of the portal).</summary>
     private CancellationTokenSource? _starting;
+    /// <summary>Cancels the countdown before the recording (Stop, Cancel).</summary>
+    private CancellationTokenSource? _countdown;
     /// <summary>The options are shown: true when Record is pressed, false when cancelled.</summary>
     private TaskCompletionSource<bool>? _armed;
     private string? _tempPath;
@@ -54,6 +61,10 @@ public sealed class VideoService
     private bool _cancelled;
     private bool _stopping;
     private bool _paused;
+    /// <summary>This video's area selection is on screen (only that one is closed by <see cref="Stop"/>).</summary>
+    private bool _selecting;
+    /// <summary>The end of the recording is being handled (<see cref="OnCompleteAsync"/>): once only.</summary>
+    private bool _completing;
     /// <summary>Format and compression of the current recording (Settings › Video), chosen when it starts.</summary>
     private RecordingFormatChoice _choice = new(WebFormat.Mp4H264, RecordingCompression.None);
     /// <summary>What the recorder is asked for, and the conversion afterwards (<see cref="RecordingPlanner"/>).</summary>
@@ -68,9 +79,6 @@ public sealed class VideoService
 
     /// <summary>True from the start of the area selection until the video is saved (or abandoned).</summary>
     public bool IsBusy => _operation.IsBusy;
-
-    /// <summary>True while the recorder runs (paused or not), until it is stopped.</summary>
-    public bool IsRecording => _recording != null && !_stopping;
 
     /// <summary>
     /// Raised on the UI thread at every change: start, recording begun, paused or resumed,
@@ -107,6 +115,7 @@ public sealed class VideoService
         _cancelled = false;
         _stopping = false;
         _paused = false;
+        _countdown = new CancellationTokenSource();
         StateChanged?.Invoke();
         try
         {
@@ -119,12 +128,7 @@ public sealed class VideoService
             if (!_cancelled)
             {
                 if (systemChooses || fullScreen) selected = MonitorUnderCursor(platform);
-                else
-                {
-                    var desktop = await platform.Screen.CaptureDesktopAsync(includeCursor: false);
-                    if (!_cancelled && await RegionSelectorWindow.PickAsync(desktop, Loc.T("Video.SelectTitle")) is PixelRect relative)
-                        selected = CaptureGeometry.ToScreen(relative, desktop.Bounds);
-                }
+                else selected = await SelectAreaAsync(platform);
             }
             if (_cancelled || selected is not PixelRect chosen || chosen.Width < MinSize || chosen.Height < MinSize)
             {
@@ -161,10 +165,11 @@ public sealed class VideoService
             if (!systemChooses)
             {
                 // With the portal, its dialog comes first: a countdown before it would mean nothing.
+                var countdown = _countdown?.Token ?? CancellationToken.None;
                 for (int remaining = CountdownSeconds; remaining > 0 && !_cancelled; remaining--)
                 {
                     _bar?.ShowCountdown(remaining);
-                    await Task.Delay(1000);
+                    await Task.Delay(1000, countdown);
                 }
             }
             if (_cancelled)
@@ -185,7 +190,7 @@ public sealed class VideoService
         }
         catch (OperationCanceledException)
         {
-            // Refused or cancelled in the system's permission dialog (Wayland portal): nothing to report.
+            // Countdown cancelled, or refused or cancelled in the system's permission dialog (Wayland portal): nothing to report.
             DeleteTempFile(_tempPath);
             if (_completion == completion) Finish(null);
         }
@@ -207,16 +212,22 @@ public sealed class VideoService
         {
             _cancelled = true;
             _armed?.TrySetResult(false);
+            _countdown?.Cancel();
             _starting?.Cancel();
-            RegionSelectorWindow.CancelCurrent();
+            // Only this video's selection: another one on screen belongs to a capture.
+            if (_selecting) RegionSelectorWindow.CancelCurrent();
             return;
         }
         if (_stopping) return;
         _stopping = true;
+        // The bar says "finishing" until the file is written: the clock no longer turns it back into the recording bar.
+        _timer?.Stop();
+        _elapsed.Stop();
         _bar?.SetFinishing();
         try
         {
             _recording.Stop();
+            _ = GiveUpIfNoAnswerAsync(_completion);
         }
         catch (Exception ex)
         {
@@ -227,8 +238,27 @@ public sealed class VideoService
         StateChanged?.Invoke();
     }
 
+    /// <summary>
+    /// The recorder was stopped but never reported the end of its file (<see cref="StopTimeout"/>): its file is kept where
+    /// it is (the user is told), and the service goes back to idle.
+    /// </summary>
+    private async Task GiveUpIfNoAnswerAsync(TaskCompletionSource<string?>? owner)
+    {
+        await Task.Delay(StopTimeout);
+        if (owner == null || _completion != owner || _completing) return;
+        ErrorLog.Write("Arrêt de l'enregistrement vidéo", $"Pas de fin d'enregistrement {StopTimeout.TotalSeconds} s après l'arrêt");
+        var temp = _tempPath;
+        bool keep = !_cancelled;
+        // Renamed so that the cleanup at startup leaves it (refused while the recorder still holds it: kept as it is).
+        string? kept = keep && temp != null && File.Exists(temp) ? KeepTempFile(temp) : null;
+        if (!keep) DeleteTempFile(temp);
+        Finish(null);
+        if (kept != null) _app.Tray?.ShowError(Loc.T("Video.SaveFailed"), Loc.T("Video.KeptInTemp", Loc.T("Video.StopTimeout"), kept));
+        else if (keep) _app.Tray?.ShowError(Loc.T("Video.Failed"), Loc.T("Video.StopTimeout"));
+    }
+
     /// <summary>Stops without keeping the video.</summary>
-    public void Cancel()
+    private void Cancel()
     {
         _cancelled = true;
         Stop();
@@ -249,7 +279,7 @@ public sealed class VideoService
         Stop();
     }
 
-    public void TogglePause()
+    private void TogglePause()
     {
         if (_recording is not { CanPause: true } recording || _stopping) return;
         try
@@ -277,39 +307,71 @@ public sealed class VideoService
         StateChanged?.Invoke();
     }
 
-    /// <summary>Removes the temporary videos left by a crash (older than a day, so never one being recorded).</summary>
+    /// <summary>
+    /// Where the recordings are written until they reach the workspace (or wait for their conversion): a folder of this
+    /// user only, never the shared temporary folder. %LOCALAPPDATA%\Snaplume\recordings on Windows,
+    /// $XDG_CACHE_HOME/snaplume/recordings (~/.cache by default) elsewhere, created if needed.
+    /// </summary>
+    /// <exception cref="IOException">The folder is a link, or other users may write to it.</exception>
+    internal static string RecordingsFolder() => OperatingSystem.IsWindows()
+        ? UpdateDownloader.PrivateFolderIn(Path.Combine(Environment.GetFolderPath(Environment.SpecialFolder.LocalApplicationData), "Snaplume"), "recordings")
+        : UpdateDownloader.PrivateFolder("recordings");
+
+    /// <summary>
+    /// Removes the temporary videos left by a crash (older than a day, so never one being recorded), in the folder of
+    /// the recordings and in the temporary folder used by older versions. The videos kept on purpose ("Snaplume video …")
+    /// are left alone.
+    /// </summary>
     public static void DeleteStaleTempFiles()
     {
-        try
+        var limit = DateTime.UtcNow.AddDays(-1);
+        foreach (var folder in new Func<string>[] { RecordingsFolder, Path.GetTempPath })
         {
-            var limit = DateTime.UtcNow.AddDays(-1);
-            foreach (var file in new DirectoryInfo(Path.GetTempPath()).EnumerateFiles(TempPrefix + "*.mp4"))
+            try
             {
-                if (file.LastWriteTimeUtc >= limit) continue;
-                try
+                foreach (var file in new DirectoryInfo(folder()).EnumerateFiles(TempPrefix + "*.mp4"))
                 {
-                    file.Delete();
-                }
-                catch (Exception ex)
-                {
-                    ErrorLog.Write("Nettoyage des vidéos temporaires", ex);
+                    if (file.LastWriteTimeUtc >= limit) continue;
+                    try
+                    {
+                        file.Delete();
+                    }
+                    catch (Exception ex)
+                    {
+                        ErrorLog.Write("Nettoyage des vidéos temporaires", ex);
+                    }
                 }
             }
-        }
-        catch (Exception ex)
-        {
-            ErrorLog.Write("Nettoyage des vidéos temporaires", ex);
+            catch (Exception ex)
+            {
+                ErrorLog.Write("Nettoyage des vidéos temporaires", ex);
+            }
         }
     }
 
     /// <summary>Monitor under the mouse, absolute physical coordinates (the primary one if the mouse is unknown).</summary>
     private static PixelRect MonitorUnderCursor(IPlatform platform)
     {
-        var monitors = platform.Screen.Monitors;
-        if (monitors.Count == 0) throw new InvalidOperationException("No monitor");
-        if (platform.Pointer.TryGetPosition(out int x, out int y))
-            return CaptureGeometry.MonitorAt(monitors.Select(m => m.Bounds).ToList(), x, y);
-        return (monitors.FirstOrDefault(m => m.IsPrimary) ?? monitors[0]).Bounds;
+        (int X, int Y)? cursor = platform.Pointer.TryGetPosition(out int x, out int y) ? (x, y) : null;
+        return CaptureGeometry.MonitorUnderCursor(platform.Screen.Monitors, cursor)?.Bounds ?? throw new InvalidOperationException("No monitor");
+    }
+
+    /// <summary>The area the user selects on a still of the desktop, absolute physical coordinates; null if cancelled.</summary>
+    private async Task<PixelRect?> SelectAreaAsync(IPlatform platform)
+    {
+        var desktop = await platform.Screen.CaptureDesktopAsync(includeCursor: false);
+        if (_cancelled) return null;
+        _selecting = true;
+        try
+        {
+            return await RegionSelectorWindow.PickAsync(desktop, Loc.T("Video.SelectTitle")) is PixelRect relative
+                ? CaptureGeometry.ToScreen(relative, desktop.Bounds)
+                : null;
+        }
+        finally
+        {
+            _selecting = false;
+        }
     }
 
     /// <param name="showOptions">The bar starts with the options and waits for Record.</param>
@@ -391,11 +453,11 @@ public sealed class VideoService
         _bar?.SetRecording(TimeSpan.Zero);
     }
 
-    /// <summary>Asks the platform to record into a new temporary file.</summary>
+    /// <summary>Asks the platform to record into a new temporary file (<see cref="RecordingsFolder"/>).</summary>
     private async Task StartRecorderAsync(PixelRect area, bool webcam)
     {
         var platform = Platform;
-        _tempPath = Path.Combine(Path.GetTempPath(), $"{TempPrefix}{Guid.NewGuid():N}.mp4");
+        _tempPath = Path.Combine(RecordingsFolder(), $"{TempPrefix}{Guid.NewGuid():N}.mp4");
         var camera = webcam ? FindWebcam(platform) : null;
         _webcamActive = camera != null;
         var options = new RecordingOptions(
@@ -490,10 +552,16 @@ public sealed class VideoService
         {
             await StartRecorderAsync(_area, webcam: false);
         }
-        catch (Exception ex)
+        catch (Exception ex) when (ex is not OperationCanceledException)
         {
             ErrorLog.Write("Enregistrement vidéo sans webcam", ex);
             return false;
+        }
+        if (_cancelled)
+        {
+            // Stopped while it was starting again: nothing worth keeping was recorded (deleted on completion).
+            Stop();
+            return true;
         }
         _elapsed.Restart();
         _paused = false;
@@ -505,10 +573,31 @@ public sealed class VideoService
 
     private async Task OnCompleteAsync()
     {
+        // Reported twice (the recorder failing to stop, then completing): handled once.
+        if (_completing) return;
+        _completing = true;
         var owner = _completion;
         var temp = _tempPath;
+        try
+        {
+            await SaveRecordingAsync(owner, temp);
+        }
+        catch (Exception ex)
+        {
+            // Whatever failed, the service goes back to idle, and the user learns where the video is if it is still there.
+            ErrorLog.Write("Fin de l'enregistrement vidéo", ex);
+            if (owner != null && _completion == owner) Finish(null);
+            var kept = temp != null && File.Exists(temp) ? temp : null;
+            _app.Tray?.ShowError(Loc.T("Video.SaveFailed"), kept != null ? Loc.T("Video.KeptInTemp", ex.Message, kept) : ex.Message);
+        }
+    }
+
+    /// <summary>The recorder is done: the file goes to the workspace (or to its conversion), then back to idle.</summary>
+    private async Task SaveRecordingAsync(TaskCompletionSource<string?>? owner, string? temp)
+    {
         bool keep = !_cancelled;
         _stopping = true;
+        _timer?.Stop();
         _bar?.SetFinishing();
         string? saved = null;
         Exception? error = null;
@@ -563,7 +652,15 @@ public sealed class VideoService
         }
         else if (saved != null)
         {
-            Announce(saved, Loc.T("Video.SavedDetails", Path.GetFileName(saved)), showPanel: !restoring);
+            try
+            {
+                Announce(saved, Loc.T("Video.SavedDetails", Path.GetFileName(saved)), showPanel: !restoring);
+            }
+            catch (Exception ex)
+            {
+                // The video is in the workspace all the same.
+                ErrorLog.Write("Annonce de la vidéo", ex);
+            }
         }
     }
 
@@ -618,14 +715,23 @@ public sealed class VideoService
         {
             if (await TryRestartWithoutWebcamAsync(error)) return;
         }
+        catch (OperationCanceledException)
+        {
+            // Stopped or cancelled while it was starting again without the webcam (portal dialog): not a failure.
+            DeleteTempFile(_tempPath);
+            Finish(null);
+            return;
+        }
         catch (Exception ex)
         {
             ErrorLog.Write("Enregistrement vidéo", ex);
         }
         ErrorLog.Write("Enregistrement vidéo", error);
+        bool cancelled = _cancelled;
         DeleteTempFile(_tempPath);
         Finish(null);
-        _app.Tray?.ShowError(Loc.T("Video.Failed"), error);
+        // A video the user cancelled is not missed.
+        if (!cancelled) _app.Tray?.ShowError(Loc.T("Video.Failed"), error);
     }
 
     /// <summary>
@@ -655,9 +761,12 @@ public sealed class VideoService
         _tempPath = null;
         _webcamActive = false;
         _elapsed.Reset();
+        _countdown?.Dispose();
+        _countdown = null;
         _cancelled = false;
         _stopping = false;
         _paused = false;
+        _completing = false;
 
         var completion = _completion;
         _completion = null;

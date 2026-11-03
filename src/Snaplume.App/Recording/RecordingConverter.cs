@@ -6,7 +6,7 @@ using PixelRect = Snaplume.Capturing.PixelRect;
 namespace Snaplume.Recording;
 
 /// <summary>A finished recording waiting for its conversion (Settings › Video › Video format).</summary>
-/// <param name="Recorded">The MP4 H.264 file, still in the temporary folder.</param>
+/// <param name="Recorded">The MP4 H.264 file, still in the folder of the recordings (<see cref="VideoService.RecordingsFolder"/>).</param>
 /// <param name="Folder">The workspace it goes to.</param>
 /// <param name="BaseName">Its name there, without extension ("Video_2026-11-03_14-22-05").</param>
 /// <param name="Area">Where it was recorded (absolute physical pixels): the progress bar is shown next to it.</param>
@@ -79,9 +79,10 @@ public sealed class RecordingConverter
             }
             catch (Exception ex)
             {
-                // The original could not even be moved into the workspace: it stays in the temporary folder.
-                ErrorLog.Write("Enregistrement de la vidéo convertie", ex);
-                _app.Tray?.ShowError(Loc.T("Video.SaveFailed"), Loc.T("Video.KeptInTemp", ex.Message, job.Recorded));
+                // Before the conversion (ConvertAsync handles its own failures): the recording waits where it is.
+                ErrorLog.Write("Conversion d'un enregistrement", ex);
+                if (File.Exists(job.Recorded))
+                    _app.Tray?.ShowError(Loc.T("Video.SaveFailed"), Loc.T("Video.KeptInTemp", ex.Message, job.Recorded));
             }
             finally
             {
@@ -113,15 +114,40 @@ public sealed class RecordingConverter
         _app.SetTrayStatus(Loc.T("Video.ConvertingTray", 0.0));
 
         var video = _app.Platform.Video;
-        var result = await RecordingConversion.RunAsync(job.Recorded, job.Folder, job.BaseName, job.Target, job.KeepOriginal,
-            (path, token) => video.ProbeAsync(path, token),
-            async (source, destination, settings, info, report, token) =>
-            {
-                var ffmpeg = await FfmpegTools.DetectAsync();
-                await WebVideoExport.ExportAsync(video, ffmpeg, source, destination, settings, info, report, token);
-            },
-            progress, cancel.Token);
+        RecordingConversionResult result;
+        try
+        {
+            result = await RecordingConversion.RunAsync(job.Recorded, job.Folder, job.BaseName, job.Target, job.KeepOriginal,
+                (path, token) => video.ProbeAsync(path, token),
+                async (source, destination, settings, info, report, token) =>
+                {
+                    var ffmpeg = await FfmpegTools.DetectAsync();
+                    await WebVideoExport.ExportAsync(video, ffmpeg, source, destination, settings, info, report, token);
+                },
+                progress, cancel.Token);
+        }
+        catch (Exception ex)
+        {
+            // The original could not even be moved into the workspace: it stays in the folder of the recordings.
+            ErrorLog.Write("Enregistrement de la vidéo convertie", ex);
+            _app.Tray?.ShowError(Loc.T("Video.SaveFailed"), Loc.T("Video.KeptInTemp", ex.Message, job.Recorded));
+            return;
+        }
 
+        // The files are in place: a failure from here on only concerns the notifications.
+        try
+        {
+            Announce(result);
+        }
+        catch (Exception ex)
+        {
+            ErrorLog.Write("Annonce de la vidéo convertie", ex);
+        }
+    }
+
+    /// <summary>Shows the result of a conversion in the gallery and the notifications.</summary>
+    private void Announce(RecordingConversionResult result)
+    {
         var name = Path.GetFileName(result.Path);
         if (result.Converted)
         {
@@ -139,6 +165,9 @@ public sealed class RecordingConverter
             _app.Tray?.ShowWarning(Loc.T("Video.ConvertFailedTitle"), result.Problem + "\n" + Loc.T("Video.OriginalKept", name), () => _app.OpenPlayer(path));
             _app.Captures.WarnIfWorkspaceUnavailable();
         }
+        // Converted, but the original to keep could not join it in the workspace.
+        if (result.OriginalLeftAt is { } left)
+            _app.Tray?.ShowWarning(Loc.T("Video.OriginalNotMovedTitle"), Loc.T("Video.OriginalNotMoved", name, left));
     }
 
     private static long SafeLength(string path)

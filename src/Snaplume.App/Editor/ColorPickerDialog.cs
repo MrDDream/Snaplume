@@ -194,7 +194,16 @@ public sealed class ColorPickerDialog : Window
     {
         private static readonly IPen Ring = new ImmutablePen(Brushes.White.ToImmutable(), 2);
         private static readonly IPen RingShadow = new ImmutablePen(new ImmutableSolidColorBrush(Color.FromArgb(0x80, 0, 0, 0)), 4);
+        /// <summary>Brightness: transparent at the top, black at the bottom, whatever the hue.</summary>
+        private static readonly IBrush ValueBrush = new LinearGradientBrush
+        {
+            StartPoint = new RelativePoint(0, 0, RelativeUnit.Relative),
+            EndPoint = new RelativePoint(0, 1, RelativeUnit.Relative),
+            GradientStops = { new GradientStop(Color.FromArgb(0, 0, 0, 0), 0), new GradientStop(Colors.Black, 1) },
+        }.ToImmutable();
         private double _hue;
+        /// <summary>Saturation, from white to the hue: made again only when the hue changes.</summary>
+        private IBrush? _saturationBrush;
 
         public event Action? Changed;
 
@@ -208,6 +217,7 @@ public sealed class ColorPickerDialog : Window
             get => _hue;
             set
             {
+                if (value != _hue) _saturationBrush = null;
                 _hue = value;
                 InvalidateVisual();
             }
@@ -223,19 +233,14 @@ public sealed class ColorPickerDialog : Window
         public override void Render(DrawingContext context)
         {
             var area = new Rect(Bounds.Size);
-            var hue = new HsvColor(1, _hue, 1, 1).ToRgb();
-            context.DrawRectangle(new LinearGradientBrush
+            _saturationBrush ??= new LinearGradientBrush
             {
                 StartPoint = new RelativePoint(0, 0, RelativeUnit.Relative),
                 EndPoint = new RelativePoint(1, 0, RelativeUnit.Relative),
-                GradientStops = { new GradientStop(Colors.White, 0), new GradientStop(hue, 1) },
-            }, null, area, 4, 4);
-            context.DrawRectangle(new LinearGradientBrush
-            {
-                StartPoint = new RelativePoint(0, 0, RelativeUnit.Relative),
-                EndPoint = new RelativePoint(0, 1, RelativeUnit.Relative),
-                GradientStops = { new GradientStop(Color.FromArgb(0, 0, 0, 0), 0), new GradientStop(Colors.Black, 1) },
-            }, null, area, 4, 4);
+                GradientStops = { new GradientStop(Colors.White, 0), new GradientStop(new HsvColor(1, _hue, 1, 1).ToRgb(), 1) },
+            }.ToImmutable();
+            context.DrawRectangle(_saturationBrush, null, area, 4, 4);
+            context.DrawRectangle(ValueBrush, null, area, 4, 4);
             var marker = new Point(Saturation * area.Width, (1 - Value) * area.Height);
             context.DrawEllipse(null, RingShadow, marker, 6, 6);
             context.DrawEllipse(null, Ring, marker, 6, 6);
@@ -274,11 +279,24 @@ public sealed class ColorPickerDialog : Window
     {
         private static readonly IPen Marker = new ImmutablePen(Brushes.White.ToImmutable(), 2);
         private static readonly IPen MarkerShadow = new ImmutablePen(new ImmutableSolidColorBrush(Color.FromArgb(0x80, 0, 0, 0)), 4);
+        /// <summary>Every hue, from red to red again.</summary>
+        private static readonly IBrush Hues = CreateHues();
         private double _hue;
 
         public event Action? Changed;
 
         public HueBar() => Cursor = new Cursor(StandardCursorType.Hand);
+
+        private static IBrush CreateHues()
+        {
+            var brush = new LinearGradientBrush
+            {
+                StartPoint = new RelativePoint(0, 0, RelativeUnit.Relative),
+                EndPoint = new RelativePoint(1, 0, RelativeUnit.Relative),
+            };
+            for (int i = 0; i <= 6; i++) brush.GradientStops.Add(new GradientStop(new HsvColor(1, i * 60, 1, 1).ToRgb(), i / 6.0));
+            return brush.ToImmutable();
+        }
 
         public double Hue
         {
@@ -293,13 +311,7 @@ public sealed class ColorPickerDialog : Window
         public override void Render(DrawingContext context)
         {
             var area = new Rect(Bounds.Size);
-            var brush = new LinearGradientBrush
-            {
-                StartPoint = new RelativePoint(0, 0, RelativeUnit.Relative),
-                EndPoint = new RelativePoint(1, 0, RelativeUnit.Relative),
-            };
-            for (int i = 0; i <= 6; i++) brush.GradientStops.Add(new GradientStop(new HsvColor(1, i * 60, 1, 1).ToRgb(), i / 6.0));
-            context.DrawRectangle(brush, null, area, 4, 4);
+            context.DrawRectangle(Hues, null, area, 4, 4);
             double x = _hue / 360 * area.Width;
             var marker = new Rect(x - 3, -2, 6, area.Height + 4);
             context.DrawRectangle(null, MarkerShadow, marker, 2, 2);

@@ -15,12 +15,6 @@ namespace Snaplume.Core;
 /// </summary>
 public sealed class CaptureService
 {
-    /// <summary>
-    /// Larger captures are saved but not copied: the clipboard copy (bitmap + PNG) is slow and holds a lot of
-    /// memory, and few applications accept such images.
-    /// </summary>
-    private const long MaxClipboardPixels = 50_000_000;
-
     private readonly App _app;
     private readonly ScreenOperation _operation = new();
     private PixelRect? _lastRegion; // absolute screen coordinates
@@ -68,67 +62,19 @@ public sealed class CaptureService
         if (!Begin(hide, out var stop)) return null;
         try
         {
-            await _operation.SettleAsync(settleMs);
-            if (delaySeconds > 0) await CountdownAsync(delaySeconds, stop);
-            if (stop.IsCancellationRequested) return null;
+            if (await CaptureAndSaveAsync(mode, delaySeconds, settleMs, stop) is not { } saved) return null;
+            var (path, image, nothingScrolled) = saved;
 
-            var platform = Platform;
-            string? title = null;
-            // The active window is read before anything of Snaplume can take its place.
-            PixelRect? activeWindow = null;
-            if (mode == CaptureKind.ActiveWindow)
+            // The file is saved: what follows may fail without losing it, and its path is returned.
+            try
             {
-                if (platform.Has(PlatformFeatures.ActiveWindow)) activeWindow = ReadForegroundWindow(platform);
-                if (activeWindow == null)
-                {
-                    // Not possible here (Wayland) or unknown: the user clicks the window instead, and is told why.
-                    mode = CaptureKind.Region;
-                    title = Loc.T("Capture.ActiveWindowUnavailable");
-                }
+                await AfterSaveAsync(path, image, nothingScrolled, quiet, stop);
             }
-            if (mode == CaptureKind.Scrolling && !platform.Has(PlatformFeatures.ScrollingCapture))
+            catch (Exception ex)
             {
-                mode = CaptureKind.Region;
-                title = Loc.T("Scroll.Unavailable");
+                ErrorLog.Write("Capture enregistrée, suite", ex);
+                _app.Tray?.ShowWarning(Loc.T("Capture.Saved"), Loc.T("Capture.AfterSaveFailed", Path.GetFileName(path), ex.Message));
             }
-            bool scrolling = mode == CaptureKind.Scrolling;
-
-            // A scrolling capture takes its own frames, without the cursor (it is moved into the area).
-            var desktop = await platform.Screen.CaptureDesktopAsync(Settings.IncludeCursor && !scrolling, stop);
-            if (stop.IsCancellationRequested) return null;
-            var area = await SelectAreaAsync(mode, desktop, activeWindow, title);
-            if (area is not PixelRect rect || rect.IsEmpty || stop.IsCancellationRequested) return null;
-
-            if (mode is CaptureKind.Region or CaptureKind.RepeatLast) _lastRegion = CaptureGeometry.ToScreen(rect, desktop.Bounds);
-
-            PixelBuffer image;
-            bool nothingScrolled = false;
-            if (scrolling)
-            {
-                var result = await RunScrollingAsync(platform, desktop, CaptureGeometry.ToScreen(rect, desktop.Bounds), stop);
-                if (result == null)
-                {
-                    _app.Tray?.ShowWarning(Loc.T("Scroll.PointerRefusedTitle"), Loc.T("Scroll.PointerRefused"));
-                    return null;
-                }
-                image = result.Image;
-                nothingScrolled = result.NothingScrolled;
-            }
-            else
-            {
-                image = desktop.Image.Crop(rect.X, rect.Y, rect.Width, rect.Height);
-            }
-            // Even when Snaplume is quitting: what was captured is kept.
-            var path = await SaveToWorkspaceAsync(image);
-            CaptureSaved?.Invoke(path);
-
-            bool tooLargeToCopy = Settings.CopyToClipboardAfterCapture && (long)image.Width * image.Height > MaxClipboardPixels;
-            bool copied = Settings.CopyToClipboardAfterCapture && !tooLargeToCopy && await TryCopyAsync(platform, image);
-            if (tooLargeToCopy) ErrorLog.Write("Copie de la capture", $"{image.Width} x {image.Height} px : trop grande, non copiée");
-            if (nothingScrolled) ErrorLog.Write("Capture défilante", "Rien n'a défilé");
-
-            if (!quiet && !stop.IsCancellationRequested) ShowResult(path, copied, tooLargeToCopy, nothingScrolled);
-            WarnIfWorkspaceUnavailable();
             return path;
         }
         catch (OperationCanceledException)
@@ -148,6 +94,82 @@ public sealed class CaptureService
         }
     }
 
+    /// <summary>Countdown, area, screenshot (or scrolling capture), then the file written into the workspace.</summary>
+    /// <returns>The saved file and its image; null if cancelled.</returns>
+    private async Task<(string Path, PixelBuffer Image, bool NothingScrolled)?> CaptureAndSaveAsync(CaptureKind mode, int delaySeconds, int settleMs,
+        CancellationToken stop)
+    {
+        await _operation.SettleAsync(settleMs);
+        if (delaySeconds > 0) await CountdownAsync(delaySeconds, stop);
+        if (stop.IsCancellationRequested) return null;
+
+        var platform = Platform;
+        string? title = null;
+        // The active window is read before anything of Snaplume can take its place.
+        PixelRect? activeWindow = null;
+        if (mode == CaptureKind.ActiveWindow)
+        {
+            if (platform.Has(PlatformFeatures.ActiveWindow)) activeWindow = ReadForegroundWindow(platform);
+            if (activeWindow == null)
+            {
+                // Not possible here (Wayland) or unknown: the user clicks the window instead, and is told why.
+                mode = CaptureKind.Region;
+                title = Loc.T("Capture.ActiveWindowUnavailable");
+            }
+        }
+        if (mode == CaptureKind.Scrolling && !platform.Has(PlatformFeatures.ScrollingCapture))
+        {
+            mode = CaptureKind.Region;
+            title = Loc.T("Scroll.Unavailable");
+        }
+
+        // The desktop image (every monitor) is held only while the area is chosen.
+        if (await SelectAreaAsync(mode, activeWindow, title, stop) is not { } selected) return null;
+        if (mode is CaptureKind.Region or CaptureKind.RepeatLast) _lastRegion = selected.Area;
+
+        PixelBuffer image;
+        bool nothingScrolled = false;
+        if (selected.Image is { } cropped)
+        {
+            image = cropped;
+        }
+        else
+        {
+            var result = await RunScrollingAsync(platform, selected.Monitors, selected.Area, stop);
+            if (result == null)
+            {
+                _app.Tray?.ShowWarning(Loc.T("Scroll.PointerRefusedTitle"), Loc.T("Scroll.PointerRefused"));
+                return null;
+            }
+            image = result.Image;
+            nothingScrolled = result.NothingScrolled;
+        }
+        // Even when Snaplume is quitting: what was captured is kept.
+        return (await SaveToWorkspaceAsync(image), image, nothingScrolled);
+    }
+
+    /// <summary>Announces, copies and shows a capture once saved.</summary>
+    private async Task AfterSaveAsync(string path, PixelBuffer image, bool nothingScrolled, bool quiet, CancellationToken stop)
+    {
+        try
+        {
+            CaptureSaved?.Invoke(path);
+        }
+        catch (Exception ex)
+        {
+            // The gallery could not show it yet: the file is in the workspace all the same.
+            ErrorLog.Write("Annonce de la capture", ex);
+        }
+
+        bool tooLargeToCopy = Settings.CopyToClipboardAfterCapture && ClipboardCopy.IsTooLarge(image);
+        bool copied = Settings.CopyToClipboardAfterCapture && !tooLargeToCopy && await TryCopyAsync(Platform, image);
+        if (tooLargeToCopy) ErrorLog.Write("Copie de la capture", $"{image.Width} x {image.Height} px : trop grande, non copiée");
+        if (nothingScrolled) ErrorLog.Write("Capture défilante", "Rien n'a défilé");
+
+        if (!quiet && !stop.IsCancellationRequested) ShowResult(path, copied, tooLargeToCopy, nothingScrolled);
+        WarnIfWorkspaceUnavailable();
+    }
+
     private static PixelRect? ReadForegroundWindow(IPlatform platform)
     {
         try
@@ -162,11 +184,11 @@ public sealed class CaptureService
     }
 
     /// <summary>Scrolls the area and stitches it, with the Stop bar next to it.</summary>
+    /// <param name="monitors">Bounds of the monitors, absolute physical coordinates.</param>
     /// <returns>Null if the system refused the control of the mouse.</returns>
-    private async Task<ScrollCaptureResult?> RunScrollingAsync(IPlatform platform, DesktopImage desktop, PixelRect area, CancellationToken stop)
+    private async Task<ScrollCaptureResult?> RunScrollingAsync(IPlatform platform, IReadOnlyList<PixelRect> monitors, PixelRect area,
+        CancellationToken stop)
     {
-        var monitors = desktop.Monitors.Select(m => m.Bounds).ToList();
-        if (monitors.Count == 0) monitors.Add(desktop.Bounds);
         var capture = new ScrollingCapture(platform.Pointer, platform.Screen.CreateGrabber, monitors)
         {
             CreateBar = (target, stopClicked) =>
@@ -215,9 +237,7 @@ public sealed class CaptureService
     {
         try
         {
-            // The PNG flavour is encoded in the background; the clipboard is set from the UI thread.
-            var png = await Task.Run(() => ImageIO.EncodePng(image));
-            return await platform.Clipboard.SetImageAsync(image, png);
+            return await ClipboardCopy.CopyAsync(platform.Clipboard, image);
         }
         catch (Exception ex)
         {
@@ -228,79 +248,73 @@ public sealed class CaptureService
 
     /// <summary>Select an area of the screen and read its text (OCR); nothing is saved in the workspace.</summary>
     /// <returns>The window showing the text, or null if cancelled or failed.</returns>
-    public Task<Window?> CaptureTextAsync(Window? hide = null, int settleMs = 0) =>
-        PickAndShowAsync(Loc.T("Ocr.SelectTitle"), image => _app.ShowOcr(image), "OCR", "Ocr.Failed", hide, settleMs);
+    public async Task<Window?> CaptureTextAsync(Window? hide = null, int settleMs = 0) =>
+        (await PickAreaAsync(Loc.T("Ocr.SelectTitle"), includeCursor: false, hide, settleMs, activateHidden: false, "OCR", "Ocr.Failed",
+            image => _app.ShowOcr(image))).Result;
 
     /// <summary>Select an area of the screen and read the QR codes and barcodes in it; nothing is saved in the workspace.</summary>
     /// <returns>The window showing the codes, or null if cancelled or failed.</returns>
-    public Task<Window?> CaptureQrAsync(Window? hide = null, int settleMs = 0) =>
-        PickAndShowAsync(Loc.T("Qr.SelectTitle"), image => _app.ShowQr(image), "QR code", "Qr.Failed", hide, settleMs);
+    public async Task<Window?> CaptureQrAsync(Window? hide = null, int settleMs = 0) =>
+        (await PickAreaAsync(Loc.T("Qr.SelectTitle"), includeCursor: false, hide, settleMs, activateHidden: false, "QR code", "Qr.Failed",
+            image => _app.ShowQr(image))).Result;
 
     /// <summary>
     /// Select an area of the screen and return its image, e.g. to insert it into a capture being edited;
     /// nothing is saved or copied. <paramref name="hide"/> is hidden meanwhile, then brought back.
     /// </summary>
-    /// <returns>The image, or null if cancelled, failed, or another capture is in progress.</returns>
-    public async Task<PixelBuffer?> PickImageAsync(Window? hide)
+    /// <returns>The image (null if cancelled or failed), or <see cref="ImagePick.Busy"/> when another capture is in progress.</returns>
+    public async Task<ImagePick> PickImageAsync(Window? hide)
     {
-        if (!Begin(hide, out var stop)) return null;
-        try
-        {
-            await _operation.SettleAsync(0);
-            if (stop.IsCancellationRequested) return null;
-
-            var desktop = await Platform.Screen.CaptureDesktopAsync(Settings.IncludeCursor, stop);
-            if (await RegionSelectorWindow.PickAsync(desktop) is not PixelRect rect || rect.IsEmpty || stop.IsCancellationRequested) return null;
-            return desktop.Image.Crop(rect.X, rect.Y, rect.Width, rect.Height);
-        }
-        catch (OperationCanceledException)
-        {
-            return null;
-        }
-        catch (Exception ex)
-        {
-            ErrorLog.Write("Capture à insérer", ex);
-            _app.Tray?.ShowError(Loc.T("Capture.Failed"), ex.Message);
-            return null;
-        }
-        finally
-        {
-            _operation.RestoreWindow(activate: true);
-            End();
-        }
+        var (image, busy) = await PickAreaAsync(null, Settings.IncludeCursor, hide, 0, activateHidden: true, "Capture à insérer", "Capture.Failed",
+            image => image);
+        return new ImagePick(image, busy);
     }
 
-    /// <summary>Lets the user select an area, then shows a window working on that part of the screen.</summary>
+    /// <summary>
+    /// Lets the user select an area, then hands its image to <paramref name="use"/> (e.g. a window working on that part
+    /// of the screen). Errors are logged and notified.
+    /// </summary>
+    /// <param name="activateHidden">The hidden window comes back activated (else it comes back without the focus).</param>
     /// <param name="logContext">Label of the error log.</param>
     /// <param name="failedKey">Title of the notification shown on failure.</param>
-    private async Task<Window?> PickAndShowAsync(string title, Func<PixelBuffer, Window?> show, string logContext, string failedKey,
-        Window? hide, int settleMs)
+    /// <returns>
+    /// What <paramref name="use"/> returned (null if cancelled or failed); Busy when another operation was running
+    /// (here, or a video choosing its area), nothing being done.
+    /// </returns>
+    private async Task<(T? Result, bool Busy)> PickAreaAsync<T>(string? title, bool includeCursor, Window? hide, int settleMs,
+        bool activateHidden, string logContext, string failedKey, Func<PixelBuffer, T?> use) where T : class
     {
-        if (!Begin(hide, out var stop)) return null;
+        if (!Begin(hide, out var stop)) return (null, true);
         try
         {
             await _operation.SettleAsync(settleMs);
-            if (stop.IsCancellationRequested) return null;
-
-            var desktop = await Platform.Screen.CaptureDesktopAsync(includeCursor: false, stop);
-            if (await RegionSelectorWindow.PickAsync(desktop, title) is not PixelRect rect || rect.IsEmpty || stop.IsCancellationRequested) return null;
-
-            return show(desktop.Image.Crop(rect.X, rect.Y, rect.Width, rect.Height));
+            if (stop.IsCancellationRequested) return (null, false);
+            var image = await PickImageOfAreaAsync(title, includeCursor, stop);
+            return (image != null ? use(image) : null, false);
         }
         catch (OperationCanceledException)
         {
-            return null;
+            return (null, false);
         }
         catch (Exception ex)
         {
             ErrorLog.Write(logContext, ex);
             _app.Tray?.ShowError(Loc.T(failedKey), ex.Message);
-            return null;
+            return (null, false);
         }
         finally
         {
+            if (activateHidden) _operation.RestoreWindow(activate: true);
             End();
         }
+    }
+
+    /// <summary>The image of the area the user selects; the desktop image is released once the area is cropped.</summary>
+    private async Task<PixelBuffer?> PickImageOfAreaAsync(string? title, bool includeCursor, CancellationToken stop)
+    {
+        var desktop = await Platform.Screen.CaptureDesktopAsync(includeCursor, stop);
+        if (await RegionSelectorWindow.PickAsync(desktop, title) is not PixelRect rect || rect.IsEmpty || stop.IsCancellationRequested) return null;
+        return desktop.Image.Crop(rect.X, rect.Y, rect.Width, rect.Height);
     }
 
     /// <summary>Starts an operation, unless one is already running (here, or a video choosing its area).</summary>
@@ -324,6 +338,30 @@ public sealed class CaptureService
         var after = _afterEnd;
         _afterEnd = null;
         if (after != null) Dispatcher.UIThread.Post(after);
+    }
+
+    /// <summary>The area chosen, absolute physical coordinates, with its image (null for a scrolling capture: it takes its own).</summary>
+    /// <param name="Monitors">Bounds of the monitors, absolute physical coordinates.</param>
+    private sealed record SelectedArea(PixelRect Area, PixelBuffer? Image, IReadOnlyList<PixelRect> Monitors);
+
+    /// <summary>
+    /// Takes the desktop image and the area of the capture (chosen by the user when <paramref name="mode"/> needs it), then
+    /// crops the area: the desktop image, often much larger, is released as soon as this returns.
+    /// </summary>
+    /// <returns>Null if cancelled or empty.</returns>
+    private async Task<SelectedArea?> SelectAreaAsync(CaptureKind mode, PixelRect? activeWindow, string? title, CancellationToken stop)
+    {
+        // A scrolling capture takes its own frames, without the cursor (it is moved into the area).
+        bool scrolling = mode == CaptureKind.Scrolling;
+        var desktop = await Platform.Screen.CaptureDesktopAsync(Settings.IncludeCursor && !scrolling, stop);
+        if (stop.IsCancellationRequested) return null;
+        var area = await SelectAreaAsync(mode, desktop, activeWindow, title);
+        if (area is not PixelRect rect || rect.IsEmpty || stop.IsCancellationRequested) return null;
+
+        var monitors = desktop.Monitors.Select(m => m.Bounds).ToList();
+        if (monitors.Count == 0) monitors.Add(desktop.Bounds);
+        var image = scrolling ? null : desktop.Image.Crop(rect.X, rect.Y, rect.Width, rect.Height);
+        return new SelectedArea(CaptureGeometry.ToScreen(rect, desktop.Bounds), image, monitors);
     }
 
     private async Task<PixelRect?> SelectAreaAsync(CaptureKind mode, DesktopImage desktop, PixelRect? activeWindow, string? title)
@@ -356,13 +394,10 @@ public sealed class CaptureService
     /// <summary>Monitor under the mouse (relative to the desktop image); the primary one if the mouse is unknown.</summary>
     private PixelRect MonitorUnderCursor(DesktopImage desktop)
     {
-        var monitors = desktop.Monitors.Select(m => m.Bounds.Offset(-desktop.Bounds.X, -desktop.Bounds.Y)).ToList();
         (int X, int Y)? cursor = desktop.Cursor;
         if (cursor == null && Platform.Pointer.TryGetPosition(out int x, out int y)) cursor = (x, y);
-        if (cursor is (int cx, int cy)) return CaptureGeometry.MonitorAt(monitors, cx - desktop.Bounds.X, cy - desktop.Bounds.Y);
-        var primary = desktop.Monitors.FirstOrDefault(m => m.IsPrimary) ?? desktop.Monitors.FirstOrDefault();
-        return primary != null
-            ? primary.Bounds.Offset(-desktop.Bounds.X, -desktop.Bounds.Y)
+        return CaptureGeometry.MonitorUnderCursor(desktop.Monitors, cursor) is { } monitor
+            ? monitor.Bounds.Offset(-desktop.Bounds.X, -desktop.Bounds.Y)
             : new PixelRect(0, 0, desktop.Bounds.Width, desktop.Bounds.Height);
     }
 
@@ -417,3 +452,8 @@ public sealed class CaptureService
     /// <summary>Date and time for file names, identical in every language.</summary>
     internal static string TimeStamp() => DateTime.Now.ToString("yyyy-MM-dd_HH-mm-ss", CultureInfo.InvariantCulture);
 }
+
+/// <summary>An image picked on the screen (<see cref="CaptureService.PickImageAsync"/>).</summary>
+/// <param name="Image">Null when cancelled or failed, or when <paramref name="Busy"/>.</param>
+/// <param name="Busy">Another capture, or a video choosing its area, was in progress: nothing was done.</param>
+public sealed record ImagePick(PixelBuffer? Image, bool Busy);

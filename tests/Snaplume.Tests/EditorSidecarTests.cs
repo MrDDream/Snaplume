@@ -244,6 +244,59 @@ public class EditorSidecarTests
         }
     }
 
+    [AvaloniaFact]
+    public void A_save_written_in_the_background_leaves_the_later_changes_unsaved()
+    {
+        using var folder = new TempFolder();
+        var path = folder.File("capture.png");
+        ImageIO.Save(Solid(120, 80, Colors.SteelBlue), path);
+        var document = EditorDocument.Load(path);
+        var before = document.BeginChange();
+        document.Annotations.Add(new RectangleAnnotation { Start = new(10, 10), End = new(60, 40), Color = Colors.Red, Filled = true });
+        document.CommitChange(before);
+
+        // Read now, written later (another thread in the editor), while the editing goes on.
+        var job = document.PrepareSave();
+        var more = document.BeginChange();
+        document.Annotations.Add(new LineAnnotation { Start = new(1, 1), End = new(50, 50) });
+        document.CommitChange(more);
+        job.Write();
+        document.CompleteSave(job);
+
+        Assert.True(document.IsDirty);
+        Assert.True(Near(At(ImageIO.Load(path), 30, 20), Colors.Red));
+        Assert.Single(EditorDocument.Load(path).Annotations);
+        // Back to what was saved: clean.
+        document.Undo();
+        Assert.False(document.IsDirty);
+    }
+
+    [AvaloniaFact]
+    public async Task Resize_in_the_background_is_one_step_and_dropped_when_the_image_changed()
+    {
+        using var folder = new TempFolder();
+        var path = folder.File("capture.png");
+        ImageIO.Save(Solid(120, 80, Colors.SteelBlue), path);
+        var document = EditorDocument.Load(path);
+        var rectangle = new RectangleAnnotation { Start = new(10, 10), End = new(60, 40) };
+        document.Annotations.Add(rectangle);
+        int changes = 0;
+        document.Changed += () => changes++;
+
+        Assert.True(await document.ResizeAsync(60, 40));
+        Assert.Equal((60, 40), (document.BaseImage.Width, document.BaseImage.Height));
+        Assert.Equal(new Point(30, 20), rectangle.End);
+        Assert.Equal(1, changes);
+        Assert.False(await document.ResizeAsync(60, 40));
+
+        // Undone while the pixels are being resampled: the resize is abandoned.
+        var resize = document.ResizeAsync(240, 160);
+        document.Undo();
+        Assert.False(await resize);
+        Assert.Equal((120, 80), (document.BaseImage.Width, document.BaseImage.Height));
+        Assert.False(document.CanUndo);
+    }
+
     [Fact]
     public void Orphans_and_stale_temporary_files_are_cleaned_once_per_folder()
     {

@@ -22,16 +22,9 @@ public partial class ScrollStopBar : Window, IScrollCaptureBar
     {
         InitializeComponent();
         // Never takes the focus from the scrolled window, and never appears in its frames.
-        Opened += (_, _) =>
-        {
-            FloatingBar.ApplyNativeStyles(this);
-            ScreenBounds = FloatingBar.PlaceNearArea(this, area);
-        };
+        Opened += (_, _) => FloatingBar.ApplyNativeStyles(this);
         // The size is final after the first layout (and changes with the texts): placed again each time.
-        SizeChanged += (_, _) =>
-        {
-            if (IsVisible) ScreenBounds = FloatingBar.PlaceNearArea(this, area);
-        };
+        FloatingBar.KeepNearArea(this, () => area, placed: bounds => ScreenBounds = bounds);
     }
 
     /// <summary>Where the bar is on the screen (physical pixels), once shown.</summary>

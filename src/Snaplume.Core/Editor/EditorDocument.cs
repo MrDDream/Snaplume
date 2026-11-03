@@ -373,23 +373,50 @@ public sealed class EditorDocument
     /// <exception cref="InvalidDataException">The result, margins of the effects included, would be too big.</exception>
     public void Resize(int width, int height)
     {
+        if (!CheckResize(ref width, ref height)) return;
+        // Computed first: running out of memory must leave the document and its history untouched.
+        ApplyResize(BaseImage, ImageIO.Resize(BaseImage.Pixels, width, height));
+    }
+
+    /// <summary>
+    /// <see cref="Resize"/> with the resampling in the background (seconds for a big image); the document is changed
+    /// on the calling thread once it is done. Abandoned when the base image changed meanwhile (undo, crop...).
+    /// </summary>
+    /// <returns>False when nothing was changed (same size, or abandoned).</returns>
+    /// <exception cref="InvalidDataException">The result, margins of the effects included, would be too big.</exception>
+    public async Task<bool> ResizeAsync(int width, int height)
+    {
+        if (!CheckResize(ref width, ref height)) return false;
+        var source = BaseImage;
+        var pixels = await Task.Run(() => ImageIO.Resize(source.Pixels, width, height));
+        return ApplyResize(source, pixels);
+    }
+
+    /// <summary>Clamps the size and checks the output, before anything is allocated; false for the same size.</summary>
+    private bool CheckResize(ref int width, ref int height)
+    {
         width = Math.Clamp(width, 1, MaxDimension);
         height = Math.Clamp(height, 1, MaxDimension);
-        if (width == BaseImage.Width && height == BaseImage.Height) return;
-        // Checked before anything is allocated: the saved image also has the margins of the shadow.
-        var effects = ResizedEffects(width, height);
-        var (outputWidth, outputHeight) = OutputSizeOf(width, height, effects);
+        if (width == BaseImage.Width && height == BaseImage.Height) return false;
+        // The saved image also has the margins of the shadow.
+        var (outputWidth, outputHeight) = OutputSizeOf(width, height, ResizedEffects(width, height));
         ImageIO.CheckSize(outputWidth, outputHeight);
+        return true;
+    }
+
+    /// <summary>Replaces <paramref name="source"/> by its resized pixels as one undo step; false if it is no longer the base image.</summary>
+    private bool ApplyResize(EditorImage source, PixelBuffer pixels)
+    {
+        if (!ReferenceEquals(source, BaseImage)) return false;
+        int width = pixels.Width, height = pixels.Height;
+        var effects = ResizedEffects(width, height);
         double sx = (double)width / BaseImage.Width, sy = (double)height / BaseImage.Height;
-
-        // Computed first: running out of memory must leave the document and its history untouched.
-        var resized = new EditorImage(ImageIO.Resize(BaseImage.Pixels, width, height));
-
         var before = BeginChange();
-        SetBaseImage(resized);
+        SetBaseImage(new EditorImage(pixels));
         Effects = effects;
         foreach (var annotation in Annotations) annotation.Scale(sx, sy);
         CommitChange(before);
+        return true;
     }
 
     /// <summary>
@@ -541,47 +568,109 @@ public sealed class EditorDocument
     /// <param name="webpQuality">For a WebP capture: <see cref="ImageIO.WebPLossless"/>, or the quality of a lossy WebP.</param>
     public void Save(int jpegQuality = 90, int webpQuality = ImageIO.WebPLossless)
     {
+        var job = PrepareSave(jpegQuality, webpQuality);
+        job.Write();
+        CompleteSave(job);
+    }
+
+    /// <summary>
+    /// First part of <see cref="Save"/>, on the thread of the document: everything read from it (the flattened image,
+    /// the base image to keep, the annotations serialized). <see cref="SaveJob.Write"/> may then run in the background
+    /// while the document goes on changing, and <see cref="CompleteSave"/> ends on the thread of the document.
+    /// </summary>
+    public SaveJob PrepareSave(int jpegQuality = 90, int webpQuality = ImageIO.WebPLossless)
+    {
         var (basePath, jsonPath) = SidecarFiles.PathsOf(FilePath);
         var flattened = Flatten();
         if (Annotations.Count == 0 && Effects.IsEmpty)
-        {
-            ImageIO.Save(flattened, FilePath, jpegQuality, webpQuality);
-            SidecarFiles.Delete(FilePath);
-        }
-        else
-        {
-            var annotationsJson = JsonSerializer.SerializeToUtf8Bytes(Annotations, AnnotationJson.Options);
-            byte[]? effectsJson = Effects.IsEmpty ? null : JsonSerializer.SerializeToUtf8Bytes(Effects, AnnotationJson.Options);
-            var redaction = RedactionKey();
-            bool writeBase = !ReferenceEquals(BaseImage, _writtenBase) || redaction != _writtenRedaction || !File.Exists(basePath);
-            var redactedBase = writeBase ? RedactedBase() : null;
+            return new SaveJob(FilePath, Version, flattened, jpegQuality, webpQuality);
 
-            SidecarFiles.EnsureFolder(Path.GetDirectoryName(basePath)!);
-            // The new base waits beside the old one until the capture is written: a failure in between leaves the
-            // capture, its base and its annotation file as they were, still matching.
-            var baseTemp = redactedBase != null ? basePath + SidecarFiles.TempSuffix : null;
-            try
-            {
-                if (redactedBase != null) ImageIO.Save(redactedBase, baseTemp!);
-                ImageIO.Save(flattened, FilePath, jpegQuality, webpQuality);
-                if (baseTemp != null)
-                {
-                    File.Move(baseTemp, basePath, overwrite: true);
-                    _writtenBase = BaseImage;
-                    _writtenRedaction = redaction;
-                }
-            }
-            catch
-            {
-                if (baseTemp != null) SidecarFiles.DeleteQuietly(baseTemp);
-                throw;
-            }
-            WriteSidecarJson(jsonPath, new FileInfo(FilePath), new FileInfo(basePath).Length, annotationsJson, effectsJson);
-        }
+        var annotationsJson = JsonSerializer.SerializeToUtf8Bytes(Annotations, AnnotationJson.Options);
+        byte[]? effectsJson = Effects.IsEmpty ? null : JsonSerializer.SerializeToUtf8Bytes(Effects, AnnotationJson.Options);
+        var redaction = RedactionKey();
+        bool writeBase = !ReferenceEquals(BaseImage, _writtenBase) || redaction != _writtenRedaction || !File.Exists(basePath);
+        return new SaveJob(FilePath, Version, flattened, jpegQuality, webpQuality)
+        {
+            Sidecar = (basePath, jsonPath, annotationsJson, effectsJson),
+            RedactedBase = writeBase ? RedactedBase() : null,
+            BaseImage = BaseImage,
+            Redaction = redaction,
+        };
+    }
 
-        _savedVersion = Version;
-        SidecarFiles.CleanOrphans(Path.GetDirectoryName(FilePath)!);
+    /// <summary>
+    /// Last part of <see cref="Save"/>, once <see cref="SaveJob.Write"/> succeeded: the document is clean if it did not
+    /// change since <see cref="PrepareSave"/>.
+    /// </summary>
+    public void CompleteSave(SaveJob job)
+    {
+        if (job.BaseWritten)
+        {
+            _writtenBase = job.BaseImage;
+            _writtenRedaction = job.Redaction;
+        }
+        _savedVersion = job.Version;
         RaiseChanged();
+    }
+
+    /// <summary>What <see cref="Save"/> writes, read from the document by <see cref="PrepareSave"/>.</summary>
+    public sealed class SaveJob
+    {
+        private readonly string _filePath;
+        private readonly PixelBuffer _flattened;
+        private readonly int _jpegQuality, _webpQuality;
+
+        internal SaveJob(string filePath, long version, PixelBuffer flattened, int jpegQuality, int webpQuality)
+        {
+            _filePath = filePath;
+            Version = version;
+            _flattened = flattened;
+            _jpegQuality = jpegQuality;
+            _webpQuality = webpQuality;
+        }
+
+        internal long Version { get; }
+        /// <summary>Null without annotations and effects: the capture alone, its sidecar files deleted.</summary>
+        internal (string BasePath, string JsonPath, byte[] Annotations, byte[]? Effects)? Sidecar { get; init; }
+        /// <summary>The base image to write, null when the one in the sidecar folder is still right.</summary>
+        internal PixelBuffer? RedactedBase { get; init; }
+        internal EditorImage? BaseImage { get; init; }
+        internal string? Redaction { get; init; }
+        internal bool BaseWritten { get; private set; }
+
+        /// <summary>Encodes and writes the files; any thread, once.</summary>
+        public void Write()
+        {
+            if (Sidecar is not { } sidecar)
+            {
+                ImageIO.Save(_flattened, _filePath, _jpegQuality, _webpQuality);
+                SidecarFiles.Delete(_filePath);
+            }
+            else
+            {
+                SidecarFiles.EnsureFolder(Path.GetDirectoryName(sidecar.BasePath)!);
+                // The new base waits beside the old one until the capture is written: a failure in between leaves the
+                // capture, its base and its annotation file as they were, still matching.
+                var baseTemp = RedactedBase != null ? sidecar.BasePath + SidecarFiles.TempSuffix : null;
+                try
+                {
+                    if (RedactedBase != null) ImageIO.Save(RedactedBase, baseTemp!);
+                    ImageIO.Save(_flattened, _filePath, _jpegQuality, _webpQuality);
+                    if (baseTemp != null)
+                    {
+                        File.Move(baseTemp, sidecar.BasePath, overwrite: true);
+                        BaseWritten = true;
+                    }
+                }
+                catch
+                {
+                    if (baseTemp != null) SidecarFiles.DeleteQuietly(baseTemp);
+                    throw;
+                }
+                WriteSidecarJson(sidecar.JsonPath, new FileInfo(_filePath), new FileInfo(sidecar.BasePath).Length, sidecar.Annotations, sidecar.Effects);
+            }
+            SidecarFiles.CleanOrphans(Path.GetDirectoryName(_filePath)!);
+        }
     }
 
     /// <param name="effectsJson">Null without effects: the file then keeps the format of version 1, still read by older versions.</param>

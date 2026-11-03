@@ -17,7 +17,7 @@
         </Style>
     </Window.Styles>
     <StackPanel Margin="20,16,20,18">
-        <TextBlock Classes="label" Text="{l:T Player.Gif.Range}" />
+        <TextBlock Classes="label" Text="{l:T Player.Export.Range}" />
         <ComboBox x:Name="RangeBox" HorizontalAlignment="Stretch" Margin="0,0,0,12" />
 
         <TextBlock Classes="label" Text="{l:T Player.Web.Format}" />
@@ -71,7 +71,7 @@
 
 
         <StackPanel Orientation="Horizontal" HorizontalAlignment="Right" Margin="0,16,0,0" Spacing="8">
-            <Button Classes="accent" Content="{l:T Player.Gif.Export}" IsDefault="True" Padding="14,4" Click="OnOk" />
+            <Button Classes="accent" Content="{l:T Player.Export.Ok}" IsDefault="True" Padding="14,4" Click="OnOk" />
             <Button Content="{l:T Common.Cancel}" IsCancel="True" Padding="14,4" Click="OnCancel" />
         </StackPanel>
     </StackPanel>

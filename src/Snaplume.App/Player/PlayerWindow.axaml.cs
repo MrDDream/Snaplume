@@ -62,6 +62,8 @@ public partial class PlayerWindow : Window
     private TimeSpan? _outPoint;
     /// <summary>Export in progress (one at a time), to cancel it.</summary>
     private CancellationTokenSource? _export;
+    /// <summary>Pictures of the video saved one after the other (see <see cref="ExportFrame"/>).</summary>
+    private readonly SemaphoreSlim _frameSaving = new(1, 1);
 
     // The picture: the latest frame of the player (copied on its thread), shown on the UI thread.
     private readonly object _frameLock = new();
@@ -250,8 +252,15 @@ public partial class PlayerWindow : Window
                 resized = true;
             }
             using var locked = _bitmap.Lock();
-            for (int y = 0; y < height; y++)
-                Marshal.Copy(frame.Pixels, y * frame.Stride, locked.Address + y * locked.RowBytes, frame.Stride);
+            if (locked.RowBytes == frame.Stride)
+            {
+                Marshal.Copy(frame.Pixels, 0, locked.Address, frame.Stride * height);
+            }
+            else
+            {
+                for (int y = 0; y < height; y++)
+                    Marshal.Copy(frame.Pixels, y * frame.Stride, locked.Address + y * locked.RowBytes, frame.Stride);
+            }
         }
         VideoImage.InvalidateVisual();
         if (resized)
@@ -423,20 +432,30 @@ public partial class PlayerWindow : Window
             var position = PlaybackPosition;
             var name = string.Create(CultureInfo.InvariantCulture,
                 $"{Path.GetFileNameWithoutExtension(FilePath)}_{(int)position.TotalMinutes:00}-{position.Seconds:00}");
-            var path = await Task.Run(() =>
+            string path;
+            // One picture at a time: two presses within the same second would choose the same free name.
+            await _frameSaving.WaitAsync();
+            try
             {
-                Directory.CreateDirectory(folder);
-                var target = FileOps.UniquePath(folder, name, ".png");
-                ImageIO.Save(picture.MakeOpaque(), target);
-                return target;
-            });
+                path = await Task.Run(() =>
+                {
+                    Directory.CreateDirectory(folder);
+                    var target = FileOps.UniquePath(folder, name, ".png");
+                    ImageIO.Save(picture.MakeOpaque(), target);
+                    return target;
+                });
+            }
+            finally
+            {
+                _frameSaving.Release();
+            }
             App.Instance.Captures.NotifySaved(path);
-            ShowOsd(Loc.T("Player.Osd.FrameSaved"));
+            if (!_closing) ShowOsd(Loc.T("Player.Osd.FrameSaved"));
         }
         catch (Exception ex)
         {
             ErrorLog.Write("Export d'une image de la vidéo", ex);
-            ShowOsd(Loc.T("Player.Osd.FrameFailed"));
+            if (!_closing) ShowOsd(Loc.T("Player.Osd.FrameFailed"));
         }
     }
 
@@ -527,10 +546,39 @@ public partial class PlayerWindow : Window
         Canvas.SetTop(OutMarker, middle - OutMarker.Height / 2);
     }
 
-    /// <summary>Exports the extract between the in and out points to a new MP4 next to the video.</summary>
-    private async void ExportClip()
+    private void ExportClip() => RunCommand(ExportClipAsync);
+    private void ExportWeb() => RunCommand(ExportWebAsync);
+    private void ExportGif() => RunCommand(ExportGifAsync);
+
+    /// <summary>
+    /// Runs an export started from a key or a menu, which nothing awaits: an unexpected failure (a dialog, the search
+    /// for ffmpeg...) is logged and shown instead of being lost. The exports report their expected failures themselves.
+    /// </summary>
+    private async void RunCommand(Func<Task> command)
     {
-        if (!CanEdit || IsExporting()) return;
+        try
+        {
+            await command();
+        }
+        catch (Exception ex)
+        {
+            ErrorLog.Write("Export de la vidéo", ex);
+            if (_closing) return;
+            try
+            {
+                await Dialogs.ShowAsync(this, Loc.T("Player.ExportFailed", ex.Message), "Snaplume", DialogButtons.Ok, DialogIcon.Error);
+            }
+            catch (Exception dialogEx)
+            {
+                ErrorLog.Write("Export de la vidéo", dialogEx);
+            }
+        }
+    }
+
+    /// <summary>Exports the extract between the in and out points to a new MP4 next to the video.</summary>
+    private async Task ExportClipAsync()
+    {
+        if (!CanEdit || ExportBusy()) return;
         if (_inPoint == null && _outPoint == null)
         {
             ShowOsd(Loc.T("Player.Osd.NoRange"), 3);
@@ -553,9 +601,9 @@ public partial class PlayerWindow : Window
     /// Asks the format and the size (or quality), then re-encodes the video or the extract next to it
     /// ("name.discord.mp4", "name.webm"...).
     /// </summary>
-    private async void ExportWeb()
+    private async Task ExportWebAsync()
     {
-        if (!CanEdit || IsExporting()) return;
+        if (!CanEdit || ExportBusy()) return;
         var (start, end) = Range;
         if (end - start < MinRange)
         {
@@ -602,9 +650,9 @@ public partial class PlayerWindow : Window
     }
 
     /// <summary>Asks the GIF options, then makes the GIF next to the video.</summary>
-    private async void ExportGif()
+    private async Task ExportGifAsync()
     {
-        if (!CanEdit || IsExporting()) return;
+        if (!CanEdit || ExportBusy()) return;
         // Same rule as the MP4 extract: a selection (or a whole video) shorter than MinRange is refused.
         var (start, end) = Range;
         if (end - start < MinRange)
@@ -628,7 +676,11 @@ public partial class PlayerWindow : Window
             (path, progress, cancel) => VideoGifExport.ExportAsync(video, source, path, settings, duration, progress, cancel));
     }
 
-    private bool IsExporting()
+    /// <summary>An export (extract, GIF, web) is running; the pictures saved with S, done in a moment, are not counted.</summary>
+    internal bool IsExporting => _export != null && !_closing;
+
+    /// <summary>True, with a message, when an export is already running.</summary>
+    private bool ExportBusy()
     {
         if (_export == null) return false;
         ShowOsd(Loc.T("Player.Osd.ExportBusy"));
@@ -820,9 +872,16 @@ public partial class PlayerWindow : Window
 
     private async void OpenWithDefaultPlayer()
     {
-        // FileOps logs the reason (e.g. no application associated with MP4 files).
-        if (!FileOps.OpenWithDefaultApp(FilePath))
-            await Dialogs.ShowAsync(this, Loc.T("Player.OpenFailed"), "Snaplume", DialogButtons.Ok, DialogIcon.Error);
+        try
+        {
+            // FileOps logs the reason (e.g. no application associated with MP4 files).
+            if (!FileOps.OpenWithDefaultApp(FilePath))
+                await Dialogs.ShowAsync(this, Loc.T("Player.OpenFailed"), "Snaplume", DialogButtons.Ok, DialogIcon.Error);
+        }
+        catch (Exception ex)
+        {
+            ErrorLog.Write("Ouverture dans le lecteur par défaut", ex);
+        }
     }
 
     /// <summary>Mouse wheel seeks, like mpv (Ctrl+wheel changes the volume).</summary>

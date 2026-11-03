@@ -328,6 +328,102 @@ public class EditorWindowTests
         }
     }
 
+    [AvaloniaFact]
+    public async Task Save_runs_in_the_background_and_a_close_meanwhile_waits_for_it()
+    {
+        var (window, canvas, folder) = Open();
+        using (folder)
+        {
+            var document = canvas.Document!;
+            var before = document.BeginChange();
+            document.Annotations.Add(new RectangleAnnotation { Start = new(20, 20), End = new(120, 80), Color = Colors.Red, Filled = true });
+            document.CommitChange(before);
+            bool closed = false;
+            window.Closed += (_, _) => closed = true;
+            var saveMethod = typeof(EditorWindow).GetMethod("SaveAsync", BindingFlags.Instance | BindingFlags.NonPublic)!;
+
+            var save = (Task<bool>)saveMethod.Invoke(window, null)!;
+            // While the files are written: the commands are disabled, a second save does nothing, a close waits.
+            var saveButton = window.FindControl<Button>("SaveButton")!;
+            Assert.False(save.IsCompleted);
+            Assert.False(saveButton.IsEnabled);
+            var second = (Task<bool>)saveMethod.Invoke(window, null)!;
+            Assert.True(second.IsCompleted);
+            Assert.False(second.Result);
+            window.Close();
+            Assert.False(closed);
+
+            Assert.True(await save);
+            Assert.False(document.IsDirty);
+            Assert.True(saveButton.IsEnabled);
+            Dispatcher.UIThread.RunJobs();
+            Assert.True(closed);
+            Assert.True(Near(At(ImageIO.Load(window.FilePath), 70, 50), Colors.Red));
+        }
+    }
+
+    [AvaloniaFact]
+    public void Changes_are_told_once_and_once_done()
+    {
+        var (window, canvas, folder) = Open();
+        using (folder)
+        {
+            var document = canvas.Document!;
+            var counts = new List<int>();
+            document.Changed += () => counts.Add(document.Annotations.Count);
+
+            // A bullet is added in one click: the window is told with the bullet there.
+            window.KeyPress(Key.N, RawInputModifiers.None, PhysicalKey.N, "n");
+            window.MouseDown(OnWindow(window, canvas, 100, 100), MouseButton.Left);
+            window.MouseUp(OnWindow(window, canvas, 100, 100), MouseButton.Left);
+            var step = Assert.IsType<StepAnnotation>(Assert.Single(document.Annotations));
+            Assert.NotEmpty(counts);
+            Assert.All(counts, count => Assert.Equal(1, count));
+
+            // A style applied to the selection: told once, with the new style.
+            var colors = new List<Color>();
+            document.Changed += () => colors.Add(step.Color);
+            canvas.Select(step);
+            canvas.ApplyToSelection(a => a.Color = Colors.Blue);
+            Assert.Equal(new[] { Colors.Blue }, colors);
+
+            // Deleted: told once, without it.
+            counts.Clear();
+            window.KeyPress(Key.Delete, RawInputModifiers.None, PhysicalKey.Delete, null);
+            Assert.Equal(new[] { 0 }, counts);
+            window.KeyPress(Key.Z, RawInputModifiers.Control, PhysicalKey.Z, "z");
+            Assert.Single(document.Annotations);
+            ForceClose(window);
+        }
+    }
+
+    [AvaloniaFact]
+    public void Escape_closes_the_border_gallery_and_frees_its_samples()
+    {
+        var (window, canvas, folder) = Open();
+        using (folder)
+        {
+            canvas.Document!.SetEffects(ImageEffects.None with { Shadow = true });
+            window.KeyPress(Key.A, RawInputModifiers.None, PhysicalKey.A, "a");
+            Dispatcher.UIThread.RunJobs();
+            var popup = window.FindControl<Popup>("BordersPopup")!;
+            window.FindControl<ToggleButton>("BordersButton")!.IsChecked = true;
+            Dispatcher.UIThread.RunJobs();
+            Assert.True(popup.IsOpen);
+            var layouts = (List<EffectsLayout>)typeof(EditorWindow).GetField("_borderLayouts", BindingFlags.Instance | BindingFlags.NonPublic)!
+                .GetValue(window)!;
+            Assert.NotEmpty(layouts);
+
+            window.KeyPress(Key.Escape, RawInputModifiers.None, PhysicalKey.Escape, null);
+            Dispatcher.UIThread.RunJobs();
+            Assert.False(popup.IsOpen);
+            Assert.Empty(layouts);
+            // That Escape only closed the gallery: the tool is kept.
+            Assert.Equal(EditorTool.Arrow, canvas.Tool);
+            ForceClose(window);
+        }
+    }
+
     /// <summary>The window, or what a popup shows, saved with the test results to look at it.</summary>
     private static void SaveRendering(object shown, string name)
     {
