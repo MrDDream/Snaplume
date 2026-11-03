@@ -31,7 +31,7 @@ jobs:
 
       - uses: actions/setup-dotnet@67a3573c9a986a3f9c594539f4ab511d57bb3ce9 # v4.3.1
         with:
-          dotnet-version: 10.0.x
+          dotnet-version: 10.0.4xx   # the feature band of global.json, latest patch
 
       # The whole solution on Windows; on Linux, everything but the Windows-only projects (the tests build
       # Snaplume.Core, the Linux build of Snaplume.App and Snaplume.Platform.Linux).
