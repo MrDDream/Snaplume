@@ -35,7 +35,11 @@ public partial class SettingsWindow : Window
     /// <summary>The newer version found by "Check for updates".</summary>
     private UpdateChecker.Release? _update;
 
+    /// <summary>The settings as the window shows and edits them (see <see cref="MergeInto"/> to apply them).</summary>
     public AppSettings Result { get; }
+
+    /// <summary>The values as the window opened: tells which ones the user changed.</summary>
+    private readonly AppSettings _original;
 
     /// <summary>For the XAML designer only.</summary>
     public SettingsWindow() : this(new AppSettings())
@@ -47,6 +51,7 @@ public partial class SettingsWindow : Window
     {
         InitializeComponent();
         Result = settings;
+        _original = settings.Clone();
 
         var languages = new List<ChoiceItem> { new("", Loc.T("Settings.LanguageAutoSystem")) };
         languages.AddRange(Loc.Languages.Select(l => new ChoiceItem(l.Code, l.Name)));
@@ -414,7 +419,7 @@ public partial class SettingsWindow : Window
             if (folder.Length == 0 || !Path.IsPathFullyQualified(folder))
                 throw new ArgumentException(Loc.T("Settings.FolderNotAbsolute"));
             folder = Path.TrimEndingDirectorySeparator(Path.GetFullPath(folder));
-            if (IsTooBroad(folder))
+            if (PathRules.IsTooBroad(folder))
             {
                 FocusFolder();
                 await Dialogs.ShowAsync(this, Loc.T("Settings.FolderTooBroad", folder, AppSettings.DefaultWorkspaceFolder), Loc.T("Settings.Title"),
@@ -436,7 +441,7 @@ public partial class SettingsWindow : Window
         }
 
         // E.g. deleted captures do not go to the trash on a network folder: they are lost. Asked only for a new folder.
-        bool changed = !string.Equals(folder, Path.TrimEndingDirectorySeparator(Result.WorkspaceFolder), App.PathComparison);
+        bool changed = !PathRules.SamePath(folder, Result.WorkspaceFolder);
         string? warning = null;
         bool network = false;
         if (changed && AppServices.HasPlatform)
@@ -469,61 +474,52 @@ public partial class SettingsWindow : Window
     }
 
     /// <summary>
-    /// A drive root, a personal folder (home, Desktop, Documents, Pictures, Videos, Music, Downloads), a folder
-    /// holding one of them (C:\Users, /home) or a system folder: each sub-folder of the captures folder becomes a
-    /// workspace, and deleting a workspace sends its whole folder to the trash.
+    /// Copies onto <paramref name="target"/> (a fresh copy of the current settings) the values the user changed in this
+    /// window, and only those: what changed elsewhere while it was open (the active workspace, the quick panel, the
+    /// recording bar, the update checks...) is kept.
     /// </summary>
-    internal static bool IsTooBroad(string folder)
+    public void MergeInto(AppSettings target)
     {
-        folder = Path.TrimEndingDirectorySeparator(folder);
-        // Drive root (C:\), network share root (\\server\share), or "/".
-        if (Path.GetPathRoot(folder) is { Length: > 0 } root && SameFolder(root, folder)) return true;
-
-        var personal = new[]
+        void Take<T>(Func<AppSettings, T> get, Action<AppSettings, T> set)
         {
-            Environment.SpecialFolder.UserProfile, Environment.SpecialFolder.Desktop, Environment.SpecialFolder.DesktopDirectory,
-            Environment.SpecialFolder.MyDocuments, Environment.SpecialFolder.MyPictures, Environment.SpecialFolder.MyVideos,
-            Environment.SpecialFolder.MyMusic, Environment.SpecialFolder.CommonDesktopDirectory,
-            Environment.SpecialFolder.CommonDocuments, Environment.SpecialFolder.CommonPictures, Environment.SpecialFolder.CommonVideos,
-        }.Select(Environment.GetFolderPath).Append(DownloadsFolder()).Where(p => !string.IsNullOrEmpty(p)).ToList();
-        // The folder itself, or one of its parents (e.g. C:\Users or /home, or a OneDrive folder holding Documents).
-        if (personal.Any(p => SameFolder(p, folder) || IsInside(p, folder))) return true;
-
-        var system = new[]
-        {
-            Environment.SpecialFolder.Windows, Environment.SpecialFolder.ProgramFiles, Environment.SpecialFolder.ProgramFilesX86,
-            Environment.SpecialFolder.CommonApplicationData,
-        }.Select(Environment.GetFolderPath).Where(p => !string.IsNullOrEmpty(p)).ToList();
-        if (!OperatingSystem.IsWindows())
-            system.AddRange(new[] { "/bin", "/boot", "/dev", "/etc", "/lib", "/lib64", "/opt", "/proc", "/run", "/sbin", "/srv", "/sys", "/usr", "/var" });
-        // System folders and everything inside them.
-        return system.Any(p => SameFolder(p, folder) || IsInside(folder, p));
-    }
-
-    private static bool SameFolder(string a, string b) =>
-        string.Equals(Path.TrimEndingDirectorySeparator(Path.GetFullPath(a)), Path.TrimEndingDirectorySeparator(Path.GetFullPath(b)),
-            App.PathComparison);
-
-    /// <summary>True when <paramref name="path"/> is strictly inside <paramref name="folder"/>.</summary>
-    private static bool IsInside(string path, string folder)
-    {
-        var parent = Path.TrimEndingDirectorySeparator(Path.GetFullPath(folder)) + Path.DirectorySeparatorChar;
-        return Path.GetFullPath(path).StartsWith(parent, App.PathComparison);
-    }
-
-    /// <summary>The Downloads folder (wherever the user moved it), or "" if unknown.</summary>
-    private static string DownloadsFolder()
-    {
-        try
-        {
-            if (AppServices.HasPlatform && AppServices.Platform.Shell.DownloadsFolder is { Length: > 0 } downloads) return downloads;
+            var edited = get(Result);
+            if (!EqualityComparer<T>.Default.Equals(edited, get(_original))) set(target, edited);
         }
-        catch (Exception ex)
-        {
-            ErrorLog.Write("Dossier Téléchargements", ex);
-        }
-        var profile = Environment.GetFolderPath(Environment.SpecialFolder.UserProfile);
-        return profile.Length > 0 ? Path.Combine(profile, "Downloads") : "";
+
+        Take(s => s.WorkspaceFolder, (s, v) => s.WorkspaceFolder = v);
+        Take(s => s.FileNamePrefix, (s, v) => s.FileNamePrefix = v);
+        Take(s => s.ImageFormat, (s, v) => s.ImageFormat = v);
+        Take(s => s.OpenEditorAfterCapture, (s, v) => s.OpenEditorAfterCapture = v);
+        Take(s => s.CopyToClipboardAfterCapture, (s, v) => s.CopyToClipboardAfterCapture = v);
+        Take(s => s.ShowPanelAfterCapture, (s, v) => s.ShowPanelAfterCapture = v);
+        Take(s => s.StartWithSession, (s, v) => s.StartWithSession = v);
+        Take(s => s.IncludeCursor, (s, v) => s.IncludeCursor = v);
+        Take(s => s.DelaySeconds, (s, v) => s.DelaySeconds = v);
+        Take(s => s.VideoSystemAudio, (s, v) => s.VideoSystemAudio = v);
+        Take(s => s.VideoMicrophone, (s, v) => s.VideoMicrophone = v);
+        Take(s => s.VideoMicrophoneDevice, (s, v) => s.VideoMicrophoneDevice = v);
+        Take(s => s.VideoShowClicks, (s, v) => s.VideoShowClicks = v);
+        Take(s => s.VideoClickZoom, (s, v) => s.VideoClickZoom = v);
+        Take(s => s.VideoFramerate, (s, v) => s.VideoFramerate = v);
+        Take(s => s.VideoWebcam, (s, v) => s.VideoWebcam = v);
+        Take(s => s.VideoWebcamDevice, (s, v) => s.VideoWebcamDevice = v);
+        Take(s => s.VideoWebcamCorner, (s, v) => s.VideoWebcamCorner = v);
+        Take(s => s.VideoWebcamSize, (s, v) => s.VideoWebcamSize = v);
+        Take(s => s.VideoFormat, (s, v) => s.VideoFormat = v);
+        Take(s => s.VideoCompression, (s, v) => s.VideoCompression = v);
+        Take(s => s.VideoCompressionMegabytes, (s, v) => s.VideoCompressionMegabytes = v);
+        Take(s => s.VideoKeepOriginal, (s, v) => s.VideoKeepOriginal = v);
+        Take(s => s.HotkeyRegion, (s, v) => s.HotkeyRegion = v);
+        Take(s => s.HotkeyScreen, (s, v) => s.HotkeyScreen = v);
+        Take(s => s.HotkeyWindow, (s, v) => s.HotkeyWindow = v);
+        Take(s => s.HotkeyRepeat, (s, v) => s.HotkeyRepeat = v);
+        Take(s => s.HotkeyDelayed, (s, v) => s.HotkeyDelayed = v);
+        Take(s => s.HotkeyVideo, (s, v) => s.HotkeyVideo = v);
+        Take(s => s.HotkeyText, (s, v) => s.HotkeyText = v);
+        Take(s => s.ReplaceSnippingShortcut, (s, v) => s.ReplaceSnippingShortcut = v);
+        Take(s => s.Language, (s, v) => s.Language = v);
+        Take(s => s.Theme, (s, v) => s.Theme = v);
+        Take(s => s.CheckForUpdates, (s, v) => s.CheckForUpdates = v);
     }
 
     private void OnCancel(object? sender, RoutedEventArgs e) => Close();

@@ -1,6 +1,7 @@
 using Avalonia;
 using Avalonia.Controls;
 using Avalonia.Controls.ApplicationLifetimes;
+using Avalonia.Input;
 using Avalonia.Layout;
 using Avalonia.Media;
 using Snaplume.Core;
@@ -15,7 +16,8 @@ public enum DialogIcon { None, Information, Question, Warning, Error }
 
 /// <summary>
 /// Message boxes (Avalonia has none). Replace WPF's MessageBox.Show: the call is awaited, the window is modal to
-/// its owner (or centered on the screen without one). Closing the window answers Cancel, or No / Ok without Cancel.
+/// its owner (or centered on the screen without one). Closing the window, or Escape, answers Cancel, or No / Ok without
+/// Cancel.
 /// </summary>
 public static class Dialogs
 {
@@ -45,7 +47,11 @@ public static class Dialogs
         Button? focused = null;
         void Add(string key, DialogResult answer, bool accent)
         {
-            var button = new Button { Content = Loc.T(key), MinWidth = 88, HorizontalContentAlignment = HorizontalAlignment.Center };
+            // Escape answers like closing the window: Cancel, else No, else Ok.
+            var button = new Button
+            {
+                Content = Loc.T(key), MinWidth = 88, HorizontalContentAlignment = HorizontalAlignment.Center, IsCancel = answer == result,
+            };
             if (accent) button.Classes.Add("accent");
             button.Click += (_, _) =>
             {
@@ -86,6 +92,13 @@ public static class Dialogs
         body.Children.Add(new SelectableTextBlock { Text = text, TextWrapping = TextWrapping.Wrap, MaxWidth = 460 });
         window.Content = body;
         window.Opened += (_, _) => focused?.Focus();
+        // IsCancel needs the focus on a button: Escape also closes from the text (selected with the mouse).
+        window.KeyDown += (_, e) =>
+        {
+            if (e.Key != Key.Escape || e.Handled) return;
+            e.Handled = true;
+            window.Close();
+        };
 
         if (owner is { IsVisible: true }) await window.ShowDialog(owner);
         else

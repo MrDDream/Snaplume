@@ -1,0 +1,62 @@
+{
+  "fr": {
+    "Update.Postponed": "Un éditeur a encore des modifications non enregistrées : Snaplume ne s'est pas fermé et la mise à jour attend. Enregistrez ou fermez l'éditeur, puis réessayez.",
+    "App.SettingsResetTitle": "Paramètres réinitialisés",
+    "App.SettingsResetText": "Le fichier des paramètres était illisible : Snaplume a repris les réglages par défaut.",
+    "App.SettingsResetTextBackup": "Le fichier des paramètres était illisible : Snaplume a repris les réglages par défaut. Une copie de l'ancien fichier est gardée ici :\n{0}",
+    "Workspaces.Folder.TooBroad": "« {0} » est un dossier trop général pour un espace de travail (un lecteur, un dossier personnel ou du système). Choisissez un dossier réservé à ces captures, par exemple l'un de ses sous-dossiers.",
+    "Workspaces.Folder.PickFailed": "Impossible d'ouvrir le choix du dossier",
+    "Workspaces.ConversionRunning": "Un enregistrement vidéo est en cours de conversion vers cet espace de travail : attendez la fin de la conversion.",
+    "Gallery.Import.Failed": "Impossible d'ajouter les fichiers"
+  },
+  "en": {
+    "Update.Postponed": "An editor still has unsaved changes: Snaplume did not close and the update is waiting. Save or close the editor, then try again.",
+    "App.SettingsResetTitle": "Settings reset",
+    "App.SettingsResetText": "The settings file could not be read: Snaplume is using the default settings.",
+    "App.SettingsResetTextBackup": "The settings file could not be read: Snaplume is using the default settings. A copy of the old file is kept here:\n{0}",
+    "Workspaces.Folder.TooBroad": "“{0}” is too general a folder for a workspace (a drive, a personal or system folder). Choose a folder kept for these captures, for example one of its sub-folders.",
+    "Workspaces.Folder.PickFailed": "Could not open the folder picker",
+    "Workspaces.ConversionRunning": "A video recording is being converted into this workspace: wait until the conversion ends.",
+    "Gallery.Import.Failed": "Could not add the files"
+  },
+  "de": {
+    "Update.Postponed": "Ein Editor hat noch ungespeicherte Änderungen: Snaplume wurde nicht beendet, das Update wartet. Speichern oder schließen Sie den Editor und versuchen Sie es dann erneut.",
+    "App.SettingsResetTitle": "Einstellungen zurückgesetzt",
+    "App.SettingsResetText": "Die Einstellungsdatei war nicht lesbar: Snaplume verwendet die Standardeinstellungen.",
+    "App.SettingsResetTextBackup": "Die Einstellungsdatei war nicht lesbar: Snaplume verwendet die Standardeinstellungen. Eine Kopie der alten Datei liegt hier:\n{0}",
+    "Workspaces.Folder.TooBroad": "„{0}“ ist ein zu allgemeiner Ordner für einen Arbeitsbereich (ein Laufwerk, ein persönlicher oder ein Systemordner). Wählen Sie einen Ordner nur für diese Aufnahmen, zum Beispiel einen seiner Unterordner.",
+    "Workspaces.Folder.PickFailed": "Die Ordnerauswahl konnte nicht geöffnet werden",
+    "Workspaces.ConversionRunning": "Eine Videoaufnahme wird gerade in diesen Arbeitsbereich konvertiert: Warten Sie, bis die Konvertierung abgeschlossen ist.",
+    "Gallery.Import.Failed": "Die Dateien konnten nicht hinzugefügt werden"
+  },
+  "es": {
+    "Update.Postponed": "Un editor todavía tiene cambios sin guardar: Snaplume no se ha cerrado y la actualización espera. Guarde o cierre el editor y vuelva a intentarlo.",
+    "App.SettingsResetTitle": "Configuración restablecida",
+    "App.SettingsResetText": "No se pudo leer el archivo de configuración: Snaplume usa la configuración predeterminada.",
+    "App.SettingsResetTextBackup": "No se pudo leer el archivo de configuración: Snaplume usa la configuración predeterminada. Se conserva una copia del archivo anterior aquí:\n{0}",
+    "Workspaces.Folder.TooBroad": "«{0}» es una carpeta demasiado general para un espacio de trabajo (una unidad, una carpeta personal o del sistema). Elija una carpeta reservada para estas capturas, por ejemplo una de sus subcarpetas.",
+    "Workspaces.Folder.PickFailed": "No se pudo abrir el selector de carpetas",
+    "Workspaces.ConversionRunning": "Se está convirtiendo una grabación de vídeo hacia este espacio de trabajo: espere a que termine la conversión.",
+    "Gallery.Import.Failed": "No se pudieron añadir los archivos"
+  },
+  "it": {
+    "Update.Postponed": "Un editor ha ancora modifiche non salvate: Snaplume non si è chiuso e l'aggiornamento è in attesa. Salva o chiudi l'editor, poi riprova.",
+    "App.SettingsResetTitle": "Impostazioni ripristinate",
+    "App.SettingsResetText": "Il file delle impostazioni non era leggibile: Snaplume usa le impostazioni predefinite.",
+    "App.SettingsResetTextBackup": "Il file delle impostazioni non era leggibile: Snaplume usa le impostazioni predefinite. Una copia del vecchio file è conservata qui:\n{0}",
+    "Workspaces.Folder.TooBroad": "«{0}» è una cartella troppo generica per un'area di lavoro (un'unità, una cartella personale o di sistema). Scegli una cartella riservata a queste acquisizioni, ad esempio una delle sue sottocartelle.",
+    "Workspaces.Folder.PickFailed": "Impossibile aprire la scelta della cartella",
+    "Workspaces.ConversionRunning": "Una registrazione video è in fase di conversione verso quest'area di lavoro: attendi la fine della conversione.",
+    "Gallery.Import.Failed": "Impossibile aggiungere i file"
+  },
+  "ar": {
+    "Update.Postponed": "لا يزال أحد المحررات يحتوي على تغييرات غير محفوظة: لم يُغلَق Snaplume والتحديث في الانتظار. احفظ المحرر أو أغلقه، ثم أعد المحاولة.",
+    "App.SettingsResetTitle": "أُعيد ضبط الإعدادات",
+    "App.SettingsResetText": "تعذّرت قراءة ملف الإعدادات: يستخدم Snaplume الإعدادات الافتراضية.",
+    "App.SettingsResetTextBackup": "تعذّرت قراءة ملف الإعدادات: يستخدم Snaplume الإعدادات الافتراضية. احتُفظ بنسخة من الملف القديم هنا:\n{0}",
+    "Workspaces.Folder.TooBroad": "«{0}» مجلد عام أكثر من اللازم لمساحة عمل (محرك أقراص أو مجلد شخصي أو مجلد للنظام). اختر مجلدًا مخصصًا لهذه اللقطات، مثل أحد مجلداته الفرعية.",
+    "Workspaces.Folder.PickFailed": "تعذّر فتح نافذة اختيار المجلد",
+    "Workspaces.ConversionRunning": "يجري تحويل تسجيل فيديو إلى مساحة العمل هذه: انتظر حتى ينتهي التحويل.",
+    "Gallery.Import.Failed": "تعذّرت إضافة الملفات"
+  }
+}

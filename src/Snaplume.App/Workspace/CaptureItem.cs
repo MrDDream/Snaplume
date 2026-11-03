@@ -32,6 +32,12 @@ public sealed class CaptureItem : INotifyPropertyChanged
     /// <summary>Failed attempts to read the thumbnail (file locked by another program).</summary>
     internal int ThumbnailFailures { get; set; }
 
+    /// <summary>
+    /// The thumbnail was read for the current file content (or the file has none to show): nothing to load until the
+    /// file changes or the thumbnail is let go (<see cref="Thumbnail"/> set to null, far from the visible part).
+    /// </summary>
+    internal bool ThumbnailCurrent { get; set; }
+
     /// <summary>Takes the current file information.</summary>
     /// <returns>True when the content changed: the thumbnail must be reloaded.</returns>
     public bool Update(DateTime created, DateTime modifiedUtc, long length)

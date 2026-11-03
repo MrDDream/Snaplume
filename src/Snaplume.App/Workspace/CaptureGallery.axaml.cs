@@ -35,8 +35,12 @@ public partial class CaptureGallery : UserControl
     private sealed record FileEntry(string Path, DateTime Created, DateTime CreatedUtc, DateTime ModifiedUtc, long Length);
 
     private readonly ObservableCollection<CaptureItem> _items = new();
-    private readonly Dictionary<string, CaptureItem> _cache = new(PathComparer);
+    private readonly Dictionary<string, CaptureItem> _cache = new(PathRules.Comparer);
+    /// <summary>Thumbnails being loaded, each with what cancels it (scrolled far away, file changed).</summary>
+    private readonly Dictionary<CaptureItem, CancellationTokenSource> _loading = new();
     private readonly DispatcherTimer _refreshTimer;
+    private ScrollViewer? _scroller;
+    private bool _thumbnailPassQueued;
     private readonly DispatcherTimer _watcherRestartTimer;
     private FileSystemWatcher? _watcher;
     private string _folder = "";
@@ -88,6 +92,12 @@ public partial class CaptureGallery : UserControl
         CaptureList.AddHandler(DragDrop.DragOverEvent, OnDragOver);
         CaptureList.AddHandler(DragDrop.DropEvent, OnDrop);
         ItemMenu.Opening += OnItemMenuOpening;
+        CaptureList.TemplateApplied += (_, e) =>
+        {
+            if (_scroller != null) _scroller.ScrollChanged -= OnScrollChanged;
+            _scroller = e.NameScope.Find<ScrollViewer>("PART_ScrollViewer");
+            if (_scroller != null) _scroller.ScrollChanged += OnScrollChanged;
+        };
 
         if (Avalonia.Application.Current is App { Captures: { } captures })
         {
@@ -97,8 +107,6 @@ public partial class CaptureGallery : UserControl
             Reload();
         }
     }
-
-    private static StringComparer PathComparer => OperatingSystem.IsWindows() ? StringComparer.OrdinalIgnoreCase : StringComparer.Ordinal;
 
     public int SelectedCount => CaptureList.SelectedItems?.Count ?? 0;
 
@@ -165,6 +173,7 @@ public partial class CaptureGallery : UserControl
         _refreshTimer.Stop();
         _watcherRestartTimer.Stop();
         _thumbnails.Cancel();
+        _loading.Clear();
         _watcher?.Dispose();
         _watcher = null;
     }
@@ -179,7 +188,7 @@ public partial class CaptureGallery : UserControl
     private void OnWorkspacesChanged()
     {
         // Another workspace was selected, or the active one renamed.
-        if (!SameFolder(Workspaces.ActiveFolder, _folder)) Reload();
+        if (!PathRules.SamePath(Workspaces.ActiveFolder, _folder)) Reload();
     }
 
     /// <summary>Starts watching the (possibly new) active workspace folder.</summary>
@@ -190,9 +199,12 @@ public partial class CaptureGallery : UserControl
         _watcher = null;
         _thumbnails.Cancel();
         _thumbnails = new CancellationTokenSource();
+        _loading.Clear();
+        // A reading of the folder still on its way is never shown (it may be of the previous folder).
+        _refreshRun++;
 
         var folder = Workspaces.ActiveFolder;
-        if (!SameFolder(folder, _folder))
+        if (!PathRules.SamePath(folder, _folder))
         {
             _items.Clear();
             _cache.Clear();
@@ -283,8 +295,16 @@ public partial class CaptureGallery : UserControl
             files = new List<FileEntry>();
             unavailable = true;
         }
-        if (run != _refreshRun) return; // a newer refresh (or another folder) is on its way
-        Apply(files, unavailable);
+        // A newer refresh is on its way, or the gallery shows another folder now: this reading is never applied.
+        if (run != _refreshRun || !PathRules.SamePath(folder, _folder)) return;
+        try
+        {
+            Apply(files, unavailable);
+        }
+        catch (Exception ex)
+        {
+            ErrorLog.Write($"Affichage du dossier {folder}", ex);
+        }
     }
 
     private static List<FileEntry> ReadFolder(string folder)
@@ -318,19 +338,25 @@ public partial class CaptureGallery : UserControl
             }
             if (item.Update(file.Created, file.ModifiedUtc, file.Length))
             {
+                // Read again for the new content once near the visible part (the old one stays shown meanwhile).
                 item.ThumbnailFailures = 0;
-                LoadThumbnail(item);
+                item.ThumbnailCurrent = false;
+                if (_loading.Remove(item, out var outdated)) outdated.Cancel();
             }
             items.Add(item);
         }
         if (_cache.Count > items.Count)
         {
             var present = new HashSet<CaptureItem>(items);
-            foreach (var stale in _cache.Where(p => !present.Contains(p.Value)).Select(p => p.Key).ToList())
-                _cache.Remove(stale);
+            foreach (var stale in _cache.Where(p => !present.Contains(p.Value)).ToList())
+            {
+                _cache.Remove(stale.Key);
+                if (_loading.Remove(stale.Value, out var gone)) gone.Cancel();
+            }
         }
 
         Synchronize(items);
+        QueueThumbnailPass();
 
         if (_pendingSelection != null)
         {
@@ -341,7 +367,7 @@ public partial class CaptureGallery : UserControl
                 CaptureList.ScrollIntoView(created);
                 _pendingSelection = null;
             }
-            else if (!SameFolder(Path.GetDirectoryName(_pendingSelection), _folder))
+            else if (Path.GetDirectoryName(_pendingSelection) is not { } savedIn || !PathRules.SamePath(savedIn, _folder))
             {
                 _pendingSelection = null; // saved in another workspace
             }
@@ -412,18 +438,71 @@ public partial class CaptureGallery : UserControl
         }
     }
 
+    private void OnScrollChanged(object? sender, ScrollChangedEventArgs e) => QueueThumbnailPass();
+
+    /// <summary>Thumbnails looked at again once the layout is done (scrolled, resized, captures added or moved).</summary>
+    private void QueueThumbnailPass()
+    {
+        if (_thumbnailPassQueued) return;
+        _thumbnailPassQueued = true;
+        Dispatcher.UIThread.Post(UpdateThumbnails, DispatcherPriority.Background);
+    }
+
+    /// <summary>
+    /// Loads the thumbnails of the captures near the visible part of the gallery and lets go of those far from it. The
+    /// panel lays out every capture (it does not virtualize), so this keeps the memory bounded by what is on screen, not
+    /// by the size of the folder; the shared cache (<see cref="ThumbnailCache"/>) makes scrolling back cheap.
+    /// </summary>
+    private void UpdateThumbnails()
+    {
+        _thumbnailPassQueued = false;
+        if (_scroller is not { } scroller || CaptureList.ItemsPanelRoot is not { } panel || !IsShown) return;
+        double viewport = scroller.Viewport.Height;
+        if (viewport <= 0 || panel.TranslatePoint(default, scroller) is not { } origin) return;
+        // Loaded up to a screen ahead (shown at once when scrolling), let go beyond three screens.
+        double near = viewport, far = 3 * viewport;
+        for (int i = 0; i < _items.Count; i++)
+        {
+            if (CaptureList.ContainerFromIndex(i) is not { } container) continue;
+            double top = origin.Y + container.Bounds.Y, bottom = top + container.Bounds.Height;
+            var item = _items[i];
+            if (bottom >= -near && top <= viewport + near)
+            {
+                if (!item.ThumbnailCurrent && !_loading.ContainsKey(item)) LoadThumbnail(item);
+            }
+            else if (bottom < -far || top > viewport + far)
+            {
+                ReleaseThumbnail(item);
+            }
+        }
+    }
+
+    /// <summary>Lets go of the thumbnail of a capture far from the visible part (and stops loading it).</summary>
+    private void ReleaseThumbnail(CaptureItem item)
+    {
+        if (_loading.Remove(item, out var loading)) loading.Cancel();
+        if (item.Thumbnail == null) return;
+        item.Thumbnail = null;
+        item.ThumbnailCurrent = false;
+    }
+
     /// <summary>Thumbnail from the shared cache, decoded at the displayed size.</summary>
     private async void LoadThumbnail(CaptureItem item)
     {
-        var cancellation = _thumbnails.Token;
+        using var loading = CancellationTokenSource.CreateLinkedTokenSource(_thumbnails.Token);
+        _loading[item] = loading;
+        var cancellation = loading.Token;
         var (width, height) = ThumbnailBox();
         var modified = item.Modified;
         var length = item.Length;
+        bool retry = false;
         try
         {
             var thumbnail = await ThumbnailCache.GetAsync(item.Path, modified, length, item.IsVideo, width, height, cancellation);
             if (cancellation.IsCancellationRequested || item.Modified != modified || item.Length != length) return; // outdated
             item.ThumbnailFailures = 0;
+            // Also without an image to show (unknown format, damaged file): not tried again until the file changes.
+            item.ThumbnailCurrent = true;
             if (thumbnail == null) return;
             item.Thumbnail = thumbnail.Image;
             if (thumbnail.Dimensions.Length > 0) item.Dimensions = thumbnail.Dimensions;
@@ -434,15 +513,22 @@ public partial class CaptureGallery : UserControl
         catch (IOException)
         {
             // Locked by the program still writing it: try again a little later, a few times.
-            if (cancellation.IsCancellationRequested || ++item.ThumbnailFailures > MaxThumbnailRetries) return;
-            await Task.Delay(TimeSpan.FromSeconds(item.ThumbnailFailures * 1.5));
-            if (!cancellation.IsCancellationRequested && item.Modified == modified && _cache.ContainsKey(item.Path))
-                LoadThumbnail(item);
+            if (cancellation.IsCancellationRequested) return;
+            if (++item.ThumbnailFailures > MaxThumbnailRetries) item.ThumbnailCurrent = true;
+            else retry = true;
         }
         catch (Exception ex)
         {
             ErrorLog.Write($"Miniature de {item.Path}", ex);
         }
+        finally
+        {
+            if (_loading.TryGetValue(item, out var current) && current == loading) _loading.Remove(item);
+        }
+        if (!retry) return;
+        await Task.Delay(TimeSpan.FromSeconds(item.ThumbnailFailures * 1.5));
+        // Unless the gallery moved on meanwhile: another folder, the file changed or gone (the next pass loads it then).
+        if (!cancellation.IsCancellationRequested && item.Modified == modified && _cache.ContainsKey(item.Path)) QueueThumbnailPass();
     }
 
     /// <summary>Size of the thumbnail area in device pixels.</summary>
@@ -709,8 +795,10 @@ public partial class CaptureGallery : UserControl
         }
         try
         {
-            // To another drive, a move is a copy: not on the UI thread.
-            var summary = await Task.Run(() => Workspaces.MoveFiles(paths, workspace));
+            // The workspace resolved here (the settings belong to the UI thread); to another drive, a move is a copy: not
+            // on the UI thread.
+            var target = Workspaces.Resolve(workspace);
+            var summary = await Task.Run(() => Workspaces.MoveFiles(paths, target));
             if (!string.IsNullOrEmpty(summary)) Message?.Invoke(summary);
         }
         catch (Exception ex)
@@ -720,17 +808,22 @@ public partial class CaptureGallery : UserControl
         Refresh();
     }
 
-    /// <summary>Fills "Move to" with the other workspaces, and enables the commands that apply to the selection.</summary>
+    /// <summary>
+    /// Fills "Move to" with the other workspaces (as last read, see <see cref="WorkspaceListing"/>: the menu never waits
+    /// for a network folder), and enables the commands that apply to the selection.
+    /// </summary>
     private void OnItemMenuOpening(object? sender, CancelEventArgs e)
     {
         MoveToMenu.Items.Clear();
-        var active = Workspaces.ActiveName;
-        foreach (var name in Workspaces.List().Where(n => !string.Equals(n, active, StringComparison.OrdinalIgnoreCase)))
+        var listing = WorkspaceListing.Current;
+        WorkspaceListing.Refresh();
+        // The workspace shown here is left out.
+        foreach (var workspace in listing.Workspaces.Where(w => !PathRules.SamePath(w.Folder, _folder)))
         {
             // A TextBlock, so that an underscore in the name is not taken for an access key.
             // A workspace whose folder cannot be reached (unplugged drive) is shown, greyed.
-            var item = new MenuItem { Header = new TextBlock { Text = Workspaces.DisplayName(name) }, IsEnabled = Workspaces.IsAvailable(name) };
-            var target = name;
+            var item = new MenuItem { Header = new TextBlock { Text = Workspaces.DisplayName(workspace.Name) }, IsEnabled = !workspace.IsMissing };
+            var target = workspace.Name;
             item.Click += (_, _) => _ = MoveToWorkspaceAsync(SelectedPaths, target);
             MoveToMenu.Items.Add(item);
         }
@@ -748,26 +841,19 @@ public partial class CaptureGallery : UserControl
         App.Instance.OpenWindows.OfType<EditorWindow>().Any(w => App.IsSamePath(w.FilePath, path)) ||
         App.Instance.OpenWindows.OfType<PlayerWindow>().Any(w => App.IsSamePath(w.FilePath, path));
 
-    /// <summary>True when a capture of this folder is open in an editor or in the video player.</summary>
+    /// <summary>
+    /// True when a capture of this folder is open in an editor or in the video player, or a recording is being converted
+    /// into it (<see cref="IsConvertingInto"/>).
+    /// </summary>
     internal static bool IsAnyOpenIn(string folder) =>
         App.Instance.OpenWindows.OfType<EditorWindow>().Select(w => w.FilePath)
             .Concat(App.Instance.OpenWindows.OfType<PlayerWindow>().Select(w => w.FilePath))
-            .Any(path => SameFolder(Path.GetDirectoryName(path), folder));
+            .Any(path => Path.GetDirectoryName(path) is { Length: > 0 } parent && PathRules.SamePath(parent, folder))
+        || IsConvertingInto(folder);
 
-    /// <summary>Compares two folders whatever their spelling (relative parts, trailing separator; case on Windows).</summary>
-    internal static bool SameFolder(string? a, string? b)
-    {
-        if (string.IsNullOrEmpty(a) || string.IsNullOrEmpty(b)) return false;
-        try
-        {
-            return string.Equals(Path.TrimEndingDirectorySeparator(Path.GetFullPath(a)),
-                Path.TrimEndingDirectorySeparator(Path.GetFullPath(b)), App.PathComparison);
-        }
-        catch (Exception)
-        {
-            return false; // not a valid path
-        }
-    }
+    /// <summary>A recording waiting for its conversion, or being converted, goes to this folder.</summary>
+    internal static bool IsConvertingInto(string folder) =>
+        App.Instance.Conversions is { } conversions && conversions.PendingFolders.Any(pending => PathRules.SamePath(pending, folder));
 
     private Task ShowErrorAsync(string message, Exception ex) => WorkspaceCommands.ShowErrorAsync(OwnerWindow, message, ex);
 
@@ -866,7 +952,7 @@ public partial class CaptureGallery : UserControl
         (e.DataTransfer.TryGetFiles() ?? Array.Empty<IStorageItem>())
         .Select(item => item.TryGetLocalPath())
         .OfType<string>()
-        .Where(f => ImageIO.IsCapture(f) && !SameFolder(Path.GetDirectoryName(f), _folder))
+        .Where(f => ImageIO.IsCapture(f) && !(Path.GetDirectoryName(f) is { Length: > 0 } parent && PathRules.SamePath(parent, _folder)))
         .ToList();
 
     private void OnDragOver(object? sender, DragEventArgs e)
@@ -891,6 +977,10 @@ public partial class CaptureGallery : UserControl
             _pendingSelection = last;
             if (failed > 0)
                 await Dialogs.ShowAsync(OwnerWindow, Loc.T("Gallery.ImportFailed", failed, files.Count), "Snaplume", DialogButtons.Ok, DialogIcon.Warning);
+        }
+        catch (Exception ex)
+        {
+            await ShowErrorAsync(Loc.T("Gallery.Import.Failed"), ex);
         }
         finally
         {

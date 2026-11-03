@@ -12,6 +12,8 @@ namespace Snaplume.Workspace;
 /// Thumbnails shared by the galleries (quick panel, workspace window) and the document dialog. They are decoded
 /// in the background at the displayed size, a few at a time, and kept in a size-capped LRU cache keyed by
 /// path + last write time + file size (an edited capture gets a new key). Videos ask the platform for a frame.
+/// An evicted thumbnail is only dropped, never disposed: a gallery may still show it, and the cache keeps no reference
+/// to it (the galleries themselves let go of the thumbnails far from what they show).
 /// </summary>
 public static class ThumbnailCache
 {
@@ -34,6 +36,12 @@ public static class ThumbnailCache
     /// <summary>Latest key of each file, to drop the thumbnail of a previous version.</summary>
     private static readonly Dictionary<string, Key> LatestKey = new();
     private static readonly SemaphoreSlim Decoders = new(Math.Max(2, Environment.ProcessorCount));
+    /// <summary>
+    /// Large images are decoded one at a time: each needs its full size in memory first (a 50 MP PNG takes 200 MB), and a
+    /// folder of them must not multiply that by the number of processors.
+    /// </summary>
+    private static readonly SemaphoreSlim LargeDecoders = new(1);
+    private const long LargePixels = 16_000_000;
 
     private static long _bytes;
 
@@ -58,7 +66,7 @@ public static class ThumbnailCache
             if (TryGet(key, boxWidth, boxHeight) is { } decoded) return decoded;
             var thumbnail = isVideo
                 ? await DecodeVideoAsync(path, boxWidth, boxHeight, cancellation).ConfigureAwait(false)
-                : await Task.Run(() => DecodeImage(path, boxWidth, boxHeight), cancellation).ConfigureAwait(false);
+                : await Task.Run(() => DecodeImage(path, boxWidth, boxHeight, cancellation), cancellation).ConfigureAwait(false);
             if (thumbnail != null) Add(key, thumbnail);
             return thumbnail;
         }
@@ -114,8 +122,9 @@ public static class ThumbnailCache
     /// <summary>
     /// Decodes an image at the thumbnail size: the size is read (and checked against <see cref="ImageIO.MaxPixels"/>)
     /// from the header first, JPEG files are decoded directly at a reduced scale, and the file is released at once.
+    /// Images of more than <see cref="LargePixels"/> wait for <see cref="LargeDecoders"/>.
     /// </summary>
-    private static Thumbnail? DecodeImage(string path, int boxWidth, int boxHeight)
+    private static Thumbnail? DecodeImage(string path, int boxWidth, int boxHeight, CancellationToken cancellation)
     {
         FileStream stream;
         try
@@ -145,27 +154,19 @@ public static class ThumbnailCache
                 var decodeSize = codec.GetScaledDimensions((float)scale);
                 if (decodeSize.Width < targetWidth || decodeSize.Height < targetHeight) decodeSize = new SKSizeI(width, height);
 
-                var info = new SKImageInfo(decodeSize.Width, decodeSize.Height, SKColorType.Bgra8888, SKAlphaType.Premul);
-                using var decoded = new SKBitmap(info);
-                var result = codec.GetPixels(info, decoded.GetPixels());
-                if (result is not (SKCodecResult.Success or SKCodecResult.IncompleteInput)) return null;
-
-                SKBitmap thumbnail = decoded;
-                if (decodeSize.Width != targetWidth || decodeSize.Height != targetHeight)
-                {
-                    thumbnail = decoded.Resize(new SKImageInfo(targetWidth, targetHeight, SKColorType.Bgra8888, SKAlphaType.Premul),
-                        new SKSamplingOptions(SKCubicResampler.Mitchell)) ?? decoded;
-                }
+                bool large = (long)decodeSize.Width * decodeSize.Height > LargePixels;
+                if (large) LargeDecoders.Wait(cancellation);
                 try
                 {
-                    return new Thumbnail(ToAvalonia(thumbnail), $"{width} × {height}", boxWidth, boxHeight);
+                    var thumbnail = Decode(codec, decodeSize, targetWidth, targetHeight);
+                    return thumbnail == null ? null : new Thumbnail(thumbnail, $"{width} × {height}", boxWidth, boxHeight);
                 }
                 finally
                 {
-                    if (!ReferenceEquals(thumbnail, decoded)) thumbnail.Dispose();
+                    if (large) LargeDecoders.Release();
                 }
             }
-            catch (IOException)
+            catch (Exception ex) when (ex is IOException or OperationCanceledException)
             {
                 throw; // e.g. still being written: the gallery tries again later
             }
@@ -174,6 +175,30 @@ public static class ThumbnailCache
                 // Damaged or partly written file: a later write changes the key and triggers a new attempt.
                 return null;
             }
+        }
+    }
+
+    /// <summary>Decodes the image at <paramref name="decodeSize"/>, then resizes it to the target size; null when it cannot be read.</summary>
+    private static Bitmap? Decode(SKCodec codec, SKSizeI decodeSize, int targetWidth, int targetHeight)
+    {
+        var info = new SKImageInfo(decodeSize.Width, decodeSize.Height, SKColorType.Bgra8888, SKAlphaType.Premul);
+        using var decoded = new SKBitmap(info);
+        var result = codec.GetPixels(info, decoded.GetPixels());
+        if (result is not (SKCodecResult.Success or SKCodecResult.IncompleteInput)) return null;
+
+        SKBitmap thumbnail = decoded;
+        if (decodeSize.Width != targetWidth || decodeSize.Height != targetHeight)
+        {
+            thumbnail = decoded.Resize(new SKImageInfo(targetWidth, targetHeight, SKColorType.Bgra8888, SKAlphaType.Premul),
+                new SKSamplingOptions(SKCubicResampler.Mitchell)) ?? decoded;
+        }
+        try
+        {
+            return ToAvalonia(thumbnail);
+        }
+        finally
+        {
+            if (!ReferenceEquals(thumbnail, decoded)) thumbnail.Dispose();
         }
     }
 

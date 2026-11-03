@@ -9,6 +9,9 @@ namespace Snaplume.Preferences;
 /// <summary>Text box recording a key combination when pressed.</summary>
 public sealed class HotkeyBox : TextBox
 {
+    /// <summary>The shortcut field that has the keyboard focus, if any.</summary>
+    private static HotkeyBox? _focused;
+
     private Hotkey _hotkey;
 
     public HotkeyBox()
@@ -21,6 +24,26 @@ public sealed class HotkeyBox : TextBox
         // Before the text box: it would otherwise handle navigation and editing keys itself.
         AddHandler(KeyDownEvent, OnPreviewKeyDown, RoutingStrategies.Tunnel);
         AddHandler(KeyUpEvent, OnPreviewKeyUp, RoutingStrategies.Tunnel);
+        GotFocus += (_, _) => SetFocused(true);
+        LostFocus += (_, _) => SetFocused(false);
+        // The window closed with the focus in the field.
+        DetachedFromVisualTree += (_, _) => SetFocused(false);
+    }
+
+    /// <summary>
+    /// A shortcut field got (true) or lost (false) the keyboard focus: the application frees its global shortcuts
+    /// meanwhile, so that they can be typed in it, and registers them again afterwards.
+    /// </summary>
+    public static event Action<bool>? FocusChanged;
+
+    /// <summary>A shortcut field has the keyboard focus.</summary>
+    public static bool IsAnyFocused => _focused != null;
+
+    private void SetFocused(bool focused)
+    {
+        if (focused == (_focused == this)) return;
+        _focused = focused ? this : null;
+        FocusChanged?.Invoke(focused);
     }
 
     /// <summary>Drawn as a standard text box.</summary>

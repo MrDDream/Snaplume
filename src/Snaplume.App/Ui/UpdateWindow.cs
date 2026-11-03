@@ -32,8 +32,12 @@ public sealed class UpdateWindow : Window
     private bool _installing;
     private bool _closed;
 
-    /// <summary>Downloaded packages; emptied before each download (only Snaplume writes there).</summary>
-    private static string DownloadFolder => Path.Combine(Path.GetTempPath(), "Snaplume-update");
+    /// <summary>
+    /// Downloaded packages, in a folder only this user can write to (never the shared temporary folder); emptied before
+    /// each download.
+    /// </summary>
+    /// <exception cref="IOException">The folder is a link, or others may write to it.</exception>
+    private static string DownloadFolder() => UpdateDownloader.PrivateFolder("update");
 
     private IUpdateInstaller Installer => AppServices.Platform.Updates;
 
@@ -69,6 +73,23 @@ public sealed class UpdateWindow : Window
         else window.Show();
     }
 
+    /// <summary>
+    /// "Install now" could not quit Snaplume (an editor kept its unsaved changes): the window comes back, ready to try again.
+    /// </summary>
+    private static void ShowPostponed(UpdateChecker.Release release, UpdatePackage plan, Action<UpdateWindow> state)
+    {
+        if (_open != null)
+        {
+            _open.Activate();
+            return;
+        }
+        var window = new UpdateWindow(release, plan, owned: false);
+        _open = window;
+        state(window);
+        window.Show();
+        window.Activate();
+    }
+
     private UpdateWindow(UpdateChecker.Release release, UpdatePackage plan, bool owned)
     {
         _release = release;
@@ -95,6 +116,13 @@ public sealed class UpdateWindow : Window
         Content = body;
 
         Opened += (_, _) => (_buttons.Children.FirstOrDefault() as Button)?.Focus();
+        // Escape closes like the last button (Later, Cancel, Close); not while the package manager works.
+        KeyDown += (_, e) =>
+        {
+            if (e.Key != Avalonia.Input.Key.Escape || e.Handled) return;
+            e.Handled = true;
+            Close();
+        };
         Closing += (_, e) =>
         {
             // Killing pkexec would not stop the package manager: wait for its answer.
@@ -133,16 +161,20 @@ public sealed class UpdateWindow : Window
         SetState(Loc.T("Update.Downloading", _release.DisplayVersion), progress: 0);
         ShowProgress(0, package.Size);
         SetButtons(("Dialog.Cancel", Close));
-        string path;
+        VerifiedDownload download;
         try
         {
-            var folder = DownloadFolder;
-            await Task.Run(() => EmptyFolder(folder));
+            var folder = await Task.Run(() =>
+            {
+                var created = DownloadFolder();
+                EmptyFolder(created);
+                return created;
+            });
             var progress = new Progress<long>(received =>
             {
                 if (_download == cancel) ShowProgress(received, package.Size);
             });
-            path = await new UpdateDownloader().DownloadAsync(_plan, folder, progress, cancel.Token);
+            download = await new UpdateDownloader().DownloadVerifiedAsync(_plan, folder, progress, cancel.Token);
         }
         catch (OperationCanceledException) when (cancel.IsCancellationRequested)
         {
@@ -170,34 +202,47 @@ public sealed class UpdateWindow : Window
         switch (_plan.Kind)
         {
             case InstallKind.InnoSetup or InstallKind.Msi:
-                ShowReadyToInstall(path);
+                ShowReadyToInstall(download, postponed: false);
                 break;
             case InstallKind.Portable:
-                await InstallPortableAsync(path);
+                await InstallPortableAsync(download);
                 break;
             default:
-                await InstallPackageAsync(path);
+                await InstallPackageAsync(download);
                 break;
         }
     }
 
-    /// <summary>Windows installer: Snaplume quits (editors may ask to save first), then the installer starts.</summary>
-    private void ShowReadyToInstall(string path)
+    /// <summary>
+    /// Windows installer: Snaplume quits (editors may ask to save first), then the installer starts. An editor that
+    /// keeps its unsaved changes keeps Snaplume running: the window comes back (<paramref name="postponed"/>) to try again.
+    /// </summary>
+    private void ShowReadyToInstall(VerifiedDownload download, bool postponed)
     {
-        SetState(Loc.T("Update.Ready", _release.DisplayVersion) + "\n\n" + KindHint(), progress: null);
+        var text = Loc.T("Update.Ready", _release.DisplayVersion) + "\n\n" + KindHint();
+        SetState(postponed ? Loc.T("Update.Postponed") + "\n\n" + text : text, progress: null);
         SetButtons(("Update.InstallNow", () =>
         {
             Close();
-            App.Instance.QuitForUpdate(() => StartInstaller(path));
+            App.Instance.QuitForUpdate(() => StartInstaller(download),
+                () => ShowPostponed(_release, _plan, window => window.ShowReadyToInstall(download, postponed: true)));
         }), ("Dialog.Cancel", Close));
     }
 
-    private bool StartInstaller(string path)
+    private bool StartInstaller(VerifiedDownload download)
     {
         try
         {
-            Installer.StartInstaller(path);
+            Installer.StartInstaller(download.Path, download.Sha256);
             return true;
+        }
+        catch (UpdateVerificationException ex)
+        {
+            // Changed since it was downloaded: never run it.
+            ErrorLog.Write("Vérification de la mise à jour avant l'installation", ex.Message);
+            TryDelete(download.Path);
+            _ = Dialogs.ShowAsync(null, Loc.T("Update.ChecksumMismatch"), "Snaplume", DialogButtons.Ok, DialogIcon.Error);
+            return false;
         }
         catch (Exception ex)
         {
@@ -208,16 +253,30 @@ public sealed class UpdateWindow : Window
         }
     }
 
-    private async Task InstallPortableAsync(string zip)
+    private async Task InstallPortableAsync(VerifiedDownload download)
     {
         SetState(Loc.T("Update.Extracting", _release.DisplayVersion), progress: -1);
         SetButtons();
         var executable = Path.GetFileName(Environment.ProcessPath) is { Length: > 0 } name ? name : "Snaplume.exe";
+        var zip = download.Path;
         string folder;
         try
         {
             var current = AppContext.BaseDirectory;
-            folder = await Task.Run(() => PortableUpdate.Install(zip, current, _release.DisplayVersion, executable));
+            folder = await Task.Run(() =>
+            {
+                // Checked again right before it is unzipped.
+                if (!UpdateDownloader.HasSha256(zip, download.Sha256))
+                    throw new UpdateVerificationException($"Somme SHA-256 de {Path.GetFileName(zip)} différente avant l'extraction");
+                return PortableUpdate.Install(zip, current, _release.DisplayVersion, executable);
+            });
+        }
+        catch (UpdateVerificationException ex)
+        {
+            ErrorLog.Write("Vérification de la mise à jour avant l'extraction", ex.Message);
+            TryDelete(zip);
+            ShowFailure(Loc.T("Update.ChecksumMismatch"));
+            return;
         }
         catch (Exception ex)
         {
@@ -227,11 +286,19 @@ public sealed class UpdateWindow : Window
         }
         TryDelete(zip);
         if (_closed) return;
-        SetState(Loc.T("Update.PortableReady", _release.DisplayVersion, folder), progress: null);
+        ShowPortableReady(folder, executable, postponed: false);
+    }
+
+    /// <summary>The new portable copy is unzipped: Snaplume quits and starts it (editors may ask to save first).</summary>
+    private void ShowPortableReady(string folder, string executable, bool postponed)
+    {
+        var text = Loc.T("Update.PortableReady", _release.DisplayVersion, folder);
+        SetState(postponed ? Loc.T("Update.Postponed") + "\n\n" + text : text, progress: null);
         SetButtons(("Update.StartNew", () =>
         {
             Close();
-            App.Instance.QuitForUpdate(() => StartPortable(Path.Combine(folder, executable)));
+            App.Instance.QuitForUpdate(() => StartPortable(Path.Combine(folder, executable)),
+                () => ShowPostponed(_release, _plan, window => window.ShowPortableReady(folder, executable, postponed: true)));
         }), ("Update.OpenFolder", () =>
         {
             Close();
@@ -256,15 +323,24 @@ public sealed class UpdateWindow : Window
     }
 
     /// <summary>Linux package: the package manager, through the system's password prompt; the command otherwise.</summary>
-    private async Task InstallPackageAsync(string path)
+    private async Task InstallPackageAsync(VerifiedDownload download)
     {
         SetState(Loc.T("Update.InstallingPackage", _release.DisplayVersion), progress: -1);
         SetButtons();
+        var path = download.Path;
         _installing = true;
         bool installed;
         try
         {
-            installed = await Installer.InstallPackageAsync(path);
+            installed = await Installer.InstallPackageAsync(path, download.Sha256);
+        }
+        catch (UpdateVerificationException ex)
+        {
+            // Changed since it was downloaded: never handed to the package manager.
+            ErrorLog.Write("Vérification de la mise à jour avant l'installation", ex.Message);
+            TryDelete(path);
+            ShowFailure(Loc.T("Update.ChecksumMismatch"));
+            return;
         }
         finally
         {

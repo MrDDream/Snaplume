@@ -142,18 +142,58 @@ public partial class App : Application
         Videos = new VideoService(this);
         Conversions = new RecordingConverter(this);
         CreateTray();
+        HotkeyBox.FocusChanged += OnHotkeyBoxFocusChanged;
         RegisterHotkeys(showWarnings: true);
         if (unavailableFolder != null)
         {
             Tray?.ShowWarning(Loc.T("App.FolderUnavailableTitle"),
                 Loc.T("App.FolderUnavailableText", unavailableFolder, Settings.WorkspaceFolder), OnUi(ShowSettings));
         }
+        if (Settings.LoadFailed) ShowSettingsResetWarning();
 
-        instance.Listen(received => Dispatcher.UIThread.Post(() => HandleArgs(CommandLine.Parse(received), startup: false)));
+        // Parsed on the listener's thread; only the result goes to the UI thread.
+        instance.Listen(received =>
+        {
+            CommandLine parsed;
+            try
+            {
+                parsed = CommandLine.Parse(received);
+            }
+            catch (Exception ex)
+            {
+                ErrorLog.Write("Ligne de commande transmise", ex);
+                return;
+            }
+            Dispatcher.UIThread.Post(() => HandleArgs(parsed, startup: false));
+        });
         _ = Task.Run(VideoService.DeleteStaleTempFiles);
 
         HandleArgs(CommandLine.Parse(args), startup: true);
         StartUpdateChecks();
+    }
+
+    /// <summary>
+    /// settings.json could not be read: the defaults are used. Says so, with the copy of the unreadable file (a click
+    /// shows it in its folder).
+    /// </summary>
+    private void ShowSettingsResetWarning()
+    {
+        var backup = Path.Combine(AppSettings.SettingsFolder, "settings.json.bak");
+        bool hasBackup = File.Exists(backup);
+        Tray?.ShowWarning(Loc.T("App.SettingsResetTitle"),
+            hasBackup ? Loc.T("App.SettingsResetTextBackup", backup) : Loc.T("App.SettingsResetText"),
+            OnUi(() =>
+            {
+                try
+                {
+                    if (hasBackup) FileOps.Reveal(backup);
+                    else FileOps.OpenFolder(AppSettings.SettingsFolder);
+                }
+                catch (Exception ex)
+                {
+                    ErrorLog.Write("Ouverture du dossier des paramètres", ex);
+                }
+            }));
     }
 
     private static IPlatform CreatePlatform()
@@ -349,9 +389,13 @@ public partial class App : Application
 
     // ---- Global shortcuts ----
 
+    /// <summary>Freed while a shortcut field of the settings has the focus (<see cref="OnHotkeyBoxFocusChanged"/>).</summary>
+    private bool _hotkeysSuspended;
+
     /// <summary>Registers the global shortcuts of the settings; tells which ones are taken if asked.</summary>
     public void RegisterHotkeys(bool showWarnings)
     {
+        _hotkeysSuspended = false;
         if (IsExiting || !AppServices.HasPlatform) return;
         var hotkeys = Platform.Hotkeys;
         try
@@ -527,22 +571,7 @@ public partial class App : Application
     }
 
     /// <summary>Same file, whatever the form of the paths (relative, ".."; case ignored on Windows only).</summary>
-    internal static bool IsSamePath(string? path, string fullPath)
-    {
-        if (string.IsNullOrEmpty(path)) return false;
-        try
-        {
-            return string.Equals(Path.GetFullPath(path), Path.GetFullPath(fullPath), PathComparison);
-        }
-        catch (Exception)
-        {
-            return false;
-        }
-    }
-
-    /// <summary>File names are case-insensitive on Windows, case-sensitive on Linux.</summary>
-    internal static StringComparison PathComparison =>
-        OperatingSystem.IsWindows() ? StringComparison.OrdinalIgnoreCase : StringComparison.Ordinal;
+    internal static bool IsSamePath(string? path, string fullPath) => !string.IsNullOrEmpty(path) && PathRules.SamePath(path, fullPath);
 
     internal static void BringToFront(Window window)
     {
@@ -612,19 +641,11 @@ public partial class App : Application
             BringToFront(_settingsWindow);
             return;
         }
-        // Free the shortcuts so that they can be typed in the shortcut fields.
         try
         {
-            Platform.Hotkeys.UnregisterAll();
-        }
-        catch (Exception ex)
-        {
-            ErrorLog.Write("Raccourcis globaux", ex);
-        }
-        _settingsWindow = new SettingsWindow(Settings.Clone(), page);
-        try
-        {
-            if (await _settingsWindow.ShowAndWaitAsync()) await ApplySettingsAsync(_settingsWindow.Result);
+            var window = new SettingsWindow(Settings.Clone(), page);
+            _settingsWindow = window;
+            if (await window.ShowAndWaitAsync()) await ApplySettingsAsync(window);
         }
         catch (Exception ex)
         {
@@ -637,30 +658,51 @@ public partial class App : Application
         }
     }
 
-    private async Task ApplySettingsAsync(AppSettings result)
+    /// <summary>
+    /// A shortcut field of the settings got or lost the keyboard focus: the global shortcuts are freed while one has
+    /// it, so that they can be typed there, and registered again once none has (not between two fields).
+    /// </summary>
+    private void OnHotkeyBoxFocusChanged(bool focused)
+    {
+        if (focused)
+        {
+            if (_hotkeysSuspended) return;
+            _hotkeysSuspended = true;
+            try
+            {
+                Platform.Hotkeys.UnregisterAll();
+            }
+            catch (Exception ex)
+            {
+                ErrorLog.Write("Raccourcis globaux", ex);
+            }
+            return;
+        }
+        Dispatcher.UIThread.Post(() =>
+        {
+            if (_hotkeysSuspended && !HotkeyBox.IsAnyFocused) RegisterHotkeys(showWarnings: false);
+        }, DispatcherPriority.Background);
+    }
+
+    /// <summary>The settings saved: the values edited in the window go onto a copy of the current settings.</summary>
+    private async Task ApplySettingsAsync(SettingsWindow window)
     {
         var current = Settings;
-        // The active workspace may have been changed from the tray menu meanwhile, the OCR language from a text
-        // window, the update state by the background check: the dialog does not edit them.
-        result.ActiveWorkspace = current.ActiveWorkspace;
-        result.OcrLanguage = current.OcrLanguage;
-        result.LastUpdateCheckUtc = current.LastUpdateCheckUtc;
-        result.UpdateNotifiedVersion = current.UpdateNotifiedVersion;
-        // The player's export dialog keeps its last choices while the settings are open.
-        result.WebExportFormat = current.WebExportFormat;
-        result.WebExportQuality = current.WebExportQuality;
-        result.WebExportTarget = current.WebExportTarget;
-        result.WebExportMegabytes = current.WebExportMegabytes;
+        // Only what the window edits: the active workspace changed from the tray menu meanwhile, the OCR language of a
+        // text window, the update state of the background check, the panels and bars... stay as they are now.
+        var result = current.Clone();
+        window.MergeInto(result);
         result.Sanitize();
         // A new format or compression for the recordings: the export dialog opens with it too.
         var recordingFormat = Player.RecordingFormatChoice.From(result);
         var previousFormat = Player.RecordingFormatChoice.From(current);
         if (recordingFormat with { KeepOriginal = false } != previousFormat with { KeepOriginal = false })
             Player.RecordingFormats.ApplyToExportDialog(recordingFormat, result);
-        bool folderChanged = !string.Equals(current.WorkspaceFolder, result.WorkspaceFolder, PathComparison);
+        bool folderChanged = !PathRules.SamePath(current.WorkspaceFolder, result.WorkspaceFolder);
         bool languageChanged = current.Language != result.Language;
-        // Another root folder: keep the active workspace only if it exists there too.
-        if (folderChanged && result.ActiveWorkspace.Length > 0
+        // Another root folder: a workspace with a folder of its own stays active; a sub-folder of the root only if it
+        // exists in the new root too.
+        if (folderChanged && result.ActiveWorkspace.Length > 0 && !result.WorkspaceFolders.ContainsKey(result.ActiveWorkspace)
             && !Directory.Exists(Path.Combine(result.WorkspaceFolder, result.ActiveWorkspace)))
         {
             result.ActiveWorkspace = "";
@@ -718,9 +760,20 @@ public partial class App : Application
     /// copy) once the video and capture in progress are finished and every editor agreed to close, just before
     /// quitting; Snaplume keeps running if an editor stays open or <paramref name="launch"/> returns false.
     /// </summary>
-    public void QuitForUpdate(Func<bool> launch)
+    /// <param name="postponed">
+    /// Called when an editor keeps its unsaved changes: nothing was started, the update waits (the user is told).
+    /// </param>
+    public void QuitForUpdate(Func<bool> launch, Action postponed)
     {
         if (IsExiting) return;
+        // The editors are asked first, before a recording or a capture is stopped for nothing.
+        foreach (var editor in OpenWindows.OfType<EditorWindow>().ToList())
+        {
+            editor.Close();
+            if (!editor.IsVisible) continue;
+            postponed();
+            return;
+        }
         _launchOnExit = launch;
         ExitApp(restart: false);
     }
@@ -822,7 +875,8 @@ public partial class App : Application
     {
         IsExiting = true;
         _updateTimer?.Stop();
-        Workspaces.Changed -= UpdateTrayTooltip;
+        WorkspaceListing.Updated -= UpdateTrayTooltip;
+        HotkeyBox.FocusChanged -= OnHotkeyBoxFocusChanged;
         if (!AppServices.HasPlatform) return;
         Dispose(() => Platform.Hotkeys.Dispose(), "Raccourcis globaux");
         Dispose(() => Tray?.Dispose(), "Icône de notification");

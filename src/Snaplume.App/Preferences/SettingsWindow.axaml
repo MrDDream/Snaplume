@@ -335,7 +335,7 @@
                                     <ComboBox Name="VideoFormatBox" DockPanel.Dock="Right" Width="250" />
                                     <StackPanel>
                                         <TextBlock Classes="row-title" Text="{l:T Settings.VideoFormat.Format}" />
-                                        <TextBlock Name="VideoFormatDescription" Classes="row-description" Text="{l:T Settings.VideoFormat.FormatDescription}" />
+                                        <TextBlock Classes="row-description" Text="{l:T Settings.VideoFormat.FormatDescription}" />
                                         <!-- Without ffmpeg only MP4 H.264 is listed: the module card below adds the others -->
                                         <Button Name="MoreFormatsButton" Classes="link" Margin="0,5,0,0" IsVisible="False" Click="OnShowFfmpegCard"
                                                 ToolTip.Tip="{l:T Player.Web.ModuleTip}">
@@ -496,7 +496,7 @@
                             <!-- Web formats module (ffmpeg): installed on demand on Windows, the system's package on Linux -->
                             <Border Name="FfmpegRow" Classes="row">
                                 <DockPanel>
-                                    <StackPanel Name="FfmpegButtons" DockPanel.Dock="Right" Orientation="Horizontal" Spacing="8" VerticalAlignment="Top"
+                                    <StackPanel DockPanel.Dock="Right" Orientation="Horizontal" Spacing="8" VerticalAlignment="Top"
                                                 Margin="12,4,0,0">
                                         <Button Name="FfmpegInstallButton" Content="{l:T Settings.Ffmpeg.Install}" Classes="accent" Padding="12,4"
                                                 Click="OnInstallFfmpeg" IsVisible="False" />
@@ -664,7 +664,7 @@
                                             <!-- Shown when this kind of installation can be updated from here (see UpdateWindow). -->
                                             <Button Name="InstallUpdateButton" Content="{l:T Update.Install}" Classes="accent" Padding="12,4"
                                                     Margin="0,0,8,0" Click="OnInstallUpdate" />
-                                            <Button Name="OpenUpdateButton" Content="{l:T Update.Open}" Classes="flat outlined" Padding="12,4"
+                                            <Button Content="{l:T Update.Open}" Classes="flat outlined" Padding="12,4"
                                                     Click="OnOpenUpdate" />
                                         </WrapPanel>
                                     </StackPanel>

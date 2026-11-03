@@ -1,5 +1,6 @@
 using System.Diagnostics;
 using System.Runtime.InteropServices;
+using System.Security.Cryptography;
 using System.Text;
 using Snaplume.Core;
 
@@ -51,7 +52,7 @@ internal sealed class UpdateInstaller : IUpdateInstaller
             var location = ProductInfo(product.ToString(), "InstallLocation");
             if (string.IsNullOrEmpty(location))
                 location = Path.Combine(Environment.GetFolderPath(Environment.SpecialFolder.ProgramFiles), "Snaplume");
-            if (SameFolder(location, folder)) return true;
+            if (PathRules.SamePath(location, folder)) return true;
         }
         return false;
     }
@@ -63,20 +64,21 @@ internal sealed class UpdateInstaller : IUpdateInstaller
         return MsiGetProductInfo(product, property, value, ref length) == 0 ? value.ToString() : null;
     }
 
-    private static bool SameFolder(string a, string b) =>
-        string.Equals(Path.TrimEndingDirectorySeparator(Path.GetFullPath(a)), Path.TrimEndingDirectorySeparator(Path.GetFullPath(b)),
-            StringComparison.OrdinalIgnoreCase);
-
     /// <summary>
     /// Inno Setup: silent, with its progress window and no Cancel button (/SP- /SILENT /NOCANCEL); it keeps the
     /// folder, tasks and privileges of the previous installation, closes what still runs from the folder, and
     /// starts Snaplume again (/RELAUNCH=1, see installer/Snaplume.iss). Started through the shell, so that an
     /// installation for all users can ask for elevation.
     /// MSI: msiexec with its basic interface (progress only, /passive); the per-machine package asks for elevation.
+    /// The package is opened without sharing write, delete or rename, checked against <paramref name="sha256"/> through
+    /// that handle, and kept open until the process has started: it cannot be replaced between the check and the start.
     /// </summary>
-    public void StartInstaller(string package)
+    public void StartInstaller(string package, string sha256)
     {
         package = Path.GetFullPath(package);
+        using var locked = new FileStream(package, FileMode.Open, FileAccess.Read, FileShare.Read);
+        if (!HasSha256(locked, sha256))
+            throw new UpdateVerificationException($"Somme SHA-256 de {Path.GetFileName(package)} différente avant l'installation");
         switch (InstallKind)
         {
             case InstallKind.InnoSetup:
@@ -97,7 +99,22 @@ internal sealed class UpdateInstaller : IUpdateInstaller
         }
     }
 
-    public Task<bool> InstallPackageAsync(string package) => throw new NotSupportedException("Paquets Linux uniquement");
+    /// <summary>SHA-256 of what the stream reads, compared in constant time with the expected hexadecimal value.</summary>
+    private static bool HasSha256(Stream stream, string expectedHex)
+    {
+        byte[] expected;
+        try
+        {
+            expected = Convert.FromHexString(expectedHex);
+        }
+        catch (FormatException)
+        {
+            return false;
+        }
+        return expected.Length == SHA256.HashSizeInBytes && CryptographicOperations.FixedTimeEquals(SHA256.HashData(stream), expected);
+    }
+
+    public Task<bool> InstallPackageAsync(string package, string sha256) => throw new NotSupportedException("Paquets Linux uniquement");
 
     public string ManualInstallCommand(string package) =>
         InstallKind == InstallKind.Msi ? $"\"{MsiExec}\" /i \"{package}\"" : $"\"{package}\"";

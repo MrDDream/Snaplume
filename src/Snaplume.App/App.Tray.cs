@@ -35,7 +35,9 @@ public partial class App
         Tray.MenuBuilder = BuildTrayMenu;
         // The platform may raise it on another thread.
         Tray.Activated += () => Dispatcher.UIThread.Post(ToggleQuickPanel);
-        Workspaces.Changed += UpdateTrayTooltip;
+        // The workspaces read off the UI thread: the tooltip and the menu never wait for an offline network share.
+        WorkspaceListing.Updated += UpdateTrayTooltip;
+        WorkspaceListing.Refresh();
         UpdateTrayTooltip();
     }
 
@@ -55,7 +57,7 @@ public partial class App
         var text = _trayStatus;
         if (string.IsNullOrEmpty(text))
         {
-            var workspace = Workspaces.ActiveName;
+            var workspace = WorkspaceListing.Current.ActiveName;
             text = workspace.Length == 0 ? AppName : Loc.T("Tray.TooltipWorkspace", Workspaces.DisplayName(workspace));
         }
         if (text.Length > MaxTooltipLength) text = text[..(MaxTooltipLength - 1)] + "…";
@@ -105,23 +107,27 @@ public partial class App
             items.Add(new(Loc.T("Tray.RecordScreenVideo"), OnUi(() => _ = Videos.ToggleAsync(fullScreen: true, settleMs: 200))));
 
         items.Add(TrayMenuItem.Separator);
-        items.Add(new(Loc.T("Tray.OpenFolder"), OnUi(OpenActiveFolder)));
+        items.Add(new(Loc.T("Tray.OpenFolder"), OnUi(() => WorkspaceCommands.OpenFolder(null, Workspaces.ActiveName))));
         items.Add(new(Loc.T("Tray.Settings"), OnUi(ShowSettings)));
         items.Add(TrayMenuItem.Separator);
         items.Add(new(Loc.T("Tray.Quit"), OnUi(ExitApp)));
         return items;
     }
 
-    /// <summary>The workspaces (the active one checked), then "New...".</summary>
-    private List<TrayMenuItem> BuildWorkspacesMenu()
+    /// <summary>
+    /// The workspaces (the active one checked), then "New...": as last read (<see cref="WorkspaceListing"/>), read again
+    /// for the next time the menu opens. A workspace whose folder cannot be reached is greyed.
+    /// </summary>
+    private static List<TrayMenuItem> BuildWorkspacesMenu()
     {
-        var active = Workspaces.ActiveName;
-        var items = Workspaces.List()
-            .Select(name => new TrayMenuItem(Workspaces.DisplayName(name), () => Dispatcher.UIThread.Post(() => SelectWorkspaceFromTray(name)),
-                Enabled: Workspaces.IsAvailable(name), Checked: string.Equals(name, active, StringComparison.OrdinalIgnoreCase)))
+        var listing = WorkspaceListing.Current;
+        WorkspaceListing.Refresh();
+        var items = listing.Workspaces
+            .Select(w => new TrayMenuItem(Workspaces.DisplayName(w.Name), OnUi(() => SelectWorkspaceFromTray(w.Name)),
+                Enabled: !w.IsMissing, Checked: string.Equals(w.Name, listing.ActiveName, StringComparison.OrdinalIgnoreCase)))
             .ToList();
         items.Add(TrayMenuItem.Separator);
-        items.Add(new(Loc.T("Tray.NewWorkspace"), () => Dispatcher.UIThread.Post(() => _ = CreateWorkspaceFromTrayAsync())));
+        items.Add(new(Loc.T("Tray.NewWorkspace"), OnUi(() => _ = WorkspaceCommands.CreateAsync(null))));
         return items;
     }
 
@@ -134,34 +140,6 @@ public partial class App
         catch (Exception ex)
         {
             ErrorLog.Write("Choix d'un espace de travail", ex);
-        }
-    }
-
-    /// <summary>Asks for a name and creates the workspace (it becomes the active one).</summary>
-    private static async Task CreateWorkspaceFromTrayAsync()
-    {
-        var name = await InputDialog.AskAsync(null, Loc.T("Tray.NewWorkspaceTitle"), Loc.T("Tray.NewWorkspaceLabel"), "", isFileName: false);
-        if (string.IsNullOrWhiteSpace(name)) return;
-        try
-        {
-            Workspaces.Create(name);
-        }
-        catch (Exception ex) when (ex is ArgumentException or IOException or UnauthorizedAccessException)
-        {
-            ErrorLog.Write("Création d'un espace de travail", ex);
-            await Dialogs.ShowAsync(null, Loc.T("Tray.NewWorkspaceFailed", ex.Message), AppName, DialogButtons.Ok, DialogIcon.Warning);
-        }
-    }
-
-    private static void OpenActiveFolder()
-    {
-        try
-        {
-            FileOps.OpenFolder(Workspaces.ActiveFolder);
-        }
-        catch (Exception ex)
-        {
-            ErrorLog.Write("Ouverture du dossier des captures", ex);
         }
     }
 }

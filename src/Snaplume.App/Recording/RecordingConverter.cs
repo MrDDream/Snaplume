@@ -24,6 +24,8 @@ public sealed class RecordingConverter
     private readonly App _app;
     private readonly Queue<RecordingConversionJob> _waiting = new();
     private CancellationTokenSource? _current;
+    /// <summary>The job being converted (see <see cref="PendingFolders"/>).</summary>
+    private RecordingConversionJob? _running;
     private TaskCompletionSource? _idle;
     private ConversionBar? _bar;
     /// <summary>Quitting: the conversions still waiting stop at once too.</summary>
@@ -33,6 +35,13 @@ public sealed class RecordingConverter
 
     /// <summary>A conversion runs or waits.</summary>
     public bool IsBusy => _current != null || _waiting.Count > 0;
+
+    /// <summary>
+    /// The workspace folders that a conversion running or waiting will write to: they must not be renamed, deleted or
+    /// moved meanwhile. UI thread.
+    /// </summary>
+    public IReadOnlyList<string> PendingFolders =>
+        (_running is { } running ? _waiting.Prepend(running) : _waiting).Select(job => job.Folder).ToList();
 
     /// <summary>Adds a recording to convert; starts at once when none is running. UI thread.</summary>
     public void Enqueue(RecordingConversionJob job)
@@ -72,6 +81,7 @@ public sealed class RecordingConverter
             var job = _waiting.Dequeue();
             using var cancel = new CancellationTokenSource();
             _current = cancel;
+            _running = job;
             if (_cancelAll) cancel.Cancel();
             try
             {
@@ -87,6 +97,7 @@ public sealed class RecordingConverter
             finally
             {
                 _current = null;
+                _running = null;
             }
         }
         _cancelAll = false;
