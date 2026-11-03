@@ -4,10 +4,10 @@
 
 # Snaplume
 
-**Captures d'écran, annotations et enregistrement vidéo pour Windows, libres et gratuits. 100 % hors ligne.**
+**Captures d'écran, annotations et enregistrement vidéo pour Windows et Linux, libres et gratuits. 100 % hors ligne.**
 
 [![Licence : MIT](https://img.shields.io/badge/licence-MIT-7C3AED)](LICENSE)
-[![Plateforme : Windows 10 | 11](https://img.shields.io/badge/plateforme-Windows%2010%20%7C%2011%20x64-2563EB)](#télécharger)
+[![Plateforme : Windows 10 | 11 · Linux](https://img.shields.io/badge/plateforme-Windows%2010%20%7C%2011%20%C2%B7%20Linux-2563EB)](#télécharger)
 [![.NET 10](https://img.shields.io/badge/.NET-10-512BD4)](https://dotnet.microsoft.com/)
 [![Dernière version](https://img.shields.io/github/v/release/MrDDream/Snaplume?sort=semver&label=version&color=16A34A)](https://github.com/MrDDream/Snaplume/releases/latest)
 [![Langues : 6](https://img.shields.io/badge/langues-6-F59E0B)](#langues-et-thèmes)
@@ -22,7 +22,7 @@
 
 ## Pourquoi Snaplume
 
-- **Une seule petite application pour tout faire.** Capturer, annoter, enregistrer, ranger et partager sans jongler entre trois outils.
+- **Une seule petite application pour tout faire.** Capturer, annoter, enregistrer, ranger et partager sans jongler entre trois outils, sous Windows et Linux.
 - **Rapide par défaut.** Appuyez sur <kbd>Impr. écran</kbd>, cliquez sur une fenêtre ou tracez une zone : la capture est déjà enregistrée, nommée et dans votre galerie.
 - **Des annotations qui restent modifiables.** Rouvrez une capture le lendemain pour déplacer une flèche, corriger une faute ou renuméroter des étapes.
 - **Respect de la vie privée.** Pas de compte, pas de cloud, pas de télémétrie, pas de publicité. Vos captures ne quittent jamais votre PC.
@@ -37,8 +37,9 @@
 - **Écran entier, tous les écrans, fenêtre active** et **répétition de la dernière zone** d'une seule touche.
 - **Retardateur** (3, 5 ou 10 s depuis les menus ; le délai du raccourci se règle dans les Paramètres) pour capturer menus contextuels et info-bulles.
 - **Capture défilante** : Snaplume fait défiler la fenêtre et assemble une seule grande image.
-- **Capture de texte (OCR)** : sélectionnez une zone, son texte part dans le presse-papiers, grâce au moteur OCR de Windows, hors ligne.
+- **Capture de texte (OCR)** : sélectionnez une zone, son texte part dans le presse-papiers, grâce au moteur OCR de Windows (Tesseract sous Linux), hors ligne.
 - **Lecture de QR codes et de codes-barres**, hors ligne, depuis l'écran ou une capture.
+- **Win+Maj+S pour Snaplume** (option) : le raccourci de Windows ouvre la capture de zone de Snaplume au lieu de l'Outil Capture.
 - Multi-écrans et hauts DPI (Per-Monitor v2) : des captures exactes au pixel sur chaque écran.
 
 ### Éditeur
@@ -49,32 +50,36 @@
 - **54 tampons vectoriels** : symboles (validé, refusé, attention, bug…), tampons de texte (APPROUVÉ, CONFIDENTIEL, BROUILLON…) et curseurs de souris.
 - **Surligneur, pixelisation, projecteur, loupe** pour guider le regard et masquer ce qui doit rester privé.
 - **Insertion d'images, comme dans Paint** : collez (<kbd>Ctrl</kbd>+<kbd>V</kbd>), ouvrez un fichier, glissez-déposez ou faites une nouvelle capture d'une zone, puis déplacez et redimensionnez l'image avant de la fixer. Posée à côté de la capture, elle l'agrandit pour contenir les deux.
-- **Recadrage, redimensionnement** (pixels ou pourcentage) et **effets** : ombre, bordure, coins arrondis, bord déchiré.
+- **Recadrage, redimensionnement** (pixels ou pourcentage), **bordures** en un clic (contour noir, cadre blanc, ombre, coins arrondis, bords déchirés, avec un aperçu de votre capture) et **effets** plus fins. Coins arrondis, bords déchirés et ombres restent **transparents** en PNG et WebP.
 - **Styles prédéfinis par outil** : un clic sur un outil propose ses styles ; ajoutez les vôtres.
 - Annuler / rétablir (jusqu'à 100 étapes), et des annotations **toujours modifiables** après enregistrement.
-- Export en **PNG, JPEG ou BMP**, **impression** et **envoi par e-mail** avec votre messagerie locale.
+- Export en **PNG, JPEG, WebP ou BMP**, **impression** et **envoi par e-mail** avec votre messagerie locale.
 
 ### Vidéo
 
-- **Enregistrement MP4** d'une zone (ou de l'emplacement d'une fenêtre) ou d'un écran entier, avec **son de l'ordinateur et/ou micro**, après un compte à rebours de 3 secondes ; pause et reprise depuis la barre de contrôle.
-- **Clics mis en évidence** et **webcam en incrustation** ; la barre de contrôle et le cadre rouge restent hors de la vidéo.
+- **Enregistrement** d'une zone (ou de l'emplacement d'une fenêtre) ou d'un écran entier. Avant de démarrer, une barre permet de choisir le **micro**, le **son de l'ordinateur**, la **webcam** (caméra, coin, taille), le **zoom sur les clics** (la vidéo s'approche un instant de l'endroit cliqué) et la **taille de la zone** (1280 × 720, 1920 × 1080…) avec un cadre déplaçable ; puis compte à rebours de 3 secondes, pause et reprise.
+- **Clics mis en évidence** et **webcam en incrustation** ; les barres flottantes et le cadre rouge restent hors de la vidéo.
+- **Format et compression des enregistrements** (Paramètres › Vidéo) : MP4 H.264, ou H.265 enregistré directement si le PC a un encodeur ; AV1 et WebM sont convertis juste après l'enregistrement ; une qualité ou une **taille maximale** (Discord 10 Mo, e-mail 20 Mo, votre taille).
 - **Lecteur intégré** façon mpv : fenêtre noire épurée, messages à l'écran, tout au clavier.
 - **Découpe** (points d'entrée / de sortie) et export de l'extrait en MP4, conversion d'une vidéo ou d'un extrait en **GIF** animé (images par seconde, taille, vitesse, boucle), ou enregistrement de l'**image affichée** comme capture.
+- **Exporter / compresser** (<kbd>C</kbd> dans le lecteur) : MP4 H.264, H.265, AV1, WebM ou WebP animé, sous une taille maximale : Snaplume baisse la définition et la fluidité plutôt que de flouter l'image, et prévient à l'avance quand une vidéo est trop longue pour cette taille.
+- **Module ffmpeg optionnel** pour les formats web : téléchargé à la demande depuis Paramètres › Vidéo (environ 81 Mo, version LGPL), vérifié avec une empreinte SHA-256 inscrite dans Snaplume avant installation ; un ffmpeg déjà présent dans le PATH est utilisé tel quel. Sous Linux, c'est le ffmpeg du système.
 
 ### Organiser et partager
 
-- **Panneau « Mes captures »** ancré dans le coin de l'écran, et une grande **fenêtre d'espace de travail**.
-- **Espaces de travail** = simples sous-dossiers : créer, renommer, supprimer, et déplacer les captures par glisser-déposer.
+- **Panneau « Mes captures »** collé à la barre des tâches dans le coin de l'écran, avec les **espaces de travail dans un panneau latéral**, et une grande **fenêtre d'espace de travail**.
+- **Espaces de travail** = des dossiers : sous-dossiers du dossier des captures par défaut, ou **n'importe quel dossier de votre choix** (autre disque, dossier de projet, partage réseau). Créer, renommer, changer de dossier, retirer, et déplacer les captures par glisser-déposer ; retirer un espace qui a son propre dossier n'efface jamais vos fichiers.
 - Glissez les captures dans un mail, une messagerie ou un document ; déposez des images pour les importer.
 - **Générateur de documents** : transformez une sélection de captures en document **PDF, Word (DOCX) ou HTML**, dans l'ordre de votre choix.
 - **Impression** d'une sélection (une capture par page, chaque page dans l'orientation de son image) ou **envoi par e-mail** avec votre messagerie.
-- Noms de fichiers automatiques, PNG ou JPEG, dossier configurable (par défaut : `Images\Snaplume`).
+- Noms de fichiers automatiques, PNG, JPEG ou WebP, dossier configurable (par défaut : `Images\Snaplume`).
+- **Mises à jour** : Snaplume peut vérifier s'il existe une nouvelle version, puis la télécharger et l'installer (installeur, MSI, copie portable, .deb ou .rpm), le fichier étant vérifié avant usage.
 
 ### Langues et thèmes
 
 - **6 langues** : anglais, français, allemand, espagnol, italien et arabe (interface de droite à gauche).
-- Thème **clair, sombre ou automatique**, qui suit Windows même pendant l'utilisation.
-- **Mode portable**, **installeur**, icône de notification, raccourcis globaux configurables, lancement au démarrage et **ligne de commande** scriptable.
+- Thème **clair, sombre ou automatique**, qui suit le système même pendant l'utilisation.
+- **Mode portable**, **installeur** (lancement au démarrage de Windows coché par défaut), **paquets Linux**, icône de notification, raccourcis globaux configurables, navigation au clavier et **ligne de commande** scriptable.
 
 ## Aperçus
 
@@ -114,7 +119,6 @@ Récupérez la dernière version sur la [**page des versions**](https://github.c
 | **Installeur** | `Snaplume-Setup-<version>.exe` | La plupart des utilisateurs : installation classique avec raccourci dans le menu Démarrer et désinstalleur. |
 | **Portable** | `Snaplume-<version>-portable.zip` | Clés USB et PC verrouillés : décompressez n'importe où et lancez `Snaplume.exe` ; les paramètres restent dans le dossier. |
 | **MSI** | `Snaplume-<version>-x64.msi` | Services informatiques : installation pour tous les utilisateurs dans `Program Files`, via Intune, une stratégie de groupe ou `msiexec /i Snaplume-<version>-x64.msi /qn` (`DESKTOPSHORTCUT=1` ajoute un raccourci sur le bureau). |
-
 | **Linux (Debian, Ubuntu…)** | `snaplume_<version>-1_amd64.deb` (ou `arm64`) | `sudo apt install ./snaplume_<version>-1_amd64.deb` : les dépendances (GStreamer, ffmpeg, Tesseract…) sont installées avec. |
 | **Linux (Fedora…)** | `snaplume-<version>-1.x86_64.rpm` (ou `aarch64`) | `sudo dnf install ./snaplume-<version>-1.x86_64.rpm`. |
 
@@ -145,7 +149,7 @@ Tous sont autonomes : **aucune installation de .NET n'est nécessaire**. Chaque 
 | Capturer du texte (OCR) | aucun par défaut, à définir dans les paramètres |
 
 > [!TIP]
-> Un raccourci ne peut appartenir qu'à une seule application. Si un autre outil (Outil Capture de Windows, OneDrive, Dropbox…) utilise déjà <kbd>Impr. écran</kbd>, Snaplume vous prévient. Sous Windows 11, désactivez aussi *Paramètres › Accessibilité › Clavier › Utiliser la touche Impr. écran pour ouvrir la capture d'écran*.
+> Un raccourci ne peut appartenir qu'à une seule application. Si un autre outil (Outil Capture de Windows, OneDrive, Dropbox…) utilise déjà <kbd>Impr. écran</kbd>, Snaplume vous prévient. Sous Windows 11, désactivez aussi *Paramètres › Accessibilité › Clavier › Utiliser la touche Impr. écran pour ouvrir la capture d'écran*. Pour utiliser <kbd>Win</kbd>+<kbd>Maj</kbd>+<kbd>S</kbd> avec Snaplume, activez l'option dans Paramètres › Raccourcis clavier.
 
 ### Pendant la sélection d'une zone
 
@@ -167,7 +171,7 @@ Tous sont autonomes : **aucune installation de .NET n'est nécessaire**. Chaque 
 
 <kbd>Espace</kbd> ou <kbd>P</kbd> lecture / pause · <kbd>←</kbd> <kbd>→</kbd> ±5 s (<kbd>Maj</kbd> ±1 s) · <kbd>↑</kbd> <kbd>↓</kbd> ±1 min · <kbd>Début</kbd> retour au début · <kbd>,</kbd> <kbd>.</kbd> image précédente / suivante · <kbd>[</kbd> <kbd>]</kbd> vitesse (<kbd>Maj</kbd> diviser / multiplier par 2) · <kbd>Retour arrière</kbd> vitesse normale · <kbd>9</kbd> <kbd>0</kbd> volume · <kbd>M</kbd> muet · <kbd>L</kbd> boucle · <kbd>F</kbd> ou <kbd>Entrée</kbd> plein écran · <kbd>Échap</kbd> quitter le plein écran, annuler un export ou fermer
 
-<kbd>I</kbd> / <kbd>O</kbd> début / fin de l'extrait (<kbd>Maj</kbd>+<kbd>I</kbd> / <kbd>Maj</kbd>+<kbd>O</kbd> effacer) · <kbd>E</kbd> exporter l'extrait (MP4) · <kbd>G</kbd> créer un GIF · <kbd>S</kbd> enregistrer l'image · <kbd>Ctrl</kbd>+<kbd>O</kbd> ouvrir dans le lecteur par défaut · <kbd>F1</kbd> aide · <kbd>Q</kbd> fermer
+<kbd>I</kbd> / <kbd>O</kbd> début / fin de l'extrait (<kbd>Maj</kbd>+<kbd>I</kbd> / <kbd>Maj</kbd>+<kbd>O</kbd> effacer) · <kbd>E</kbd> exporter l'extrait (MP4) · <kbd>C</kbd> exporter / compresser (H.264, H.265, AV1, WebM, WebP, taille maximale) · <kbd>G</kbd> créer un GIF · <kbd>S</kbd> enregistrer l'image · <kbd>Ctrl</kbd>+<kbd>O</kbd> ouvrir dans le lecteur par défaut · <kbd>F1</kbd> aide · <kbd>Q</kbd> fermer
 
 Souris : clic lecture / pause · double-clic plein écran · <kbd>Molette</kbd> ±10 s · <kbd>Ctrl</kbd>+<kbd>Molette</kbd> volume
 
@@ -204,7 +208,10 @@ Snaplume.exe --record screen --duration 30 --exit                   # vidéo de 
 Snaplume fonctionne **100 % hors ligne** :
 
 - pas de compte, pas de connexion, pas d'envoi dans le cloud, pas de télémétrie, pas de statistiques, pas de publicité ;
-- la seule requête réseau est la **vérification des mises à jour**, uniquement quand vous la lancez (Paramètres › À propos) ou si vous activez sa vérification quotidienne (désactivée par défaut) ; elle demande à GitHub la dernière version et n'envoie rien d'autre ;
+- le réseau n'est utilisé qu'à votre demande, et uniquement avec GitHub :
+  - la **vérification des mises à jour** (Paramètres › À propos, ou sa vérification quotidienne, désactivée par défaut) demande la dernière version et n'envoie rien d'autre ;
+  - « Télécharger et installer » récupère le paquet adapté à votre installation (installeur, MSI, zip portable, .deb ou .rpm) depuis les versions du projet, dans un dossier qui n'appartient qu'à vous, et vérifie son empreinte SHA-256 avec la liste publiée, une nouvelle fois juste avant de l'installer ;
+  - le **module ffmpeg** optionnel n'est téléchargé que si vous cliquez sur Installer, et vérifié avec une empreinte SHA-256 inscrite dans Snaplume ;
 - l'OCR utilise le moteur de reconnaissance de texte intégré à Windows (Tesseract sous Linux), les QR codes sont décodés localement ;
 - l'e-mail passe par **votre** logiciel de messagerie, le générateur de documents écrit des fichiers locaux ;
 - les captures sont de simples fichiers dans le dossier de votre choix (par défaut `Images\Snaplume`), les paramètres un fichier JSON dans `%APPDATA%\Snaplume` (ou à côté de l'application en mode portable).
@@ -247,8 +254,10 @@ Les dépendances sont décrites dans [packaging/linux/README.md](packaging/linux
 ```text
 Snaplume.slnx
 src/Snaplume.Core/              code commun à tous les systèmes (net10.0)
-  Editor/       modèle d'annotations, rendu, effets, loupe, tampons, styles, annuler/rétablir
+  Editor/       modèle d'annotations, rendu, effets et bordures, loupe, tampons, styles, annuler/rétablir
   Capturing/    capture défilante et recollage, modèle de sélection et géométrie
+  Player/       export vidéo : GIF, formats web, taille maximale, module ffmpeg, formats d'enregistrement
+  Recording/    zoom sur les clics, encodeur GIF
   Export/       générateur de documents (PDF, Word, HTML)
   Imaging/      images en mémoire, fichiers image, contours de texte (SkiaSharp, HarfBuzz)
   Platform/     interfaces des services fournis par chaque système
@@ -261,18 +270,20 @@ src/Snaplume.Platform.Linux/    X11, portails Wayland (D-Bus), GStreamer, ffmpeg
 tests/Snaplume.Tests/           tests xUnit, rendu Avalonia sans écran
 build/          scripts de version (Windows : zip, Inno Setup, MSI ; Linux : .deb/.rpm), sommes de contrôle
 packaging/linux/                configuration nfpm, fichier .desktop, métadonnées AppStream, icônes
+packaging/winget/               manifestes winget et marche à suivre pour les soumettre
 docs/           site web (GitHub Pages), maquettes et identité visuelle
 tools/          générateur d'icône
 ```
 
 ## Feuille de route
 
-La version 1.0 apporte tout ce qui est décrit ci-dessus. Pistes pour la suite, contributions bienvenues :
+La version 1.2 apporte tout ce qui est décrit ci-dessus. Pistes pour la suite, contributions bienvenues :
 
+- [x] Version Linux (.deb et .rpm, x64 et ARM64)
+- [ ] Paquet winget (manifestes prêts dans `packaging/winget`) et Scoop
 - [ ] Exécutables signés (fini l'avertissement SmartScreen)
-- [ ] Paquets winget et Scoop
 - [ ] Davantage de langues d'interface
-- [ ] Version ARM64
+- [ ] Version Windows ARM64
 
 Les services en ligne (envoi, liens de partage, comptes) sont **volontairement exclus**.
 
@@ -286,13 +297,20 @@ Snaplume s'appuie sur ces projets libres :
 
 | Projet | Utilisé pour | Licence |
 |---|---|---|
-| [ScreenRecorderLib](https://github.com/sskodje/ScreenRecorderLib) | enregistrement d'écran MP4 (Media Foundation) | MIT |
+| [Avalonia](https://avaloniaui.net/) | interface sous Windows et Linux | MIT |
+| [SkiaSharp](https://github.com/mono/SkiaSharp) et HarfBuzzSharp | fichiers image, dessin, mise en forme du texte | MIT |
+| [ScreenRecorderLib](https://github.com/sskodje/ScreenRecorderLib) | enregistrement d'écran sous Windows (Media Foundation) | MIT |
+| [GStreamer](https://gstreamer.freedesktop.org/) | enregistrement et lecture vidéo sous Linux (paquets du système) | LGPL |
+| [FFmpeg](https://ffmpeg.org/) | formats web et compression (module optionnel, [version LGPL de BtbN](https://github.com/BtbN/FFmpeg-Builds) sous Windows ; paquet du système sous Linux) | LGPL |
+| [Tesseract](https://github.com/tesseract-ocr/tesseract) | reconnaissance de texte sous Linux (paquet du système) | Apache-2.0 |
+| [Tmds.DBus.Protocol](https://github.com/tmds/Tmds.DBus) | portails du bureau et notifications sous Linux | MIT |
 | [ZXing.Net](https://github.com/micjahn/ZXing.Net) | lecture de QR codes et codes-barres | Apache-2.0 |
 | [Open XML SDK](https://github.com/dotnet/Open-XML-SDK) | génération de documents DOCX | MIT |
 | [Inno Setup](https://jrsoftware.org/isinfo.php) | installeur Windows | licence Inno Setup |
 | [WiX Toolset](https://wixtoolset.org/) | paquet MSI | MS-RL |
+| [nfpm](https://nfpm.goreleaser.com/) | paquets .deb et .rpm | MIT |
 
-Les fichiers PDF sont écrits par le module PDF propre à Snaplume, et la reconnaissance de texte utilise le moteur OCR intégré à Windows (`Windows.Media.Ocr`). Les fonctionnalités s'inspirent de Screenpresso ; Snaplume est un projet indépendant, sans aucune affiliation.
+Les fichiers PDF sont écrits par le module PDF propre à Snaplume, et la reconnaissance de texte utilise le moteur OCR intégré à Windows (`Windows.Media.Ocr`) ou Tesseract sous Linux. Les fonctionnalités s'inspirent de Screenpresso ; Snaplume est un projet indépendant, sans aucune affiliation.
 
 ## Licence
 
