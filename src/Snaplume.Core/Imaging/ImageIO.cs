@@ -8,7 +8,17 @@ public static class ImageIO
 {
     public static readonly string[] Extensions = { ".png", ".jpg", ".jpeg", ".bmp", ".gif" };
 
-    public static readonly string[] VideoExtensions = { ".mp4" };
+    /// <summary>Videos: recordings, and the WebM exports of the player.</summary>
+    public static readonly string[] VideoExtensions = { ".mp4", ".webm" };
+
+    /// <summary>
+    /// Animated WebP exported by the player: shown in the workspace (its first frame as thumbnail) and opened in the
+    /// default application, but not an image to edit, print or put in a document.
+    /// </summary>
+    public static readonly string[] AnimationExtensions = { ".webp" };
+
+    public static bool IsAnimation(string path) =>
+        AnimationExtensions.Contains(Path.GetExtension(path), StringComparer.OrdinalIgnoreCase);
 
     public static bool IsImage(string path) =>
         Extensions.Contains(Path.GetExtension(path), StringComparer.OrdinalIgnoreCase);
@@ -16,8 +26,8 @@ public static class ImageIO
     public static bool IsVideo(string path) =>
         VideoExtensions.Contains(Path.GetExtension(path), StringComparer.OrdinalIgnoreCase);
 
-    /// <summary>Files shown in the workspace: images and videos.</summary>
-    public static bool IsCapture(string path) => IsImage(path) || IsVideo(path);
+    /// <summary>Files shown in the workspace: images, videos and animations.</summary>
+    public static bool IsCapture(string path) => IsImage(path) || IsVideo(path) || IsAnimation(path);
 
     /// <summary>Largest image handled (250 megapixels, 1 GB in memory as BGRA).</summary>
     public const long MaxPixels = 250_000_000;

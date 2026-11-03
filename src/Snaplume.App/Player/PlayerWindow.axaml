@@ -114,11 +114,12 @@
                         <Button Classes="player" Click="OnExportFrameClick" ToolTip.Tip="{l:T Player.ExportFrameTip}">
                             <Path Classes="player-icon" Data="M3,8 H7 L9,5 H15 L17,8 H21 V19 H3 Z M12,10 A3.5,3.5 0 1 1 11.99,10 Z" />
                         </Button>
-                        <Button x:Name="ExportButton" Classes="player" ToolTip.Tip="{l:T Player.ExportTip}">
+                        <Button x:Name="ExportButton" Classes="player" ToolTip.Tip="{l:T Player.Web.ExportTip}">
                             <Path Classes="player-icon" Data="M12,4 V14 M8,8 L12,4 L16,8 M5,13 V19 H19 V13" />
                             <Button.Flyout>
                                 <MenuFlyout Placement="Top">
                                     <MenuItem x:Name="ExportClipItem" Header="{l:T Player.ExportClip}" InputGesture="E" Click="OnExportClipClick" />
+                                    <MenuItem x:Name="ExportWebItem" Header="{l:T Player.Web.Menu}" InputGesture="C" Click="OnExportWebClick" />
                                     <MenuItem x:Name="ExportGifItem" Header="{l:T Player.ExportGif}" InputGesture="G" Click="OnExportGifClick" />
                                     <Separator />
                                     <MenuItem Header="{l:T Player.ExportFrame}" InputGesture="S" Click="OnExportFrameClick" />

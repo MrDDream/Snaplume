@@ -1,0 +1,59 @@
+<Window xmlns="https://github.com/avaloniaui"
+        xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+        xmlns:l="using:Snaplume.Ui"
+        x:Class="Snaplume.Player.WebExportDialog"
+        Title="{l:T Player.Web.Title}" Width="460" SizeToContent="Height" CanResize="False"
+        WindowStartupLocation="CenterOwner" ShowInTaskbar="False" UseLayoutRounding="True"
+        Background="{DynamicResource WindowBrush}" Foreground="{DynamicResource TextBrush}">
+    <Window.Styles>
+        <Style Selector="TextBlock.label">
+            <Setter Property="FontWeight" Value="SemiBold" />
+            <Setter Property="Margin" Value="0,0,0,4" />
+        </Style>
+        <Style Selector="TextBlock.note">
+            <Setter Property="Foreground" Value="{DynamicResource MutedTextBrush}" />
+            <Setter Property="FontSize" Value="12" />
+            <Setter Property="TextWrapping" Value="Wrap" />
+        </Style>
+    </Window.Styles>
+    <StackPanel Margin="20,16,20,18">
+        <TextBlock Classes="label" Text="{l:T Player.Gif.Range}" />
+        <ComboBox x:Name="RangeBox" HorizontalAlignment="Stretch" Margin="0,0,0,12" />
+
+        <TextBlock Classes="label" Text="{l:T Player.Web.Format}" />
+        <ComboBox x:Name="FormatBox" HorizontalAlignment="Stretch" />
+        <TextBlock x:Name="FormatNote" Classes="note" Margin="0,4,0,12" />
+
+        <TextBlock Classes="label" Text="{l:T Player.Web.Target}" />
+        <Grid ColumnDefinitions="*,Auto" Margin="0,0,0,12">
+            <ComboBox x:Name="TargetBox" HorizontalAlignment="Stretch" />
+            <StackPanel x:Name="MegabytesPanel" Grid.Column="1" Orientation="Horizontal" Spacing="6" Margin="10,0,0,0">
+                <TextBox x:Name="MegabytesBox" Width="76" HorizontalContentAlignment="Right" />
+                <TextBlock Text="{l:T Player.Web.Megabytes}" VerticalAlignment="Center" />
+            </StackPanel>
+        </Grid>
+
+        <StackPanel x:Name="QualityPanel" Margin="0,0,0,12">
+            <TextBlock Classes="label" Text="{l:T Player.Web.Quality}" />
+            <ComboBox x:Name="QualityBox" HorizontalAlignment="Stretch" />
+        </StackPanel>
+
+        <TextBlock x:Name="SummaryText" Foreground="{DynamicResource MutedTextBrush}" TextWrapping="Wrap" />
+        <TextBlock x:Name="ErrorText" Foreground="{DynamicResource ErrorTextBrush}" Margin="0,8,0,0" IsVisible="False" TextWrapping="Wrap" />
+
+        <!-- Windows without ffmpeg: the formats that need it are greyed; the module is one click away -->
+        <Border x:Name="ModuleHint" IsVisible="False" Background="{DynamicResource WarningBrush}" BorderBrush="{DynamicResource WarningBorderBrush}"
+                BorderThickness="1" CornerRadius="6" Padding="12,8" Margin="0,12,0,0">
+            <DockPanel>
+                <Button DockPanel.Dock="Right" VerticalAlignment="Center" Margin="10,0,0,0" Padding="10,3"
+                        Content="{l:T Player.Web.ModuleButton}" Click="OnModuleClick" />
+                <TextBlock Text="{l:T Player.Web.ModuleHint}" TextWrapping="Wrap" VerticalAlignment="Center" />
+            </DockPanel>
+        </Border>
+
+        <StackPanel Orientation="Horizontal" HorizontalAlignment="Right" Margin="0,16,0,0" Spacing="8">
+            <Button Classes="accent" Content="{l:T Player.Gif.Export}" IsDefault="True" Padding="14,4" Click="OnOk" />
+            <Button Content="{l:T Common.Cancel}" IsCancel="True" Padding="14,4" Click="OnCancel" />
+        </StackPanel>
+    </StackPanel>
+</Window>

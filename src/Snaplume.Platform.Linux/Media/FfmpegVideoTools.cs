@@ -3,6 +3,7 @@ using System.Runtime.CompilerServices;
 using Snaplume.Core;
 using Snaplume.Imaging;
 using Snaplume.Platform.Linux.Util;
+using Snaplume.Player;
 
 namespace Snaplume.Platform.Linux.Media;
 
@@ -19,6 +20,52 @@ internal sealed class FfmpegVideoTools : IVideoTools
     private string Ffmpeg => _ffmpeg.Value ?? throw new InvalidOperationException(Loc.T("Linux.FfmpegMissing"));
 
     public IVideoPlayer CreatePlayer() => new GstVideoPlayer();
+
+    /// <summary>H.264 with the ffmpeg of the system; HEVC goes through the web export's own ffmpeg path (libx265, VA-API).</summary>
+    public bool CanTranscode(VideoCodec codec) => codec == VideoCodec.H264 && _ffmpeg.Value != null;
+
+    public async Task TranscodeAsync(string source, string destination, TimeSpan start, TimeSpan end, VideoEncodeSettings settings,
+        IProgress<double>? progress, CancellationToken cancel)
+    {
+        if (File.Exists(destination)) throw new IOException($"{destination} already exists.");
+        var ffmpeg = await FfmpegTools.DetectAsync().ConfigureAwait(false)
+                     ?? throw new InvalidOperationException(Loc.T("Linux.FfmpegMissing"));
+        var format = settings.Codec == VideoCodec.Hevc ? WebFormat.Mp4Hevc : WebFormat.Mp4H264;
+        var hasAudio = settings.AudioBitrate > 0 && await HasAudioAsync(ffmpeg.Path, source, cancel).ConfigureAwait(false);
+        try
+        {
+            await FfmpegWebEncoder.EncodeAsync(ProcessRunner.Instance, ffmpeg, format, WebEncodePlan.From(settings), settings.SizeMatters,
+                source, destination, start, end, hasAudio, progress, cancel).ConfigureAwait(false);
+        }
+        catch
+        {
+            try
+            {
+                File.Delete(destination);
+            }
+            catch (Exception)
+            {
+                // The original error matters more.
+            }
+            throw;
+        }
+    }
+
+    public async Task<VideoInfo?> ProbeAsync(string path, CancellationToken cancel = default)
+    {
+        if (_ffmpeg.Value is not { } ffmpeg) return null;
+        try
+        {
+            var result = await ExternalTools.RunAsync(ffmpeg, new[] { "-hide_banner", "-nostdin", "-i", path }, TimeSpan.FromSeconds(15), cancel,
+                environment: ExternalTools.CLocale).ConfigureAwait(false);
+            return FfmpegTools.ParseInputInfo(result.Errors);
+        }
+        catch (TimeoutException ex)
+        {
+            ErrorLog.Write($"Lecture des propriétés de {path}", ex);
+            return null;
+        }
+    }
 
     public async Task ExportClipAsync(string source, string destination, TimeSpan start, TimeSpan end, IProgress<double>? progress, CancellationToken cancel)
     {

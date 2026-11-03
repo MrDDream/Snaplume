@@ -40,7 +40,7 @@ public sealed class UpdateDownloader
         if (!UpdatePackages.IsPlainFileName(package.Name)) throw new InvalidDataException($"Nom de fichier refusé : {package.Name}");
         using var http = CreateClient();
 
-        var list = await DownloadTextAsync(http, update.Checksums.Url, cancel).ConfigureAwait(false);
+        var list = await DownloadTextAsync(http, update.Checksums.Url, UpdateRules, cancel).ConfigureAwait(false);
         if (!UpdatePackages.ParseChecksums(list).TryGetValue(package.Name, out var expected))
             throw new UpdateVerificationException($"{package.Name} absent de {update.Checksums.Name}");
 
@@ -52,7 +52,7 @@ public sealed class UpdateDownloader
             string actual;
             await using (var file = new FileStream(part, FileMode.Create, FileAccess.Write, FileShare.None, 81920, useAsync: true))
             {
-                actual = await DownloadToAsync(http, package, file, progress, cancel).ConfigureAwait(false);
+                actual = await DownloadToAsync(http, package, UpdateRules, file, progress, cancel).ConfigureAwait(false);
             }
             if (actual != expected)
                 throw new UpdateVerificationException($"Somme SHA-256 de {package.Name} différente : {actual} au lieu de {expected}");
@@ -66,6 +66,46 @@ public sealed class UpdateDownloader
         }
     }
 
+    /// <summary>
+    /// Downloads a file whose SHA-256 is written in Snaplume itself (the ffmpeg module, <see cref="Player.FfmpegModule"/>),
+    /// with the same checks as an update: allowed addresses and redirects only, exact size, ".part" file until verified.
+    /// </summary>
+    /// <param name="rules">Where the download may start and be redirected to.</param>
+    /// <returns>Full path of the verified file.</returns>
+    /// <exception cref="UpdateVerificationException">The SHA-256 differs (the file was deleted).</exception>
+    public async Task<string> DownloadPinnedAsync(ReleaseAsset file, string expectedSha256, AddressRules rules, string folder,
+        IProgress<long>? progress, CancellationToken cancel)
+    {
+        if (!UpdatePackages.IsPlainFileName(file.Name)) throw new InvalidDataException($"Nom de fichier refusé : {file.Name}");
+        using var http = CreateClient();
+        Directory.CreateDirectory(folder);
+        var path = Path.Combine(folder, file.Name);
+        var part = path + ".part";
+        try
+        {
+            string actual;
+            await using (var stream = new FileStream(part, FileMode.Create, FileAccess.Write, FileShare.None, 81920, useAsync: true))
+            {
+                actual = await DownloadToAsync(http, file, rules, stream, progress, cancel).ConfigureAwait(false);
+            }
+            if (!string.Equals(actual, expectedSha256, StringComparison.OrdinalIgnoreCase))
+                throw new UpdateVerificationException($"Somme SHA-256 de {file.Name} différente : {actual} au lieu de {expectedSha256}");
+            File.Move(part, path, overwrite: true);
+            return path;
+        }
+        catch
+        {
+            TryDelete(part);
+            throw;
+        }
+    }
+
+    /// <summary>Addresses a download may start from, and those it may be redirected to.</summary>
+    public sealed record AddressRules(Func<Uri, bool> IsAllowed, Func<Uri, bool> IsAllowedRedirect);
+
+    /// <summary>The project's release files, and GitHub's storage behind them.</summary>
+    private static readonly AddressRules UpdateRules = new(UpdatePackages.IsAllowedDownload, UpdatePackages.IsAllowedRedirect);
+
     private HttpClient CreateClient()
     {
         var handler = _handler ?? new SocketsHttpHandler { AllowAutoRedirect = false, ConnectTimeout = TimeSpan.FromSeconds(20) };
@@ -75,9 +115,9 @@ public sealed class UpdateDownloader
         return http;
     }
 
-    private static async Task<string> DownloadTextAsync(HttpClient http, Uri url, CancellationToken cancel)
+    private static async Task<string> DownloadTextAsync(HttpClient http, Uri url, AddressRules rules, CancellationToken cancel)
     {
-        using var response = await GetAsync(http, url, cancel).ConfigureAwait(false);
+        using var response = await GetAsync(http, url, rules, cancel).ConfigureAwait(false);
         await using var stream = await response.Content.ReadAsStreamAsync(cancel).ConfigureAwait(false);
         var body = new MemoryStream();
         var chunk = new byte[16 * 1024];
@@ -91,10 +131,10 @@ public sealed class UpdateDownloader
     }
 
     /// <returns>Lowercase hexadecimal SHA-256 of what was written.</returns>
-    private static async Task<string> DownloadToAsync(HttpClient http, ReleaseAsset package, Stream target, IProgress<long>? progress,
+    private static async Task<string> DownloadToAsync(HttpClient http, ReleaseAsset package, AddressRules rules, Stream target, IProgress<long>? progress,
         CancellationToken cancel)
     {
-        using var response = await GetAsync(http, package.Url, cancel).ConfigureAwait(false);
+        using var response = await GetAsync(http, package.Url, rules, cancel).ConfigureAwait(false);
         if (response.Content.Headers.ContentLength is { } length && length != package.Size)
             throw new InvalidDataException($"Taille inattendue pour {package.Name} : {length} octets au lieu de {package.Size}");
         await using var stream = await response.Content.ReadAsStreamAsync(cancel).ConfigureAwait(false);
@@ -121,9 +161,9 @@ public sealed class UpdateDownloader
     }
 
     /// <summary>GET with the redirects followed by hand, each one checked against the allowed hosts.</summary>
-    private static async Task<HttpResponseMessage> GetAsync(HttpClient http, Uri url, CancellationToken cancel)
+    private static async Task<HttpResponseMessage> GetAsync(HttpClient http, Uri url, AddressRules rules, CancellationToken cancel)
     {
-        if (!UpdatePackages.IsAllowedDownload(url)) throw new InvalidDataException($"Adresse de téléchargement refusée : {url}");
+        if (!rules.IsAllowed(url)) throw new InvalidDataException($"Adresse de téléchargement refusée : {url}");
         for (int redirects = 0; ; redirects++)
         {
             using var request = new HttpRequestMessage(HttpMethod.Get, url);
@@ -135,7 +175,7 @@ public sealed class UpdateDownloader
                 if (location == null) throw new InvalidDataException("Redirection sans adresse");
                 if (redirects >= MaxRedirects) throw new InvalidDataException("Trop de redirections");
                 var next = location.IsAbsoluteUri ? location : new Uri(url, location);
-                if (!UpdatePackages.IsAllowedRedirect(next)) throw new InvalidDataException($"Redirection refusée vers {next.Scheme}://{next.Authority}");
+                if (!rules.IsAllowedRedirect(next)) throw new InvalidDataException($"Redirection refusée vers {next.Scheme}://{next.Authority}");
                 url = next;
                 continue;
             }

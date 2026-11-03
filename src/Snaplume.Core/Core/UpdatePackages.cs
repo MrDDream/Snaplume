@@ -182,10 +182,12 @@ public static class UpdatePackages
     /// Where a download may be redirected: another release file of the project, or GitHub's storage for release
     /// files, over HTTPS. Anything else (another host, plain HTTP, another port) is refused.
     /// </summary>
-    public static bool IsAllowedRedirect(Uri uri) =>
-        IsAllowedDownload(uri)
-        || (IsHttps(uri) && RedirectHosts.Any(host => string.Equals(uri.Host, host, StringComparison.OrdinalIgnoreCase)));
+    public static bool IsAllowedRedirect(Uri uri) => IsAllowedDownload(uri) || IsReleaseStorage(uri);
 
-    private static bool IsHttps(Uri uri) =>
+    /// <summary>GitHub's storage for release files (where github.com redirects their downloads), over HTTPS.</summary>
+    internal static bool IsReleaseStorage(Uri uri) =>
+        IsHttps(uri) && RedirectHosts.Any(host => string.Equals(uri.Host, host, StringComparison.OrdinalIgnoreCase));
+
+    internal static bool IsHttps(Uri uri) =>
         uri.IsAbsoluteUri && uri.Scheme == Uri.UriSchemeHttps && uri.IsDefaultPort && string.IsNullOrEmpty(uri.UserInfo);
 }

@@ -123,7 +123,12 @@ public partial class SettingsWindow : Window
         Nav.SelectionChanged += OnNavChanged;
         ShowPage(page ?? (_lastPage.Length > 0 ? _lastPage : nameof(PageGeneral)));
         UpdatePrefixExample();
-        Closed += (_, _) => _closed.TrySetResult(_saved);
+        _ = RefreshFfmpegAsync();
+        Closed += (_, _) =>
+        {
+            _ffmpegDownload?.Cancel();
+            _closed.TrySetResult(_saved);
+        };
     }
 
     /// <summary>Hides or explains what this system cannot do (start with the session, click highlight, global shortcuts...).</summary>

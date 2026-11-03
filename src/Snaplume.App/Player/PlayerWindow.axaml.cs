@@ -116,7 +116,7 @@ public partial class PlayerWindow : Window
         var exportMenu = (MenuFlyout)ExportButton.Flyout!;
         exportMenu.Opening += (_, _) =>
         {
-            ExportClipItem.IsEnabled = ExportGifItem.IsEnabled = CanEdit && _export == null;
+            ExportClipItem.IsEnabled = ExportGifItem.IsEnabled = ExportWebItem.IsEnabled = CanEdit && _export == null;
             // The controller stays while the menu is open (the mouse has left it for the menu).
             _idle.Stop();
         };
@@ -545,8 +545,58 @@ public partial class PlayerWindow : Window
         var source = FilePath;
         var name = FileOps.SanitizeFileName($"{Path.GetFileNameWithoutExtension(source)}_{Loc.T("Player.ClipFileSuffix")}");
         var video = AppServices.Platform.Video;
-        await RunExportAsync("Player.ExportingClip", Path.GetDirectoryName(source)!, name, ".mp4", gif: false,
+        await RunExportAsync("Player.ExportingClip", Path.GetDirectoryName(source)!, name, ".mp4", ExportKind.Clip,
             (path, progress, cancel) => video.ExportClipAsync(source, path, start, end, progress, cancel));
+    }
+
+    /// <summary>
+    /// Asks the format and the size (or quality), then re-encodes the video or the extract next to it
+    /// ("name.discord.mp4", "name.webm"...).
+    /// </summary>
+    private async void ExportWeb()
+    {
+        if (!CanEdit || IsExporting()) return;
+        var (start, end) = Range;
+        if (end - start < MinRange)
+        {
+            ShowOsd(Loc.T("Player.Osd.RangeTooShort"), 3);
+            return;
+        }
+        var source = FilePath;
+        var video = AppServices.Platform.Video;
+        var duration = Duration;
+        VideoInfo info;
+        FfmpegInfo? ffmpeg;
+        IReadOnlyList<WebFormatAvailability> formats;
+        try
+        {
+            // The encoders are looked for once per session (a few short runs of ffmpeg the first time).
+            var probe = video.ProbeAsync(source);
+            ffmpeg = await FfmpegTools.DetectAsync();
+            var (width, height) = VideoSize;
+            info = await probe ?? new VideoInfo(width, height, 0, true, duration);
+            if (info.Width <= 0 || info.Height <= 0) info = info with { Width = width, Height = height };
+            formats = await Task.Run(() => WebFormats.All
+                .Select(f => WebVideoExport.Availability(f, video.CanTranscode, ffmpeg, OperatingSystem.IsWindows())).ToList());
+        }
+        catch (Exception ex)
+        {
+            ErrorLog.Write("Export compressé", ex);
+            ShowOsd(Loc.T("Player.Osd.WebFailed"), 4);
+            return;
+        }
+        if (_closing || info.Width <= 0 || info.Height <= 0) return;
+        var dialog = new WebExportDialog(duration, _inPoint, _outPoint, info, formats, ffmpeg == null && FfmpegModule.IsSupported);
+        var settings = await dialog.ShowDialog<WebExportSettings?>(this);
+        if (settings == null || _closing) return;
+        if (settings.End - settings.Start < MinRange)
+        {
+            ShowOsd(Loc.T("Player.Osd.RangeTooShort"), 3);
+            return;
+        }
+        await RunExportAsync("Player.Web.Exporting", Path.GetDirectoryName(source)!, WebVideoExport.BaseName(source, settings),
+            WebFormats.Extension(settings.Format), ExportKind.Web,
+            (path, progress, cancel) => WebVideoExport.ExportAsync(video, ffmpeg, source, path, settings, info, progress, cancel));
     }
 
     /// <summary>Asks the GIF options, then makes the GIF next to the video.</summary>
@@ -572,7 +622,7 @@ public partial class PlayerWindow : Window
         var source = FilePath;
         var duration = Duration;
         var video = AppServices.Platform.Video;
-        await RunExportAsync("Player.ExportingGif", Path.GetDirectoryName(source)!, Path.GetFileNameWithoutExtension(source), ".gif", gif: true,
+        await RunExportAsync("Player.ExportingGif", Path.GetDirectoryName(source)!, Path.GetFileNameWithoutExtension(source), ".gif", ExportKind.Gif,
             (path, progress, cancel) => VideoGifExport.ExportAsync(video, source, path, settings, duration, progress, cancel));
     }
 
@@ -588,9 +638,17 @@ public partial class PlayerWindow : Window
     /// announces the new file to the gallery, reports the result.
     /// </summary>
     /// <param name="labelKey">Text of the progress panel, {0} being the percentage.</param>
-    private async Task RunExportAsync(string labelKey, string folder, string baseName, string extension, bool gif,
+    private async Task RunExportAsync(string labelKey, string folder, string baseName, string extension, ExportKind kind,
         Func<string, IProgress<double>, CancellationToken, Task> export)
     {
+        // A GIF or a web export is shown in its folder from the notification; an extract opens in the player.
+        bool reveal = kind != ExportKind.Clip;
+        var (savedKey, savedTitleKey, failedKey, logTitle) = kind switch
+        {
+            ExportKind.Gif => ("Player.Osd.GifSaved", "Player.GifSavedTitle", "Player.Osd.GifFailed", "Export GIF"),
+            ExportKind.Web => ("Player.Osd.WebSaved", "Player.Web.SavedTitle", "Player.Osd.WebFailed", "Export compressé"),
+            _ => ("Player.Osd.ClipSaved", "Player.ClipSavedTitle", "Player.Osd.ClipFailed", "Export d'un extrait vidéo"),
+        };
         using var cancel = new CancellationTokenSource();
         _export = cancel;
         ExportText.Text = Loc.T(labelKey, 0.0);
@@ -609,31 +667,46 @@ public partial class PlayerWindow : Window
             var path = FileOps.UniquePath(folder, baseName, extension);
             await export(path, progress, cancel.Token);
             App.Instance.Captures.NotifySaved(path);
-            var message = Loc.T(gif ? "Player.Osd.GifSaved" : "Player.Osd.ClipSaved", Path.GetFileName(path));
+            var message = kind == ExportKind.Web
+                ? Loc.T(savedKey, Path.GetFileName(path), WebVideoExport.Megabytes(new FileInfo(path).Length))
+                : Loc.T(savedKey, Path.GetFileName(path));
             if (IsActive && !_closing)
             {
                 ShowOsd(message, 4);
             }
             else
             {
-                Action open = gif ? () => Reveal(path) : () => App.Instance.OpenPlayer(path);
-                App.Instance.Tray?.ShowInfo(Loc.T(gif ? "Player.GifSavedTitle" : "Player.ClipSavedTitle"), message, open);
+                Action open = reveal ? () => Reveal(path) : () => App.Instance.OpenPlayer(path);
+                App.Instance.Tray?.ShowInfo(Loc.T(savedTitleKey), message, open);
             }
         }
         catch (OperationCanceledException)
         {
             if (!_closing) ShowOsd(Loc.T("Player.Osd.ExportCancelled"));
         }
+        catch (WebExportException ex)
+        {
+            // Expected (size out of reach...): the message says what to do.
+            ErrorLog.Write(logTitle, ex.Message);
+            if (!_closing) ShowOsd(ex.Message, 6);
+        }
         catch (Exception ex)
         {
-            ErrorLog.Write(gif ? "Export GIF" : "Export d'un extrait vidéo", ex);
-            if (!_closing) ShowOsd(Loc.T(gif ? "Player.Osd.GifFailed" : "Player.Osd.ClipFailed"), 4);
+            ErrorLog.Write(logTitle, ex);
+            if (!_closing) ShowOsd(Loc.T(failedKey), 4);
         }
         finally
         {
             if (_export == cancel) _export = null;
             ExportPanel.IsVisible = false;
         }
+    }
+
+    private enum ExportKind
+    {
+        Clip,
+        Gif,
+        Web,
     }
 
     private void CancelExport() => _export?.Cancel();
@@ -777,6 +850,7 @@ public partial class PlayerWindow : Window
     private void OnClearRangeClick(object? sender, RoutedEventArgs e) => ClearRange();
     private void OnExportClipClick(object? sender, RoutedEventArgs e) => ExportClip();
     private void OnExportGifClick(object? sender, RoutedEventArgs e) => ExportGif();
+    private void OnExportWebClick(object? sender, RoutedEventArgs e) => ExportWeb();
     private void OnCancelExportClick(object? sender, RoutedEventArgs e) => CancelExport();
 
     private void OnSpeedClick(object? sender, RoutedEventArgs e)
@@ -786,7 +860,10 @@ public partial class PlayerWindow : Window
         SetSpeed(index < 0 ? Speeds[0] : Speeds[index]);
     }
 
-    /// <summary>mpv keyboard shortcuts, plus I / O (extract), E (MP4 extract), G (GIF), F1 (help), Ctrl+O (default player).</summary>
+    /// <summary>
+    /// mpv keyboard shortcuts, plus I / O (extract), E (MP4 extract), C (export / compress), G (GIF), F1 (help),
+    /// Ctrl+O (default player).
+    /// </summary>
     private void OnPreviewKeyDown(object? sender, KeyEventArgs e)
     {
         // Typing in the export menu or another popup is left alone.
@@ -802,8 +879,9 @@ public partial class PlayerWindow : Window
             case Key.O when shift: ClearOut(); break;
             case Key.O: SetOut(); break;
             case Key.E: ExportClip(); break;
+            case Key.C when !control: ExportWeb(); break;
             case Key.G: ExportGif(); break;
-            case Key.F1: ShowOsd(Loc.T("Player.Help"), 8); break;
+            case Key.F1: ShowOsd(Loc.T("Player.Web.Help"), 8); break;
             case Key.Space or Key.P: TogglePlay(); break;
             case Key.Right: SeekBy(shift ? 1 : 5); break;
             case Key.Left: SeekBy(shift ? -1 : -5); break;
