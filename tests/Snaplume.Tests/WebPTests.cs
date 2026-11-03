@@ -127,7 +127,8 @@ public class WebPTests
         var capture = folder.File("capture.webp");
         ImageIO.Save(Solid(40, 30, Colors.Orange), capture);
         var docx = folder.File("out.docx");
-        DocumentGenerator.Generate(new[] { capture }, new DocumentOptions { Kind = DocumentKind.Docx }, docx);
+        DocumentGenerator.Generate(new[] { capture }, new DocumentOptions { Kind = DocumentKind.Docx }, docx,
+            cancellation: TestContext.Current.CancellationToken);
         using var zip = ZipFile.OpenRead(docx);
         var media = Assert.Single(zip.Entries, e => e.FullName.Contains("media/", StringComparison.Ordinal));
         using var stream = media.Open();
