@@ -9,7 +9,7 @@ using Snaplume.Platform.Windows.Video;
 
 namespace Snaplume.Platform.Windows;
 
-/// <summary>Windows services: Win32, WinRT (OCR, video), ScreenRecorderLib, MAPI, WPF printing and clipboard, WinForms tray icon.</summary>
+/// <summary>Windows services: Win32 (tray icon, clipboard, GDI printing...), WinRT (OCR, video), ScreenRecorderLib, MAPI.</summary>
 public static class WindowsPlatform
 {
     /// <summary>

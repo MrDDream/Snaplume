@@ -2,8 +2,9 @@
 
   <!--
     Windows services (see Snaplume.Core/Platform/IPlatform.cs): Win32 (hotkeys, windows under the mouse, SendInput,
-    display affinity, Recycle Bin), WinRT (OCR, video editing and playback), ScreenRecorderLib (video), MAPI (e-mail),
-    WPF printing (System.Printing / XPS) and clipboard, WinForms notification icon.
+    display affinity, Recycle Bin, notification icon, clipboard, GDI printing), WinRT (OCR, video editing and
+    playback), ScreenRecorderLib (video), MAPI (e-mail). No WPF or WinForms: a self-contained publish would carry the
+    whole Windows Desktop runtime (85 MB more in Snaplume.exe) for a few calls.
   -->
   <PropertyGroup>
     <!-- Windows 10 SDK projection: Windows.Media.Ocr, Windows.Media.Editing, Windows.Media.Playback. -->
@@ -11,24 +12,13 @@
     <SupportedOSPlatformVersion>10.0.19041.0</SupportedOSPlatformVersion>
     <RootNamespace>Snaplume.Platform.Windows</RootNamespace>
     <AssemblyName>Snaplume.Platform.Windows</AssemblyName>
-    <UseWPF>true</UseWPF>
-    <UseWindowsForms>true</UseWindowsForms>
     <AllowUnsafeBlocks>true</AllowUnsafeBlocks>
     <PlatformTarget>x64</PlatformTarget>
-    <!-- The DPI mode is set by the application's app.manifest (WinForms analyzer suggestion not applicable). -->
-    <NoWarn>$(NoWarn);WFO0003</NoWarn>
   </PropertyGroup>
 
   <ItemGroup>
     <!-- The tray icon: the application's own icon, one file for both projects. -->
     <EmbeddedResource Include="..\Snaplume.App\Assets\app.ico" LogicalName="Snaplume.Platform.Windows.app.ico" Link="Assets\app.ico" />
-  </ItemGroup>
-
-  <ItemGroup>
-    <!-- Avoid WPF/WinForms/Avalonia type name clashes (Point, Color, Application...). -->
-    <Using Remove="System.Windows.Forms" />
-    <Using Remove="System.Drawing" />
-    <Using Include="System.IO" />
   </ItemGroup>
 
   <ItemGroup>

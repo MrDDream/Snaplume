@@ -215,6 +215,56 @@ internal static class NativeMethods
     [return: MarshalAs(UnmanagedType.Bool)]
     public static extern bool DeleteObject(IntPtr handle);
 
+    public const uint MB_OK = 0x0;
+    public const uint MB_ICONINFORMATION = 0x40;
+    public const uint MB_RIGHT = 0x80000;
+    public const uint MB_RTLREADING = 0x100000;
+
+    [DllImport("user32.dll", CharSet = CharSet.Unicode, EntryPoint = "MessageBoxW")]
+    public static extern int MessageBox(IntPtr owner, string text, string caption, uint type);
+
+    public const uint SRCCOPY = 0x00CC0020;
+
+    [DllImport("user32.dll")]
+    public static extern IntPtr GetDC(IntPtr hWnd);
+
+    [DllImport("user32.dll")]
+    public static extern int ReleaseDC(IntPtr hWnd, IntPtr hdc);
+
+    [DllImport("gdi32.dll", SetLastError = true)]
+    public static extern IntPtr CreateCompatibleDC(IntPtr hdc);
+
+    [DllImport("gdi32.dll")]
+    [return: MarshalAs(UnmanagedType.Bool)]
+    public static extern bool DeleteDC(IntPtr hdc);
+
+    [DllImport("gdi32.dll")]
+    public static extern IntPtr SelectObject(IntPtr hdc, IntPtr handle);
+
+    [DllImport("gdi32.dll", SetLastError = true)]
+    [return: MarshalAs(UnmanagedType.Bool)]
+    public static extern bool BitBlt(IntPtr target, int x, int y, int width, int height, IntPtr source, int sourceX, int sourceY, uint operation);
+
+    /// <summary>BITMAPINFO of a 32-bit DIB: its header only (no colour table).</summary>
+    [StructLayout(LayoutKind.Sequential)]
+    public struct BITMAPINFOHEADER
+    {
+        public int biSize;
+        public int biWidth;
+        public int biHeight;
+        public ushort biPlanes;
+        public ushort biBitCount;
+        public uint biCompression;
+        public uint biSizeImage;
+        public int biXPelsPerMeter;
+        public int biYPelsPerMeter;
+        public uint biClrUsed;
+        public uint biClrImportant;
+    }
+
+    [DllImport("gdi32.dll", SetLastError = true)]
+    public static extern IntPtr CreateDIBSection(IntPtr hdc, ref BITMAPINFOHEADER info, uint usage, out IntPtr bits, IntPtr section, uint offset);
+
     [DllImport("shell32.dll", CharSet = CharSet.Unicode, EntryPoint = "SHFileOperationW")]
     public static extern int SHFileOperation(ref SHFILEOPSTRUCT operation);
 

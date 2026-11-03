@@ -8,8 +8,8 @@
     1. Publishes src/Snaplume.App/Snaplume.App.csproj (its Windows target framework) for win-x64, self-contained
        (users need no .NET install), ReadyToRun. Default layout "SingleFile": Snaplume.exe (single-file bundle)
        next to the few files that cannot be bundled: ScreenRecorderLib.dll (mixed-mode C++/CLI assembly, excluded
-       from the bundle by build/SingleFile.targets), Avalonia's native libraries (Skia, HarfBuzz, ANGLE) and WPF's
-       (*_cor3.dll, used for printing and the clipboard). "Folder" is the classic layout.
+       from the bundle by build/SingleFile.targets), Avalonia's native libraries (Skia, HarfBuzz, ANGLE).
+       "Folder" is the classic layout.
        The Linux packages are built by build/build-linux.ps1.
     2. Adds the Microsoft Visual C++ 2015-2022 x64 runtime needed by ScreenRecorderLib (C++/CLI):
        - "AppLocal": the redistributable DLLs from Visual Studio's VC\Redist\MSVC\<ver>\x64\Microsoft.VC14x.CRT
@@ -160,7 +160,7 @@ foreach ($dir in @((Join-Path $projectDir "bin\$Configuration"), (Join-Path $pro
     if (Test-Path -LiteralPath $dir) { Remove-Item -LiteralPath $dir -Recurse -Force }
 }
 
-# The interface languages are embedded resources; keep the framework (WPF/WinForms) satellite resources
+# The interface languages are embedded resources; keep the framework's satellite resources
 # for the same languages only. Passed as an environment variable (MSBuild reads them as properties)
 # because a ';' list cannot be passed reliably with -p.
 $env:SatelliteResourceLanguages = 'en;fr;de;es;it;ar'
@@ -186,7 +186,7 @@ $publishArgs = @(
 if ($Layout -eq 'SingleFile') {
     $publishArgs += @(
         '-p:PublishSingleFile=true',
-        # Native libraries (Skia, HarfBuzz, ANGLE, WPF's wpfgfx...) stay next to the exe rather
+        # Native libraries (Skia, HarfBuzz, ANGLE) stay next to the exe rather
         # than being bundled (IncludeNativeLibrariesForSelfExtract) and extracted to %TEMP% at first run:
         # no extraction delay, and nothing loaded from %TEMP% (often blocked on locked-down PCs).
         '-p:IncludeNativeLibrariesForSelfExtract=false',

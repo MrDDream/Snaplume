@@ -1,9 +1,8 @@
+using System.ComponentModel;
 using System.Runtime.InteropServices;
 using Snaplume.Capturing;
 using Snaplume.Imaging;
 using static Snaplume.Platform.Windows.Native.NativeMethods;
-using Gdi = System.Drawing;
-using GdiImaging = System.Drawing.Imaging;
 
 namespace Snaplume.Platform.Windows.Capturing;
 
@@ -36,8 +35,8 @@ public sealed class ScreenCapture : IScreenCapture
     public IScreenGrabber CreateGrabber(PixelRect area) => new GdiScreenGrabber(area);
 
     /// <summary>
-    /// Every monitor with its scale. EnumDisplayMonitors rather than WinForms' Screen: Screen caches its list
-    /// until a WM_DISPLAYCHANGE reaches a WinForms window, which may never happen under Avalonia.
+    /// Every monitor with its scale. EnumDisplayMonitors rather than a cached list of screens: the monitors may change
+    /// at any time.
     /// </summary>
     internal static IReadOnlyList<MonitorInfo> EnumerateMonitors()
     {
@@ -66,19 +65,38 @@ public sealed class ScreenCapture : IScreenCapture
 }
 
 /// <summary>
-/// GDI copy of an area of the screen into a 32-bit bitmap kept for the next copies (a scrolling
+/// GDI copy of an area of the screen into a 32-bit DIB section kept for the next copies (a scrolling
 /// capture grabs the same area hundreds of times). Not thread-safe: one copy at a time.
 /// </summary>
 internal sealed class GdiScreenGrabber : IScreenGrabber
 {
-    private readonly Gdi.Bitmap _bitmap;
+    private readonly IntPtr _memoryDc;
+    private readonly IntPtr _bitmap;
+    private readonly IntPtr _previousBitmap;
+    /// <summary>The pixels of the DIB section: top-down BGRX rows of exactly width * 4 bytes.</summary>
+    private readonly IntPtr _bits;
+    private bool _disposed;
 
     /// <param name="area">Absolute physical screen coordinates.</param>
+    /// <exception cref="Win32Exception">GDI could not create the bitmap (e.g. out of memory).</exception>
     public GdiScreenGrabber(PixelRect area)
     {
         if (area.IsEmpty) throw new ArgumentException("Empty area", nameof(area));
         Area = area;
-        _bitmap = new Gdi.Bitmap(area.Width, area.Height, GdiImaging.PixelFormat.Format32bppRgb);
+        var header = new BITMAPINFOHEADER
+        {
+            biSize = Marshal.SizeOf<BITMAPINFOHEADER>(), biWidth = area.Width, biHeight = -area.Height, biPlanes = 1, biBitCount = 32,
+        };
+        _memoryDc = CreateCompatibleDC(IntPtr.Zero);
+        if (_memoryDc == IntPtr.Zero) throw new Win32Exception(Marshal.GetLastPInvokeError());
+        _bitmap = CreateDIBSection(_memoryDc, ref header, 0, out _bits, IntPtr.Zero, 0);
+        if (_bitmap == IntPtr.Zero || _bits == IntPtr.Zero)
+        {
+            var error = new Win32Exception(Marshal.GetLastPInvokeError());
+            DeleteDC(_memoryDc);
+            throw error;
+        }
+        _previousBitmap = SelectObject(_memoryDc, _bitmap);
     }
 
     public PixelRect Area { get; }
@@ -96,60 +114,55 @@ internal sealed class GdiScreenGrabber : IScreenGrabber
     }
 
     /// <summary>Copies the screen into the bitmap, with the mouse cursor drawn on it if asked.</summary>
+    /// <exception cref="Win32Exception">The screen cannot be read (e.g. while the secure desktop is shown).</exception>
     public void Grab(bool includeCursor)
     {
-        using var g = Gdi.Graphics.FromImage(_bitmap);
-        g.CopyFromScreen(Area.X, Area.Y, 0, 0, new Gdi.Size(Area.Width, Area.Height), Gdi.CopyPixelOperation.SourceCopy);
-        if (includeCursor) DrawCursor(g, Area.X, Area.Y);
+        ObjectDisposedException.ThrowIf(_disposed, this);
+        var screen = GetDC(IntPtr.Zero);
+        try
+        {
+            if (!BitBlt(_memoryDc, 0, 0, Area.Width, Area.Height, screen, Area.X, Area.Y, SRCCOPY))
+                throw new Win32Exception(Marshal.GetLastPInvokeError());
+        }
+        finally
+        {
+            ReleaseDC(IntPtr.Zero, screen);
+        }
+        if (includeCursor) DrawCursor(_memoryDc, Area.X, Area.Y);
     }
 
     /// <summary>Copies the last grab as opaque BGRA pixels (stride = width * 4) into <paramref name="target"/>.</summary>
     public void CopyTo(byte[] target)
     {
-        int stride = Area.Width * 4;
-        if (target.Length < (long)stride * Area.Height) throw new ArgumentException("Buffer too small", nameof(target));
-        var data = _bitmap.LockBits(new Gdi.Rectangle(0, 0, Area.Width, Area.Height), GdiImaging.ImageLockMode.ReadOnly,
-            GdiImaging.PixelFormat.Format32bppRgb);
-        try
-        {
-            if (data.Stride == stride)
-            {
-                Marshal.Copy(data.Scan0, target, 0, stride * Area.Height);
-            }
-            else
-            {
-                for (int y = 0; y < Area.Height; y++)
-                    Marshal.Copy(data.Scan0 + y * data.Stride, target, y * stride, stride);
-            }
-        }
-        finally
-        {
-            _bitmap.UnlockBits(data);
-        }
+        ObjectDisposedException.ThrowIf(_disposed, this);
+        int length = Area.Width * 4 * Area.Height;
+        if (target.Length < length) throw new ArgumentException("Buffer too small", nameof(target));
+        // GDI may batch drawing calls: they must be done before the pixels are read.
+        GdiFlush();
+        Marshal.Copy(_bits, target, 0, length);
         // The 4th byte of a screen copy is undefined (BGRX).
-        foreach (ref uint pixel in MemoryMarshal.Cast<byte, uint>(target.AsSpan(0, stride * Area.Height)))
+        foreach (ref uint pixel in MemoryMarshal.Cast<byte, uint>(target.AsSpan(0, length)))
             pixel |= 0xFF000000;
     }
 
-    public void Dispose() => _bitmap.Dispose();
+    public void Dispose()
+    {
+        if (_disposed) return;
+        _disposed = true;
+        SelectObject(_memoryDc, _previousBitmap);
+        DeleteObject(_bitmap);
+        DeleteDC(_memoryDc);
+    }
 
-    private static void DrawCursor(Gdi.Graphics g, int originX, int originY)
+    private static void DrawCursor(IntPtr hdc, int originX, int originY)
     {
         var info = new CURSORINFO { cbSize = Marshal.SizeOf<CURSORINFO>() };
         if (!GetCursorInfo(ref info) || (info.flags & CURSOR_SHOWING) == 0) return;
         if (!GetIconInfo(info.hCursor, out var icon)) return;
         try
         {
-            var hdc = g.GetHdc();
-            try
-            {
-                DrawIconEx(hdc, info.ptScreenPos.X - icon.xHotspot - originX, info.ptScreenPos.Y - icon.yHotspot - originY,
-                    info.hCursor, 0, 0, 0, IntPtr.Zero, DI_NORMAL);
-            }
-            finally
-            {
-                g.ReleaseHdc(hdc);
-            }
+            DrawIconEx(hdc, info.ptScreenPos.X - icon.xHotspot - originX, info.ptScreenPos.Y - icon.yHotspot - originY,
+                info.hCursor, 0, 0, 0, IntPtr.Zero, DI_NORMAL);
         }
         finally
         {
@@ -157,4 +170,8 @@ internal sealed class GdiScreenGrabber : IScreenGrabber
             if (icon.hbmColor != IntPtr.Zero) DeleteObject(icon.hbmColor);
         }
     }
+
+    [DllImport("gdi32.dll")]
+    [return: MarshalAs(UnmanagedType.Bool)]
+    private static extern bool GdiFlush();
 }
