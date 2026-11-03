@@ -82,6 +82,27 @@ public static class FfmpegWebArguments
     }
 
     /// <summary>
+    /// Input options of every file ffmpeg reads: only local files may be opened. A "video" that is really a playlist
+    /// (HLS, concat...) could otherwise make ffmpeg fetch addresses or nested protocols (subfile, http...).
+    /// </summary>
+    public static readonly IReadOnlyList<string> InputProtocols = new[] { "-protocol_whitelist", "file" };
+
+    /// <summary>
+    /// A file given to ffmpeg: "file:" and the full path, so a name like "concat:a|b", "http://..." or "-x.mp4" stays
+    /// a file name.
+    /// </summary>
+    public static string FileUrl(string path) => "file:" + Path.GetFullPath(path);
+
+    /// <summary>"ffmpeg -i file": what ffmpeg says of the input on its error output (<see cref="FfmpegTools.ParseInputInfo"/>).</summary>
+    public static List<string> Probe(string path)
+    {
+        var args = new List<string> { "-hide_banner", "-nostdin" };
+        args.AddRange(InputProtocols);
+        args.AddRange(new[] { "-i", FileUrl(path) });
+        return args;
+    }
+
+    /// <summary>
     /// A tiny encoding of generated frames (no input file, no output file), to know whether a hardware encoder
     /// really works on this PC.
     /// </summary>
@@ -108,7 +129,8 @@ public static class FfmpegWebArguments
         bool vaapi = encoders.Video == "hevc_vaapi";
         var args = new List<string> { "-hide_banner", "-nostdin", "-y", "-loglevel", "error", "-nostats", "-progress", "pipe:1" };
         if (vaapi) args.AddRange(new[] { "-vaapi_device", VaapiDevice });
-        args.AddRange(new[] { "-ss", Seconds(start), "-i", source, "-t", Seconds(end - start), "-map", "0:v:0" });
+        args.AddRange(InputProtocols);
+        args.AddRange(new[] { "-ss", Seconds(start), "-i", FileUrl(source), "-t", Seconds(end - start), "-map", "0:v:0" });
         if (sound) args.AddRange(new[] { "-map", "0:a:0?" });
         // Scaled with the same shape (even sizes, see WebExportPlanner.Fit), then the frame rate and the pixel format
         // of the encoder (NV12 for Intel and VA-API, sent to the graphics card for VA-API).
@@ -149,7 +171,7 @@ public static class FfmpegWebArguments
             WebFormat.WebP => new[] { "-loop", "0", "-f", "webp" },
             _ => new[] { "-movflags", "+faststart", "-f", "mp4" },
         });
-        args.Add(destination);
+        args.Add(FileUrl(destination));
         return args;
     }
 

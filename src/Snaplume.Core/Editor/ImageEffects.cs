@@ -110,13 +110,21 @@ public readonly record struct Int32Thickness(int Left, int Top, int Right, int B
 }
 
 /// <summary>Outline of the image: for clipping on screen (Avalonia) and for the shadow mask (Skia).</summary>
-internal sealed record ImageOutline(Geometry Geometry, SKPath Path);
+internal sealed record ImageOutline(Geometry Geometry, SKPath Path) : IDisposable
+{
+    public void Dispose() => Path.Dispose();
+}
 
 /// <summary>
 /// Everything needed to draw the effects of an image of a given size, computed once
 /// (see <see cref="EffectsRenderer.For"/>). Coordinates are those of the image: the margins are negative.
 /// </summary>
-public sealed class EffectsLayout
+/// <remarks>
+/// A layout of <see cref="EffectsRenderer.For"/> shares its outline and shadow with the caches, where another
+/// editor may be drawing them: disposing it does nothing (see <see cref="ShadowMask"/>). A layout of
+/// <see cref="EffectsRenderer.Sample"/> owns them, and disposing it frees them once it is no longer drawn.
+/// </remarks>
+public sealed class EffectsLayout : IDisposable
 {
     private static readonly RenderOptions SmoothScaling = new() { BitmapInterpolationMode = BitmapInterpolationMode.MediumQuality };
 
@@ -124,6 +132,10 @@ public sealed class EffectsLayout
     private readonly ShadowMask? _shadow;
     private readonly IPen? _borderPen;
     private readonly Rect _borderRect;
+    /// <summary>The outline and the shadow, when built for this layout alone (not shared).</summary>
+    private readonly ImageOutline? _ownedOutline;
+    private readonly bool _owned;
+    private bool _disposed;
 
     /// <param name="shared">False to build the outline and the shadow apart from the caches (see <see cref="EffectsRenderer.Sample"/>).</param>
     internal EffectsLayout(ImageEffects effects, int width, int height, bool shared = true)
@@ -134,6 +146,8 @@ public sealed class EffectsLayout
         Padding = effects.GetPadding();
         var outline = EffectsRenderer.Outline(effects, width, height, shared);
         OutlineGeometry = outline?.Geometry;
+        _owned = !shared;
+        if (_owned) _ownedOutline = outline;
 
         _background = new ImmutableSolidColorBrush(effects.Background);
 
@@ -206,6 +220,15 @@ public sealed class EffectsLayout
         }
     }
 
+    /// <summary>Frees the outline and the shadow of a sample layout (nothing for a shared one, see the remarks).</summary>
+    public void Dispose()
+    {
+        if (!_owned || _disposed) return;
+        _disposed = true;
+        _shadow?.Dispose();
+        _ownedOutline?.Dispose();
+    }
+
     private sealed class NoState : IDisposable
     {
         public static readonly NoState Instance = new();
@@ -217,7 +240,43 @@ public sealed class EffectsLayout
 }
 
 /// <summary>Blurred outline of the image, fully opaque, and where to draw it (before the offset of the shadow).</summary>
-internal sealed record ShadowMask(Bitmap Bitmap, Rect Area);
+/// <remarks>
+/// A mask of the caches is never disposed when it leaves them: a layout still on screen (another editor, the
+/// preview) may draw it on the next frame. Its pixels are counted as memory pressure instead, so that the
+/// collector, which does not see the native bitmap, frees a dropped mask soon; the pressure is given back when the
+/// mask is disposed (the mask of a sample layout) or finalized.
+/// </remarks>
+internal sealed class ShadowMask : IDisposable
+{
+    private long _pressure;
+
+    /// <param name="bytes">Size of the pixels of <paramref name="bitmap"/>.</param>
+    public ShadowMask(Bitmap bitmap, Rect area, long bytes)
+    {
+        Bitmap = bitmap;
+        Area = area;
+        _pressure = Math.Max(1, bytes);
+        GC.AddMemoryPressure(_pressure);
+    }
+
+    ~ShadowMask() => ReleasePressure();
+
+    public Bitmap Bitmap { get; }
+    public Rect Area { get; }
+
+    public void Dispose()
+    {
+        Bitmap.Dispose();
+        ReleasePressure();
+        GC.SuppressFinalize(this);
+    }
+
+    private void ReleasePressure()
+    {
+        long pressure = Interlocked.Exchange(ref _pressure, 0);
+        if (pressure > 0) GC.RemoveMemoryPressure(pressure);
+    }
+}
 
 public static class EffectsRenderer
 {
@@ -297,7 +356,9 @@ public static class EffectsRenderer
         // One intersection, flattened once by Skia: clipping with a single path is faster than with a combined geometry.
         using var corners = new SKPath();
         corners.AddRoundRect(skBounds, (float)key.Radius, (float)key.Radius);
-        var both = torn.Op(corners, SKPathOp.Intersect) ?? torn;
+        var both = torn.Op(corners, SKPathOp.Intersect);
+        if (both == null) return new ImageOutline(ToGeometry(torn), torn);
+        if (!ReferenceEquals(both, torn)) torn.Dispose();
         return new ImageOutline(ToGeometry(both), both);
     }
 
@@ -547,7 +608,7 @@ public static class EffectsRenderer
         }
 
         var image = AvaloniaImages.ToBitmap(mask);
-        return new ShadowMask(image, new Rect(-pad, -pad, maskWidth * factor, maskHeight * factor));
+        return new ShadowMask(image, new Rect(-pad, -pad, maskWidth * factor, maskHeight * factor), mask.Pixels.LongLength);
     }
 
     /// <summary>Share of each mask cell covered by the image (from <paramref name="start"/>, <paramref name="length"/> long).</summary>
@@ -614,7 +675,10 @@ public static class EffectsRenderer
         }
     }
 
-    /// <summary>The few last values used, most recent first.</summary>
+    /// <summary>
+    /// The few last values used, most recent first. A value leaving the cache is not disposed: it may still be
+    /// drawn (see <see cref="ShadowMask"/>).
+    /// </summary>
     private sealed class SmallCache<TKey, TValue>(int capacity) where TKey : notnull
     {
         private readonly List<KeyValuePair<TKey, TValue>> _items = new();
@@ -623,23 +687,33 @@ public static class EffectsRenderer
         {
             lock (_items)
             {
-                int index = _items.FindIndex(item => EqualityComparer<TKey>.Default.Equals(item.Key, key));
-                if (index >= 0)
-                {
-                    var found = _items[index];
-                    _items.RemoveAt(index);
-                    _items.Insert(0, found);
-                    return found.Value;
-                }
+                if (TakeFirst(key) is { } found) return found.Value;
             }
             // Built outside the lock; on failure (out of memory) nothing is kept.
             var value = create();
             lock (_items)
             {
+                // Built meanwhile by another thread: that one is kept, this one was never handed out.
+                if (TakeFirst(key) is { } other)
+                {
+                    (value as IDisposable)?.Dispose();
+                    return other.Value;
+                }
                 _items.Insert(0, new KeyValuePair<TKey, TValue>(key, value));
                 if (_items.Count > capacity) _items.RemoveAt(_items.Count - 1);
             }
             return value;
+        }
+
+        /// <summary>The entry of <paramref name="key"/> moved to the front, or null (under the lock).</summary>
+        private KeyValuePair<TKey, TValue>? TakeFirst(TKey key)
+        {
+            int index = _items.FindIndex(item => EqualityComparer<TKey>.Default.Equals(item.Key, key));
+            if (index < 0) return null;
+            var found = _items[index];
+            _items.RemoveAt(index);
+            _items.Insert(0, found);
+            return found;
         }
     }
 }

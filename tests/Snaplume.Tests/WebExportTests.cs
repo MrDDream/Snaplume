@@ -160,13 +160,13 @@ public class WebExportTests : IDisposable
         Assert.Equal(new[] { "-f", "null", "-" }, first.TakeLast(3));
         Assert.Contains("-an", first);
         Assert.DoesNotContain("0:a:0?", first);
-        Assert.Equal(new[] { "-ss", "2", "-i", "in.mp4", "-t", "10" }, Slice(first, "-ss", 6));
+        Assert.Equal(new[] { "-ss", "2", "-i", FfmpegWebArguments.FileUrl("in.mp4"), "-t", "10" }, Slice(first, "-ss", 6));
 
         var second = FfmpegWebArguments.Encode(WebFormat.WebmVp9, TargetPlan, encoders, "in.mp4", "out.webm", TimeSpan.FromSeconds(2),
             TimeSpan.FromSeconds(12), hasAudio: true, pass: 2, passLog: "/tmp/log");
         Assert.Equal(new[] { "-c:a", "libopus", "-b:a", "64k" }, Slice(second, "-c:a", 4));
         Assert.Equal(new[] { "-b:v", "1200k" }, Slice(second, "-b:v", 2));
-        Assert.Equal(new[] { "-f", "webm", "out.webm" }, second.TakeLast(3));
+        Assert.Equal(new[] { "-f", "webm", FfmpegWebArguments.FileUrl("out.webm") }, second.TakeLast(3));
         Assert.Equal("scale=1280:720:flags=lanczos,setsar=1,fps=24,format=yuv420p", Slice(second, "-vf", 2)[1]);
     }
 
@@ -178,7 +178,7 @@ public class WebExportTests : IDisposable
         Assert.Equal(new[] { "-tag:v", "hvc1" }, Slice(args, "-tag:v", 2));
         Assert.Equal(new[] { "-x265-params", @"pass=2:stats=C\:/Temp/snap.x265.log" }, Slice(args, "-x265-params", 2));
         Assert.DoesNotContain("-pass", args);
-        Assert.Equal(new[] { "-movflags", "+faststart", "-f", "mp4", "out.mp4" }, args.TakeLast(5));
+        Assert.Equal(new[] { "-movflags", "+faststart", "-f", "mp4", FfmpegWebArguments.FileUrl("out.mp4") }, args.TakeLast(5));
         Assert.Equal(@"C\:/a\'b\=c", FfmpegWebArguments.EscapeOptionValue(@"C:\a'b=c"));
     }
 
@@ -212,9 +212,29 @@ public class WebExportTests : IDisposable
         var webp = FfmpegWebArguments.Encode(WebFormat.WebP, new WebEncodePlan(960, 540, 15, 0, 0, WebPQuality: 70),
             new FfmpegEncoderChoice("libwebp_anim", null), "in.mp4", "out.webp", TimeSpan.Zero, TimeSpan.FromSeconds(10), hasAudio: true);
         Assert.Equal(new[] { "-quality", "70" }, Slice(webp, "-quality", 2));
-        Assert.Equal(new[] { "-loop", "0", "-f", "webp", "out.webp" }, webp.TakeLast(5));
+        Assert.Equal(new[] { "-loop", "0", "-f", "webp", FfmpegWebArguments.FileUrl("out.webp") }, webp.TakeLast(5));
         Assert.Equal("scale=960:540:flags=lanczos,setsar=1,fps=15", Slice(webp, "-vf", 2)[1]);
         Assert.Contains("-an", webp);
+    }
+
+    [Fact]
+    public void FfmpegOnlyOpensLocalFilesGivenByFullPath()
+    {
+        // A "video" that is really a playlist must not reach other protocols, and a name stays a file name.
+        var args = FfmpegWebArguments.Encode(WebFormat.WebmVp9, TargetPlan, new FfmpegEncoderChoice("libvpx-vp9", "libopus"), "concat:a.mp4|b.mp4",
+            "-out.webm", TimeSpan.Zero, TimeSpan.FromSeconds(10), hasAudio: true);
+        int input = args.IndexOf("-i");
+        Assert.Equal(new[] { "-protocol_whitelist", "file" }, Slice(args, "-protocol_whitelist", 2));
+        Assert.True(args.IndexOf("-protocol_whitelist") < input);
+        Assert.Equal("file:" + Path.GetFullPath("concat:a.mp4|b.mp4"), args[input + 1]);
+        Assert.Equal("file:" + Path.GetFullPath("-out.webm"), args[^1]);
+
+        var probe = FfmpegWebArguments.Probe("clip.mp4");
+        Assert.Equal(new[] { "-protocol_whitelist", "file", "-i", "file:" + Path.GetFullPath("clip.mp4") }, probe.TakeLast(4));
+        Assert.Contains("-nostdin", probe);
+
+        // The generated frames of the encoder probe need no file.
+        Assert.DoesNotContain(FfmpegWebArguments.ProbeEncoder("hevc_nvenc"), a => a.StartsWith("file:", StringComparison.Ordinal));
     }
 
     private static string[] Slice(List<string> args, string first, int count)
@@ -344,6 +364,46 @@ public class WebExportTests : IDisposable
         var info = FfmpegTools.ParseInputInfo(text)!;
         Assert.Equal(new VideoInfo(1920, 1080, 29.97, true, TimeSpan.FromSeconds(62.5)), info);
         Assert.Null(FfmpegTools.ParseInputInfo("Stream #0:0: Audio: mp3, 44100 Hz"));
+    }
+
+    [Fact]
+    public void InputInfoTrustsOnlyTheDescriptionOfTheFirstInput()
+    {
+        // Lines printed before "Input #0" (warnings quoting the file) and other inputs are not the file.
+        const string text = """
+            [hls @ 0x1] Stream #0:0: Video: h264, 64x64, 30 fps
+            Duration: 01:00:00.00
+            Input #0, mov,mp4,m4a,3gp,3g2,mj2, from 'video.mp4':
+              Duration: 00:00:10.00, start: 0.000000, bitrate: 4612 kb/s
+              Stream #1:0: Video: h264, 320x240, 60 fps
+              Stream #0:0: Video: h264 (High), yuv420p, 1280x720, 25 fps, 25 tbr
+            Input #1, lavfi, from 'x':
+              Stream #1:0: Audio: pcm_s16le, 44100 Hz
+            """;
+        Assert.Equal(new VideoInfo(1280, 720, 25, false, TimeSpan.FromSeconds(10)), FfmpegTools.ParseInputInfo(text));
+
+        // Sizes and lengths out of reason are not believed.
+        Assert.Null(FfmpegTools.ParseInputInfo("Input #0, x, from 'a':\n  Stream #0:0: Video: h264, 99999x720, 25 fps\n"));
+        var info = FfmpegTools.ParseInputInfo(
+            "Input #0, x, from 'a':\n  Duration: 99999999:00:00.00, start: 0\n  Stream #0:0: Video: h264, 640x480, 99999999 fps\n")!;
+        Assert.Equal((640, 480, 0.0, TimeSpan.Zero), (info.Width, info.Height, info.FramesPerSecond, info.Duration));
+        Assert.Null(FfmpegTools.ParseInputInfo("Stream #0:0: Video: h264, 640x480, 25 fps"));
+    }
+
+    [Fact]
+    public async Task HardwareEncoderProbeFailingAnyWayIsDropped()
+    {
+        var runner = new FakeRunner
+        {
+            Encoders = "------\n V....D hevc_nvenc  NVIDIA\n V....D libx264  x264\n",
+            Fails = args => args.Contains("hevc_nvenc") ? throw new System.ComponentModel.Win32Exception("driver") : false,
+        };
+        var module = Path.Combine(_folder, "ffmpeg.exe");
+        File.WriteAllText(module, "");
+        var info = await FfmpegTools.DetectAsync(runner, module, null, windows: true);
+        Assert.NotNull(info);
+        Assert.DoesNotContain("hevc_nvenc", info!.Encoders);
+        Assert.Contains("libx264", info.Encoders);
     }
 
     // ---- Export ----
@@ -603,6 +663,29 @@ public class WebExportTests : IDisposable
         Assert.Throws<InvalidDataException>(() => FfmpegModule.Unpack(zip, folder, "8.1.3"));
     }
 
+    [Fact]
+    public void UnpackReplacesTheModuleWholeOrNotAtAll()
+    {
+        var zip = Path.Combine(_folder, "module.zip");
+        var folder = Path.Combine(_folder, "modules", "ffmpeg");
+        Directory.CreateDirectory(Path.Combine(folder, "bin"));
+        File.WriteAllText(Path.Combine(folder, "bin", "ffmpeg.exe"), "old");
+        // Left by an interrupted install.
+        Directory.CreateDirectory(folder + ".old");
+        File.WriteAllText(Path.Combine(folder + ".old", "stale.dll"), "stale");
+
+        // A refused archive leaves the module in place.
+        File.WriteAllBytes(zip, ModuleZipWithout());
+        Assert.Throws<InvalidDataException>(() => FfmpegModule.Unpack(zip, folder, "8.1.3"));
+        Assert.Equal("old", File.ReadAllText(Path.Combine(folder, "bin", "ffmpeg.exe")));
+
+        File.WriteAllBytes(zip, ModuleZip());
+        FfmpegModule.Unpack(zip, folder, "8.1.3");
+        Assert.Equal("8.1.3", FfmpegModule.InstalledVersion(folder));
+        Assert.NotEqual("old", File.ReadAllText(Path.Combine(folder, "bin", "ffmpeg.exe")));
+        Assert.Equal(new[] { folder }, Directory.GetDirectories(Path.GetDirectoryName(folder)!));
+    }
+
     /// <summary>An archive without ffmpeg.exe.</summary>
     private static byte[] ModuleZipWithout()
     {
@@ -663,7 +746,7 @@ public class WebExportTests : IDisposable
             cancel.ThrowIfCancellationRequested();
             outputLine?.Invoke("out_time_us=5000000");
             outputLine?.Invoke("progress=end");
-            var output = arguments[^1];
+            var output = arguments[^1].StartsWith("file:", StringComparison.Ordinal) ? arguments[^1]["file:".Length..] : arguments[^1];
             if (output != "-") System.IO.File.WriteAllBytes(output, new byte[OutputSize]);
             return Task.FromResult(new ProcessOutcome(0, "", ""));
         }

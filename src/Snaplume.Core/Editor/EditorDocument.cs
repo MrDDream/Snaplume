@@ -21,8 +21,17 @@ public sealed class EditorDocument
     public const int MaxDimension = 30000;
 
     private const int MaxUndoSteps = 100;
+    /// <summary>
+    /// Memory the base images of the undo history may take (the images of the redo steps included, each counted
+    /// once): beyond it, the oldest steps are forgotten. Big images resized or cropped many times reach it first.
+    /// </summary>
+    internal const long DefaultUndoMemoryBudget = 1L << 30;
     /// <summary>Bigger sidecar files are ignored: they cannot come from the editor.</summary>
     private const long MaxSidecarLength = 64 * 1024 * 1024;
+    /// <summary>Limits of a sidecar file (see <see cref="TooMuchToEdit"/>).</summary>
+    internal const int MaxSidecarAnnotations = 10_000;
+    internal const int MaxSidecarMagnifiers = 100;
+    internal const long MaxSidecarTextCharacters = 1_000_000;
 
     /// <summary>State of the document, for undo and for modifications that may be abandoned (see <see cref="BeginChange"/>).</summary>
     public sealed class Snapshot
@@ -41,9 +50,15 @@ public sealed class EditorDocument
         internal long Version { get; }
     }
 
-    // Oldest step first.
+    // Oldest step first; for the redo steps, the next one last.
     private readonly List<Snapshot> _undo = new();
-    private readonly Stack<Snapshot> _redo = new();
+    private readonly List<Snapshot> _redo = new();
+
+    /// <summary>See <see cref="DefaultUndoMemoryBudget"/>; smaller in the tests.</summary>
+    internal long UndoMemoryBudget { get; set; } = DefaultUndoMemoryBudget;
+
+    /// <summary>Number of undo steps kept (for the tests).</summary>
+    internal int UndoCount => _undo.Count;
 
     // Each state of the document gets a new number; it is clean when back to the number saved.
     private long _lastVersion;
@@ -164,6 +179,12 @@ public sealed class EditorDocument
                 || (data.BaseFileLength != 0 && data.BaseFileLength != new FileInfo(basePath).Length))
                 return null;
 
+            if (TooMuchToEdit(data.Annotations) is { } excess)
+            {
+                ErrorLog.Write($"Annotations ignorées dans {jsonPath}", new InvalidDataException(excess));
+                return null;
+            }
+
             var annotations = data.Annotations.Where(a => a != null && a.IsValid()).Select(a => a!).ToList();
             if (annotations.Count != data.Annotations.Count)
                 ErrorLog.Write($"Annotations invalides ignorées dans {jsonPath}", new InvalidDataException($"{data.Annotations.Count - annotations.Count} annotation(s)"));
@@ -186,14 +207,29 @@ public sealed class EditorDocument
         }
     }
 
+    /// <summary>
+    /// Why the annotations of a sidecar file are too many to be edited (each one is drawn on every frame, each
+    /// magnifier copies part of the image), or null. No editing session makes that many: the file is not from the
+    /// editor, and it is ignored as a whole.
+    /// </summary>
+    internal static string? TooMuchToEdit(IReadOnlyList<Annotation?> annotations)
+    {
+        if (annotations.Count > MaxSidecarAnnotations) return $"{annotations.Count} annotations (au plus {MaxSidecarAnnotations})";
+        int magnifiers = annotations.Count(a => a is MagnifierAnnotation);
+        if (magnifiers > MaxSidecarMagnifiers) return $"{magnifiers} loupes (au plus {MaxSidecarMagnifiers})";
+        long characters = annotations.OfType<TextAnnotation>().Sum(t => (long)(t.Text?.Length ?? 0));
+        if (characters > MaxSidecarTextCharacters) return $"{characters} caractères de texte (au plus {MaxSidecarTextCharacters})";
+        return null;
+    }
+
     /// <summary>State to give back to <see cref="CommitChange"/> or <see cref="RevertChange"/>.</summary>
     public Snapshot BeginChange() => new(BaseImage, Annotations.Select(a => a.Clone()).ToList(), Effects, Version);
 
     /// <summary>Records the modifications made since <paramref name="before"/> as one undo step.</summary>
     public void CommitChange(Snapshot before)
     {
-        AddUndoStep(before);
         _redo.Clear();
+        AddUndoStep(before);
         Version = ++_lastVersion;
         RaiseChanged();
     }
@@ -217,22 +253,46 @@ public sealed class EditorDocument
         if (_undo.Count == 0) return;
         var previous = _undo[^1];
         _undo.RemoveAt(_undo.Count - 1);
-        _redo.Push(BeginChange());
+        _redo.Add(BeginChange());
         Restore(previous);
     }
 
     public void Redo()
     {
         if (_redo.Count == 0) return;
+        var next = _redo[^1];
+        _redo.RemoveAt(_redo.Count - 1);
         AddUndoStep(BeginChange());
-        Restore(_redo.Pop());
+        Restore(next);
     }
 
-    /// <summary>The history keeps the last steps only: each one holds a copy of the annotations.</summary>
+    /// <summary>
+    /// The history keeps the last steps only: each one holds a copy of the annotations, and the base images of all
+    /// the steps stay within <see cref="UndoMemoryBudget"/> (the oldest undo steps go first, then the furthest redo
+    /// steps); the step just added is always kept.
+    /// </summary>
     private void AddUndoStep(Snapshot snapshot)
     {
         _undo.Add(snapshot);
         if (_undo.Count > MaxUndoSteps) _undo.RemoveAt(0);
+        while (HistoryImageBytes() > UndoMemoryBudget)
+        {
+            if (_undo.Count > 1) _undo.RemoveAt(0);
+            else if (_redo.Count > 0) _redo.RemoveAt(0);
+            else break;
+        }
+    }
+
+    /// <summary>Pixels of the base images held by the history only (each image once; the current one is not counted).</summary>
+    private long HistoryImageBytes()
+    {
+        var images = new HashSet<EditorImage>(ReferenceEqualityComparer.Instance) { BaseImage };
+        long total = 0;
+        foreach (var step in _undo.Concat(_redo))
+        {
+            if (images.Add(step.BaseImage)) total += step.BaseImage.Pixels.Pixels.LongLength;
+        }
+        return total;
     }
 
     public void NotifyChanged() => RaiseChanged();
@@ -281,7 +341,7 @@ public sealed class EditorDocument
         int width = Math.Clamp(area.Width, 1, BaseImage.Width - x);
         int height = Math.Clamp(area.Height, 1, BaseImage.Height - y);
         var cropped = new EditorImage(BaseImage.Pixels.Crop(x, y, width, height));
-        PushUndo();
+        var before = BeginChange();
         SetBaseImage(cropped);
         var offset = new Vector(-x, -y);
         foreach (var annotation in Annotations) annotation.Translate(offset);
@@ -295,7 +355,7 @@ public sealed class EditorDocument
             if (source is not Rect s || s.Width <= 0 || s.Height <= 0) Annotations.Remove(magnifier);
             else if (!Rects.Touch(magnifier.GetLensRect(), bounds)) magnifier.PlaceLens(bounds);
         }
-        RaiseChanged();
+        CommitChange(before);
     }
 
     /// <summary>Size of the output for an image of this size with these effects (margins of the shadow included).</summary>
@@ -325,11 +385,11 @@ public sealed class EditorDocument
         // Computed first: running out of memory must leave the document and its history untouched.
         var resized = new EditorImage(ImageIO.Resize(BaseImage.Pixels, width, height));
 
-        PushUndo();
+        var before = BeginChange();
         SetBaseImage(resized);
         Effects = effects;
         foreach (var annotation in Annotations) annotation.Scale(sx, sy);
-        RaiseChanged();
+        CommitChange(before);
     }
 
     /// <summary>
@@ -376,13 +436,13 @@ public sealed class EditorDocument
             using var paint = new SKPaint { IsAntialias = true };
             canvas.DrawImage(inserted, new SKRect((float)target.Left, (float)target.Top, (float)target.Right, (float)target.Bottom), sampling, paint);
         });
-        PushUndo();
+        var before = BeginChange();
         SetBaseImage(new EditorImage(merged));
         if (offset != default)
         {
             foreach (var annotation in Annotations) annotation.Translate(offset);
         }
-        RaiseChanged();
+        CommitChange(before);
     }
 
     /// <summary>Base image with all annotations burnt in, and the image effects around it (Avalonia rendering).</summary>
@@ -474,8 +534,9 @@ public sealed class EditorDocument
     /// <summary>
     /// Writes in an order that keeps the annotations editable if something fails: everything that may fail
     /// without touching the disk comes first (the annotations serialized, the flattened image and the base
-    /// image rendered: too big, out of memory), then the base image is written, the flattened image and last
-    /// the annotation file, replaced atomically. A sidecar that does not match its images is ignored.
+    /// image rendered: too big, out of memory), then the base image is written to a temporary file, the flattened
+    /// image saved, the base image renamed into place and last the annotation file, replaced atomically. A sidecar
+    /// that does not match its images is ignored.
     /// </summary>
     /// <param name="webpQuality">For a WebP capture: <see cref="ImageIO.WebPLossless"/>, or the quality of a lossy WebP.</param>
     public void Save(int jpegQuality = 90, int webpQuality = ImageIO.WebPLossless)
@@ -496,14 +557,25 @@ public sealed class EditorDocument
             var redactedBase = writeBase ? RedactedBase() : null;
 
             SidecarFiles.EnsureFolder(Path.GetDirectoryName(basePath)!);
-            if (redactedBase != null)
+            // The new base waits beside the old one until the capture is written: a failure in between leaves the
+            // capture, its base and its annotation file as they were, still matching.
+            var baseTemp = redactedBase != null ? basePath + SidecarFiles.TempSuffix : null;
+            try
             {
-                ImageIO.Save(redactedBase, basePath);
-                _writtenBase = BaseImage;
-                _writtenRedaction = redaction;
+                if (redactedBase != null) ImageIO.Save(redactedBase, baseTemp!);
+                ImageIO.Save(flattened, FilePath, jpegQuality, webpQuality);
+                if (baseTemp != null)
+                {
+                    File.Move(baseTemp, basePath, overwrite: true);
+                    _writtenBase = BaseImage;
+                    _writtenRedaction = redaction;
+                }
             }
-
-            ImageIO.Save(flattened, FilePath, jpegQuality, webpQuality);
+            catch
+            {
+                if (baseTemp != null) SidecarFiles.DeleteQuietly(baseTemp);
+                throw;
+            }
             WriteSidecarJson(jsonPath, new FileInfo(FilePath), new FileInfo(basePath).Length, annotationsJson, effectsJson);
         }
 
@@ -515,25 +587,33 @@ public sealed class EditorDocument
     /// <param name="effectsJson">Null without effects: the file then keeps the format of version 1, still read by older versions.</param>
     private static void WriteSidecarJson(string jsonPath, FileInfo file, long baseLength, byte[] annotationsJson, byte[]? effectsJson)
     {
-        var temp = jsonPath + ".tmp";
-        using (var stream = File.Create(temp))
-        using (var writer = new Utf8JsonWriter(stream, new JsonWriterOptions { Indented = true }))
+        var temp = jsonPath + SidecarFiles.TempSuffix;
+        try
         {
-            writer.WriteStartObject();
-            writer.WriteNumber(nameof(SidecarData.Version), effectsJson == null ? 1 : SidecarData.CurrentVersion);
-            writer.WriteNumber(nameof(SidecarData.FileLength), file.Length);
-            writer.WriteString(nameof(SidecarData.FileWriteTimeUtc), file.LastWriteTimeUtc);
-            writer.WriteNumber(nameof(SidecarData.BaseFileLength), baseLength);
-            if (effectsJson != null)
+            using (var stream = File.Create(temp))
+            using (var writer = new Utf8JsonWriter(stream, new JsonWriterOptions { Indented = true }))
             {
-                writer.WritePropertyName(nameof(SidecarData.Effects));
-                writer.WriteRawValue(effectsJson, skipInputValidation: true);
+                writer.WriteStartObject();
+                writer.WriteNumber(nameof(SidecarData.Version), effectsJson == null ? 1 : SidecarData.CurrentVersion);
+                writer.WriteNumber(nameof(SidecarData.FileLength), file.Length);
+                writer.WriteString(nameof(SidecarData.FileWriteTimeUtc), file.LastWriteTimeUtc);
+                writer.WriteNumber(nameof(SidecarData.BaseFileLength), baseLength);
+                if (effectsJson != null)
+                {
+                    writer.WritePropertyName(nameof(SidecarData.Effects));
+                    writer.WriteRawValue(effectsJson, skipInputValidation: true);
+                }
+                writer.WritePropertyName(nameof(SidecarData.Annotations));
+                writer.WriteRawValue(annotationsJson, skipInputValidation: true);
+                writer.WriteEndObject();
             }
-            writer.WritePropertyName(nameof(SidecarData.Annotations));
-            writer.WriteRawValue(annotationsJson, skipInputValidation: true);
-            writer.WriteEndObject();
+            File.Move(temp, jsonPath, overwrite: true);
         }
-        File.Move(temp, jsonPath, overwrite: true);
+        catch
+        {
+            SidecarFiles.DeleteQuietly(temp);
+            throw;
+        }
     }
 
     private void Restore(Snapshot snapshot)

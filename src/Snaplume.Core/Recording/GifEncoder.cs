@@ -39,6 +39,9 @@ public sealed class GifEncoder : IDisposable
     /// <summary>Longest delay of one frame in a GIF (unsigned 16-bit, hundredths of a second).</summary>
     public const int MaxDelay = ushort.MaxValue;
 
+    /// <summary>Widest and tallest GIF (unsigned 16-bit sizes).</summary>
+    public const int MaxSide = ushort.MaxValue;
+
     private readonly Stream _output;
     private readonly bool _leaveOpen;
     private readonly GifEncoderOptions _options;
@@ -65,8 +68,8 @@ public sealed class GifEncoder : IDisposable
     public GifEncoder(Stream output, int width, int height, GifEncoderOptions? options = null, bool leaveOpen = false)
     {
         ArgumentNullException.ThrowIfNull(output);
-        if (width is < 1 or > ushort.MaxValue) throw new ArgumentOutOfRangeException(nameof(width));
-        if (height is < 1 or > ushort.MaxValue) throw new ArgumentOutOfRangeException(nameof(height));
+        if (width is < 1 or > MaxSide) throw new ArgumentOutOfRangeException(nameof(width));
+        if (height is < 1 or > MaxSide) throw new ArgumentOutOfRangeException(nameof(height));
         _output = output;
         _leaveOpen = leaveOpen;
         _options = options ?? new GifEncoderOptions();

@@ -1,6 +1,7 @@
 using Avalonia;
 using Avalonia.Headless.XUnit;
 using Avalonia.Media;
+using Avalonia.Media.Imaging;
 using Snaplume.Editor;
 using Snaplume.Imaging;
 using static Snaplume.Tests.TestImages;
@@ -319,6 +320,136 @@ public class EditorRenderingTests
         document.Undo();
         Assert.Equal((200, 100), (document.BaseImage.Width, document.BaseImage.Height));
         Assert.Equal(2, document.Annotations.Count);
+    }
+
+    [AvaloniaFact]
+    public void Crop_resize_and_insert_notify_once_each_after_the_change()
+    {
+        using var folder = new TempFolder();
+        var path = folder.File("capture.png");
+        ImageIO.Save(Noise(200, 100), path);
+        var document = EditorDocument.Load(path);
+        document.Annotations.Add(new RectangleAnnotation { Start = new(60, 30), End = new(90, 60) });
+        var seen = new List<(int Width, long Version, double X)>();
+        document.Changed += () => seen.Add((document.BaseImage.Width, document.Version, ((RectangleAnnotation)document.Annotations[0]).Start.X));
+
+        document.Crop(new PixelRect(50, 20, 80, 60));
+        document.Resize(160, 120);
+        document.InsertImage(Solid(10, 10, Colors.Red), new Rect(-10, 0, 10, 10), Colors.White);
+        // Each one notified once, with everything already changed (image, annotations, version).
+        Assert.Equal(3, seen.Count);
+        Assert.Equal((80, 10.0), (seen[0].Width, seen[0].X));
+        Assert.Equal((160, 20.0), (seen[1].Width, seen[1].X));
+        Assert.Equal((170, 30.0), (seen[2].Width, seen[2].X));
+        Assert.Equal(3, seen.Select(s => s.Version).Distinct().Count());
+        Assert.True(document.CanUndo);
+    }
+
+    [AvaloniaFact]
+    public void Undo_history_forgets_the_oldest_images_beyond_its_memory_budget()
+    {
+        using var folder = new TempFolder();
+        var path = folder.File("capture.png");
+        ImageIO.Save(Noise(100, 100), path);
+        var document = EditorDocument.Load(path);
+        // About two images of 100 × 100 (40 000 bytes each).
+        document.UndoMemoryBudget = 90_000;
+        for (int i = 0; i < 5; i++) document.Resize(100 + i + 1, 100);
+        Assert.Equal(2, document.UndoCount);
+        document.Undo();
+        document.Undo();
+        Assert.False(document.CanUndo);
+        Assert.Equal(103, document.BaseImage.Width);
+        Assert.True(document.CanRedo);
+
+        // Annotations alone hold no image: their steps are all kept.
+        for (int i = 0; i < 10; i++)
+        {
+            var before = document.BeginChange();
+            document.Annotations.Add(new LineAnnotation { Start = new(i, 0), End = new(i, 50) });
+            document.CommitChange(before);
+        }
+        Assert.Equal(10, document.UndoCount);
+    }
+
+    [AvaloniaFact]
+    public void Pixelated_images_are_kept_for_the_last_three_block_sizes()
+    {
+        var image = new EditorImage(Noise(64, 64));
+        var first = image.PixelatedBitmap(4);
+        Assert.Same(first, image.PixelatedBitmap(4));
+        image.PixelatedBitmap(8);
+        image.PixelatedBitmap(12);
+        image.PixelatedPixels(4); // used again: the least recently used is now 8
+        image.PixelatedBitmap(16);
+        Assert.Equal(new[] { 12, 4, 16 }, image.PixelatedBlockSizes);
+        Assert.Same(first, image.PixelatedBitmap(4));
+        image.ReleaseBitmaps();
+        Assert.Empty(image.PixelatedBlockSizes);
+    }
+
+    [AvaloniaFact]
+    public void Step_label_and_freehand_line_are_rebuilt_only_when_they_change()
+    {
+        using var target = new RenderTargetBitmap(new PixelSize(50, 50));
+        var baseImage = new EditorImage(Solid(50, 50, Colors.White));
+        void Draw(Annotation a)
+        {
+            using var dc = target.CreateDrawingContext();
+            a.Render(dc, baseImage);
+        }
+
+        var step = new StepAnnotation { Center = new(20, 20), Number = 3, Color = Red };
+        Draw(step);
+        var label = step.CachedLabelText;
+        Assert.NotNull(label);
+        step.Translate(new Vector(2, 0));
+        Draw(step);
+        Assert.Same(label, step.CachedLabelText);
+        foreach (Action change in new Action[]
+                 {
+                     () => step.Number = 4, () => step.Letters = true, () => step.Thickness = 6, () => step.Color = Blue,
+                     () => step.Shape = StepShape.Dark,
+                 })
+        {
+            change();
+            Draw(step);
+            Assert.NotSame(label, step.CachedLabelText);
+            label = step.CachedLabelText;
+        }
+
+        var line = new FreehandAnnotation { Points = new List<Point> { new(1, 1), new(10, 10) } };
+        var geometry = line.LineGeometry();
+        Assert.Same(geometry, line.LineGeometry());
+        foreach (Action change in new Action[]
+                 {
+                     () => line.AddPoint(new Point(20, 5)), () => line.Points.Add(new Point(30, 5)), () => line.Translate(new Vector(1, 1)),
+                     () => line.Scale(2, 2), () => line.Points = new List<Point> { new(0, 0), new(5, 5) },
+                 })
+        {
+            change();
+            Assert.NotSame(geometry, line.LineGeometry());
+            geometry = line.LineGeometry();
+        }
+        var copy = (FreehandAnnotation)line.Clone();
+        copy.Translate(new Vector(3, 0));
+        Assert.Same(geometry, line.LineGeometry());
+        Assert.NotSame(geometry, copy.LineGeometry());
+    }
+
+    [AvaloniaFact]
+    public void Sample_layouts_free_what_they_own_and_shared_ones_nothing()
+    {
+        var effects = new ImageEffects { Shadow = true, CornerRadius = 8, TornEdges = TornEdges.Bottom };
+        var sample = EffectsRenderer.Sample(effects, 120, 80)!;
+        sample.Dispose();
+        sample.Dispose(); // twice is harmless
+
+        var shared = EffectsRenderer.For(effects, 120, 80)!;
+        shared.Dispose();
+        // Still drawable: the caches keep using its parts.
+        using var target = new RenderTargetBitmap(new PixelSize(shared.OutputWidth, shared.OutputHeight));
+        using (var dc = target.CreateDrawingContext()) shared.Render(dc, _ => { });
     }
 
     [AvaloniaFact]

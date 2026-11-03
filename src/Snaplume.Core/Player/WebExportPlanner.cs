@@ -155,7 +155,7 @@ public sealed record WebEncodePlan(int Width, int Height, double FramesPerSecond
 /// <summary>Result of <see cref="WebExportPlanner.PlanForTarget"/>: a plan, or the longest part that fits the size.</summary>
 public sealed record WebTargetPlan(WebEncodePlan? Plan, TimeSpan MaxDuration)
 {
-    public bool Fits => Plan != null;
+    internal bool Fits => Plan != null;
 }
 
 /// <summary>

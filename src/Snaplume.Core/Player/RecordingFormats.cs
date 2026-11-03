@@ -38,7 +38,7 @@ public static class RecordingFormats
     public static readonly WebFormat[] All = { WebFormat.Mp4H264, WebFormat.Mp4Hevc, WebFormat.Mp4Av1, WebFormat.WebmVp9 };
 
     /// <summary>The format of a settings value, MP4 H.264 when unknown.</summary>
-    public static WebFormat FromId(string? id) => All.FirstOrDefault(f => WebFormats.Id(f) == id);
+    public static WebFormat FromId(string? id) => WebFormats.FromId(id) is var format && All.Contains(format) ? format : WebFormat.Mp4H264;
 
     /// <summary>
     /// The formats listed in the settings, with the rules of the export dialog (<see cref="WebVideoExport.Offered"/>):
@@ -193,7 +193,11 @@ public static class RecordingPlanner
 /// <param name="Path">The file to show: the converted one, or the original when the conversion failed or was cancelled.</param>
 /// <param name="Original">The MP4 H.264 original when it is kept (asked for, or the conversion did not succeed); else null.</param>
 /// <param name="Problem">Why the original was kept instead (ready to show); null when converted or cancelled.</param>
-public sealed record RecordingConversionResult(string Path, string? Original, string? Problem, bool Cancelled)
+/// <param name="OriginalLeftAt">
+/// Converted, the original was to be kept but could not be moved into the workspace: where it stayed (the temporary
+/// folder of the recordings); else null.
+/// </param>
+public sealed record RecordingConversionResult(string Path, string? Original, string? Problem, bool Cancelled, string? OriginalLeftAt = null)
 {
     public bool Converted => Problem == null && !Cancelled;
 }
@@ -231,10 +235,22 @@ public static class RecordingConversion
             Directory.CreateDirectory(folder);
             var destination = FileOps.UniquePath(folder, ConvertedBaseName(baseName, settings, keepOriginal), WebFormats.Extension(target.Format));
             await encode(recorded, destination, settings, info, progress, cancel).ConfigureAwait(false);
-            string? original = null;
-            if (keepOriginal) original = await Task.Run(() => MoveIntoWorkspace(recorded, folder, baseName), CancellationToken.None).ConfigureAwait(false);
-            else await VideoGifExport.DeleteQuietlyAsync(recorded).ConfigureAwait(false);
-            return new RecordingConversionResult(destination, original, null, false);
+            if (!keepOriginal)
+            {
+                await VideoGifExport.DeleteQuietlyAsync(recorded).ConfigureAwait(false);
+                return new RecordingConversionResult(destination, null, null, false);
+            }
+            try
+            {
+                var original = await Task.Run(() => MoveIntoWorkspace(recorded, folder, baseName), CancellationToken.None).ConfigureAwait(false);
+                return new RecordingConversionResult(destination, original, null, false);
+            }
+            catch (Exception ex)
+            {
+                // The conversion succeeded: only the copy asked for is missing, it stays in the temporary folder.
+                ErrorLog.Write("Conservation de l'enregistrement d'origine", ex);
+                return new RecordingConversionResult(destination, null, null, false, recorded);
+            }
         }
         catch (Exception) when (cancel.IsCancellationRequested)
         {

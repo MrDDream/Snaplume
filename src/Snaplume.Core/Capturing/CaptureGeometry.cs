@@ -1,5 +1,6 @@
 using System.Globalization;
 using Snaplume.Imaging;
+using Snaplume.Platform;
 
 namespace Snaplume.Capturing;
 
@@ -32,6 +33,22 @@ public static class CaptureGeometry
             }
         }
         return best;
+    }
+
+    /// <summary>
+    /// The monitor under the mouse (in the dead zones between monitors, the nearest one, see <see cref="MonitorAt"/>);
+    /// the primary monitor when the mouse position is unknown, else the first one; null without any monitor.
+    /// </summary>
+    /// <param name="cursor">Mouse position, in the coordinates of the monitor bounds; null when unknown.</param>
+    public static MonitorInfo? MonitorUnderCursor(IReadOnlyList<MonitorInfo> monitors, (int X, int Y)? cursor)
+    {
+        if (monitors.Count == 0) return null;
+        if (cursor is (int x, int y))
+        {
+            var bounds = MonitorAt(monitors.Select(m => m.Bounds).ToList(), x, y);
+            return monitors.First(m => m.Bounds == bounds);
+        }
+        return monitors.FirstOrDefault(m => m.IsPrimary) ?? monitors[0];
     }
 
     /// <summary>

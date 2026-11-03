@@ -45,6 +45,11 @@ public abstract class Annotation
     protected const double MaxCoordinate = 1e6;
     public const double MinThickness = 1;
     public const double MaxThickness = 500;
+    /// <summary>
+    /// Thinnest line accepted from a sidecar file, below <see cref="MinThickness"/>: older files may hold such values
+    /// (they are drawn as they are, not refused).
+    /// </summary>
+    public const double MinValidThickness = 0.5;
 
     // Immutable brush and pen reused while the color and thickness do not change.
     private ImmutableSolidColorBrush? _brush;
@@ -75,7 +80,7 @@ public abstract class Annotation
     /// unknown enum values): such an annotation is dropped instead of breaking the editor.
     /// </summary>
     public virtual bool IsValid() =>
-        double.IsFinite(Thickness) && Thickness >= 0.5 && Thickness <= MaxThickness;
+        double.IsFinite(Thickness) && Thickness >= MinValidThickness && Thickness <= MaxThickness;
 
     protected static bool IsValidPoint(Point p) =>
         double.IsFinite(p.X) && double.IsFinite(p.Y) && Math.Abs(p.X) <= MaxCoordinate && Math.Abs(p.Y) <= MaxCoordinate;
@@ -402,6 +407,11 @@ public sealed class TextAnnotation : Annotation
     public const double Pad = 6;
     public const double MinFontSize = 6;
     public const double MaxFontSize = 2000;
+    /// <summary>
+    /// Smallest font size accepted from a sidecar file, below <see cref="MinFontSize"/>: older files may hold such values
+    /// (they are drawn as they are, not refused).
+    /// </summary>
+    public const double MinValidFontSize = 1;
     public static FontFamily Font => EditorFonts.Family;
 
     // Layout cache, rebuilt when the text, its size or its color change.
@@ -422,7 +432,7 @@ public sealed class TextAnnotation : Annotation
 
     public override bool IsValid() =>
         base.IsValid() && Text != null && Text.Length <= 100_000 && IsValidPoint(Position)
-        && double.IsFinite(FontSize) && FontSize >= 1 && FontSize <= MaxFontSize;
+        && double.IsFinite(FontSize) && FontSize >= MinValidFontSize && FontSize <= MaxFontSize;
 
     private FormattedText Format()
     {
@@ -525,6 +535,8 @@ public sealed class StepAnnotation : Annotation
     private IPen? _outline;
     private bool _outlineLight;
     private double _outlineWidth;
+    private FormattedText? _labelText;
+    private (string Label, double Radius, Color Color, StepShape Shape) _labelTextFor;
 
     public Point Center { get; set; }
     public int Number { get; set; } = 1;
@@ -608,11 +620,27 @@ public sealed class StepAnnotation : Annotation
                 break;
         }
 
-        var label = Label;
-        var text = new FormattedText(label, CultureInfo.InvariantCulture, FlowDirection.LeftToRight,
-            new Typeface(TextAnnotation.Font, FontStyle.Normal, FontWeight.Bold), r * (label.Length >= 2 ? 0.95 : 1.15), textBrush);
+        var text = LabelText(textBrush);
         dc.DrawText(text, new Point(Center.X - text.Width / 2, Center.Y - text.Height / 2));
     }
+
+    /// <summary>The laid-out label, kept while the label, the size, the color and the shape stay the same.</summary>
+    /// <param name="brush">Its brush, which follows the color and the shape.</param>
+    private FormattedText LabelText(IBrush brush)
+    {
+        var label = Label;
+        double r = Radius;
+        if (_labelText == null || _labelTextFor != (label, r, Color, Shape))
+        {
+            _labelText = new FormattedText(label, CultureInfo.InvariantCulture, FlowDirection.LeftToRight,
+                new Typeface(TextAnnotation.Font, FontStyle.Normal, FontWeight.Bold), r * (label.Length >= 2 ? 0.95 : 1.15), brush);
+            _labelTextFor = (label, r, Color, Shape);
+        }
+        return _labelText;
+    }
+
+    /// <summary>The label as last laid out (for the tests: rebuilt only when it changes).</summary>
+    internal FormattedText? CachedLabelText => _labelText;
 
     /// <summary>Circle of radius r prolonged by a point at distance tip from its center.</summary>
     private static Geometry Teardrop(Point center, Vector direction, double r, double tip)
@@ -683,24 +711,61 @@ public sealed class FreehandAnnotation : Annotation
 {
     public const int MaxPoints = 200_000;
 
-    public List<Point> Points { get; set; } = new();
+    private List<Point> _points = new();
+
+    // The line drawn, kept until the points change: a new version (moved, scaled, replaced), or points added to the list.
+    private long _version;
+    private Geometry? _geometry;
+    private (long Version, List<Point> Points, int Count) _geometryFor;
+
+    /// <summary>
+    /// The points of the line. Adding to the list is seen by the drawing (<see cref="AddPoint"/> does it); any other
+    /// change of the list in place must go through <see cref="Translate"/>, <see cref="Scale"/> or a new list.
+    /// </summary>
+    public List<Point> Points
+    {
+        get => _points;
+        set
+        {
+            _points = value;
+            _version++;
+        }
+    }
 
     public override EditorTool Kind => EditorTool.Pen;
 
     public override bool IsValid() =>
         base.IsValid() && Points != null && Points.Count <= MaxPoints && Points.TrueForAll(IsValidPoint);
 
+    /// <summary>Adds a point at the end of the line (up to <see cref="MaxPoints"/>).</summary>
+    public void AddPoint(Point p)
+    {
+        if (_points.Count >= MaxPoints) return;
+        _points.Add(p);
+        _version++;
+    }
+
     public override void Render(DrawingContext dc, EditorImage baseImage)
     {
-        if (Points.Count < 2) return;
+        if (LineGeometry() is { } geometry) dc.DrawGeometry(null, MakePen(), geometry);
+    }
+
+    /// <summary>The line through the points, rebuilt only when they changed; null with fewer than two.</summary>
+    internal Geometry? LineGeometry()
+    {
+        if (_points.Count < 2) return null;
+        var key = (_version, _points, _points.Count);
+        if (_geometry != null && _geometryFor == key) return _geometry;
         var geometry = new StreamGeometry();
         using (var ctx = geometry.Open())
         {
-            ctx.BeginFigure(Points[0], false);
-            for (int i = 1; i < Points.Count; i++) ctx.LineTo(Points[i]);
+            ctx.BeginFigure(_points[0], false);
+            for (int i = 1; i < _points.Count; i++) ctx.LineTo(_points[i]);
             ctx.EndFigure(false);
         }
-        dc.DrawGeometry(null, MakePen(), geometry);
+        _geometry = geometry;
+        _geometryFor = key;
+        return geometry;
     }
 
     public override Rect GetBounds()
@@ -721,12 +786,21 @@ public sealed class FreehandAnnotation : Annotation
     public override void Translate(Vector offset)
     {
         for (int i = 0; i < Points.Count; i++) Points[i] += offset;
+        _version++;
     }
 
     public override void Scale(double sx, double sy)
     {
         for (int i = 0; i < Points.Count; i++) Points[i] = Scaled(Points[i], sx, sy);
+        _version++;
         base.Scale(sx, sy);
+    }
+
+    // No handles today; a change through one would still be drawn.
+    public override void MoveHandle(int index, Point position)
+    {
+        base.MoveHandle(index, position);
+        _version++;
     }
 
     public override Annotation Clone()

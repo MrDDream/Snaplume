@@ -38,6 +38,4 @@ public readonly record struct PixelRect(int X, int Y, int Width, int Height)
         new(Math.Min(x0, x1), Math.Min(y0, y1), Math.Abs(x1 - x0) + 1, Math.Abs(y1 - y0) + 1);
 
     public Avalonia.Rect ToRect() => new(X, Y, Width, Height);
-
-    public Avalonia.PixelRect ToAvalonia() => new(X, Y, Width, Height);
 }

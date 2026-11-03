@@ -78,22 +78,27 @@ public static class VideoGifExport
         if (File.Exists(destination)) throw new IOException($"{destination} already exists.");
     }
 
-    /// <summary>Removes an unfinished output (another process may still hold it for a moment).</summary>
+    /// <summary>
+    /// Removes an unfinished output (another process may still hold it for a moment); the last failure is logged
+    /// when it is still there after a second.
+    /// </summary>
     public static async Task DeleteQuietlyAsync(string path)
     {
-        for (int attempt = 0; attempt < 5; attempt++)
+        const int attempts = 5;
+        for (int attempt = 1; ; attempt++)
         {
             try
             {
                 if (File.Exists(path)) File.Delete(path);
                 return;
             }
-            catch (IOException)
+            catch (Exception ex) when (ex is IOException or UnauthorizedAccessException)
             {
-                await Task.Delay(200);
-            }
-            catch (UnauthorizedAccessException)
-            {
+                if (attempt == attempts)
+                {
+                    ErrorLog.Write("Suppression d'un fichier inachevé", ex);
+                    return;
+                }
                 await Task.Delay(200);
             }
         }
@@ -139,6 +144,13 @@ public sealed class GifExportForm
     public bool Loop { get; set; } = true;
     public bool Dither { get; set; }
 
+    /// <summary>
+    /// Widest GIF accepted: the video's width, and a GIF at most <see cref="GifEncoder.MaxSide"/> pixels on each side
+    /// (the height follows the width).
+    /// </summary>
+    public int LargestWidth =>
+        (int)Math.Min(Math.Min(VideoWidth, GifEncoder.MaxSide), Math.Floor((GifEncoder.MaxSide + 0.5) * VideoWidth / VideoHeight));
+
     /// <summary>Settings typed, or the reason (ready to show) why they are not acceptable.</summary>
     public bool TryRead(out GifExportSettings settings, out string error)
     {
@@ -150,16 +162,23 @@ public sealed class GifExportForm
             error = Loc.T("Player.Gif.FpsError", GifExportSettings.MinFramesPerSecond, GifExportSettings.MaxFramesPerSecond);
             return false;
         }
-        if (!int.TryParse(WidthText.Trim(), NumberStyles.Integer, Loc.Culture, out var width) || width < SmallestWidth || width > VideoWidth)
+        int widest = LargestWidth;
+        if (!int.TryParse(WidthText.Trim(), NumberStyles.Integer, Loc.Culture, out var width) || width < SmallestWidth || width > widest)
         {
-            error = Loc.T("Player.Gif.WidthError", SmallestWidth, VideoWidth);
+            error = Loc.T("Player.Gif.WidthError", SmallestWidth, widest);
             return false;
         }
         int height = Math.Max(1, (int)Math.Round((double)width * VideoHeight / VideoWidth));
+        if (height > GifEncoder.MaxSide)
+        {
+            // A very tall video (only reached when it is taller than a GIF can be).
+            error = Loc.T("Player.Gif.WidthError", SmallestWidth, widest);
+            return false;
+        }
         bool selection = UseSelection && HasSelection;
         var start = selection ? In : TimeSpan.Zero;
         var end = selection ? Out : Duration;
-        settings = new GifExportSettings(start, end, fps, width, height, Speed <= 0 ? 1 : Speed, Loop, Dither);
+        settings = new GifExportSettings(start, end, fps, width, height, double.IsFinite(Speed) && Speed > 0 ? Speed : 1, Loop, Dither);
         if (settings.FrameCount > GifExportSettings.MaxFrames)
         {
             error = Loc.T("Player.Gif.TooLong", GifExportSettings.MaxFrames);

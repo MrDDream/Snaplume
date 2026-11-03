@@ -119,6 +119,41 @@ public class CaptureGeometryTests
     }
 
     [Fact]
+    public void WheelLevelGoesBackToTheInnermostOverAnotherWindow()
+    {
+        var windows = new FakeWindows(new PixelRect(110, 110, 50, 20), new PixelRect(100, 100, 400, 300), RelativeMonitors[1]);
+        var model = new SelectionModel(4480, 1440, RelativeMonitors, windows);
+        model.MoveTo(120, 115);
+        model.Wheel(+1);
+        Assert.Equal(new PixelRect(100, 100, 400, 300), model.Hover);
+        // Inside the same control: the level is kept.
+        model.MoveTo(121, 116);
+        Assert.Equal(new PixelRect(100, 100, 400, 300), model.Hover);
+        // Out of the control, still in its parent: the list changed, the innermost window is highlighted again.
+        model.MoveTo(300, 300);
+        Assert.Equal(new PixelRect(100, 100, 400, 300), model.Hover);
+        model.MoveTo(120, 115);
+        Assert.Equal(new PixelRect(110, 110, 50, 20), model.Hover);
+    }
+
+    [Fact]
+    public void MonitorUnderCursorFallsBackOnThePrimary()
+    {
+        var monitors = new[]
+        {
+            new MonitorInfo(new PixelRect(-2560, 0, 2560, 1440), 1, false, "left"),
+            new MonitorInfo(new PixelRect(0, 0, 1920, 1080), 1, true, "primary"),
+        };
+        Assert.Equal("left", CaptureGeometry.MonitorUnderCursor(monitors, (-100, 50))!.Name);
+        Assert.Equal("primary", CaptureGeometry.MonitorUnderCursor(monitors, (500, 500))!.Name);
+        // Dead zone below the primary: the nearest one.
+        Assert.Equal("primary", CaptureGeometry.MonitorUnderCursor(monitors, (1500, 1300))!.Name);
+        Assert.Equal("primary", CaptureGeometry.MonitorUnderCursor(monitors, null)!.Name);
+        Assert.Equal("left", CaptureGeometry.MonitorUnderCursor(new[] { monitors[0] with { IsPrimary = false } }, null)!.Name);
+        Assert.Null(CaptureGeometry.MonitorUnderCursor(Array.Empty<MonitorInfo>(), (0, 0)));
+    }
+
+    [Fact]
     public void SelectionKeyboard()
     {
         var model = new SelectionModel(4480, 1440, RelativeMonitors, EmptyWindowSnapshot.Instance);

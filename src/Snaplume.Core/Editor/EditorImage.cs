@@ -12,8 +12,13 @@ namespace Snaplume.Editor;
 public sealed class EditorImage
 {
     private WriteableBitmap? _bitmap;
-    /// <summary>The whole image pixelated, per block size (see <see cref="Pixelated"/>).</summary>
+    /// <summary>Block sizes whose pixelated image is kept (see <see cref="PixelatedBitmap"/>); the least recently used goes first.</summary>
+    internal const int PixelatedCacheSize = 3;
+
+    /// <summary>The whole image pixelated, per block size (see <see cref="PixelatedBitmap"/>).</summary>
     private readonly Dictionary<int, (PixelBuffer Pixels, WriteableBitmap? Bitmap)> _pixelated = new();
+    /// <summary>Block sizes of <see cref="_pixelated"/>, the most recently used last.</summary>
+    private readonly List<int> _pixelatedOrder = new();
 
     /// <param name="pixels">Taken over: the caller must not change it afterwards.</param>
     public EditorImage(PixelBuffer pixels) => Pixels = pixels;
@@ -55,6 +60,7 @@ public sealed class EditorImage
             _bitmap = null;
             foreach (var (_, bitmap) in _pixelated.Values) bitmap?.Dispose();
             _pixelated.Clear();
+            _pixelatedOrder.Clear();
         }
     }
 
@@ -64,12 +70,34 @@ public sealed class EditorImage
         lock (_pixelated) return PixelatedEntry(block).Pixels;
     }
 
+    /// <summary>Block sizes kept, the most recently used last (for the tests).</summary>
+    internal IReadOnlyList<int> PixelatedBlockSizes
+    {
+        get
+        {
+            lock (_pixelated) return _pixelatedOrder.ToList();
+        }
+    }
+
+    /// <summary>
+    /// The pixelated image of a block size, made when missing. Only the last <see cref="PixelatedCacheSize"/> sizes
+    /// used are kept (each one is a copy of the whole image): the bitmap of the others is disposed.
+    /// </summary>
     private (PixelBuffer Pixels, WriteableBitmap? Bitmap) PixelatedEntry(int block)
     {
+        _pixelatedOrder.Remove(block);
+        _pixelatedOrder.Add(block);
         if (!_pixelated.TryGetValue(block, out var entry))
         {
             entry = (Pixelate(Pixels, Math.Max(1, block)), null);
             _pixelated[block] = entry;
+            while (_pixelatedOrder.Count > PixelatedCacheSize)
+            {
+                int oldest = _pixelatedOrder[0];
+                _pixelatedOrder.RemoveAt(0);
+                // A bitmap already drawn keeps its own reference until the next frame (see ReleaseBitmaps).
+                if (_pixelated.Remove(oldest, out var evicted)) evicted.Bitmap?.Dispose();
+            }
         }
         return entry;
     }

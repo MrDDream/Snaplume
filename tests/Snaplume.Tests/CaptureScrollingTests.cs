@@ -99,6 +99,19 @@ public class CaptureScrollingTests
     }
 
     [Fact]
+    public async Task RecoveryStopsWhenTheStepBackIsRefused()
+    {
+        // The step back of the recovery is refused: the next frames could not overlap, the capture ends there.
+        var page = new FakeScrollingPage(Area, 2000) { BurstNotches = 3, BurstCount = 2, AnimationMs = 30, RefusesUpwardScroll = true };
+        var result = await Capture(page).RunAsync(Area, TestContext.Current.CancellationToken);
+
+        Assert.NotNull(result);
+        Assert.True(page.ScrollLog[^1] > 0, "scrolled on after the refused step back");
+        Assert.Single(page.ScrollLog, n => n > 0);
+        Assert.True(page.Page.AsSpan(0, result.Image.Pixels.Length).SequenceEqual(result.Image.Pixels));
+    }
+
+    [Fact]
     public async Task EscapeStopsAndKeepsWhatWasCaptured()
     {
         var page = new FakeScrollingPage(Area, 3000) { EscapeAfterScrolls = 4 };

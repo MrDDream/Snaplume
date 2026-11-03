@@ -39,6 +39,8 @@ public sealed class FakeScrollingPage : IPointerControl
     public int AnimationMs { get; init; }
     /// <summary>The window does not react to the wheel.</summary>
     public bool IgnoresWheel { get; init; }
+    /// <summary>The system refuses the wheel turned up (the step back of a recovery).</summary>
+    public bool RefusesUpwardScroll { get; init; }
     /// <summary>Steps of at least this many notches scroll <see cref="BurstFactor"/> times further, <see cref="BurstCount"/> times.</summary>
     public int BurstNotches { get; init; } = int.MaxValue;
     public int BurstFactor { get; init; } = 3;
@@ -115,6 +117,7 @@ public sealed class FakeScrollingPage : IPointerControl
         {
             Scrolls++;
             ScrollLog.Add(notches);
+            if (RefusesUpwardScroll && notches > 0) return false;
             if (IgnoresWheel) return true;
             double distance = -notches * (double)PixelsPerNotch;
             if (Math.Abs(notches) >= BurstNotches && BurstCount > 0)

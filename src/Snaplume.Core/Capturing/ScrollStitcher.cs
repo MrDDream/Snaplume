@@ -81,6 +81,11 @@ public sealed class ScrollStitcher
     public int FramesUsed { get; private set; }
 
     /// <summary>Adds the next frame, captured after scrolling down.</summary>
+    /// <remarks>
+    /// A frame whose rows are used (<see cref="StitchStep.NewRows"/> above 0) is kept, not copied, to be compared with
+    /// the next one: the caller must not modify that buffer until another frame is appended (or the image completed).
+    /// A frame that brought nothing is not kept and may be reused at once.
+    /// </remarks>
     /// <param name="frame">BGRA pixels, <see cref="Width"/> x <see cref="FrameHeight"/>, stride = width * 4.</param>
     /// <param name="expectedShift">Likely shift (from the previous steps), used to choose between equally good matches; 0 if unknown.</param>
     public StitchStep Add(byte[] frame, int expectedShift = 0)

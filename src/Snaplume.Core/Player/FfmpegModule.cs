@@ -183,24 +183,52 @@ public static class FfmpegModule
     /// Unzips the programs (bin\ffmpeg.exe and its DLLs) and the licence of the archive's single top folder into a
     /// staging folder, then puts it in place of <paramref name="folder"/>. Anything else of the archive (ffplay,
     /// ffprobe, headers, documentation) is left out; an entry leaving its folder makes the whole archive refused.
+    /// The module in place is renamed aside first and deleted last: a failure in between puts it back, so there is
+    /// always a whole module (the old or the new one), never half of one.
     /// </summary>
     internal static void Unpack(string zip, string folder, string version)
     {
         folder = Path.TrimEndingDirectorySeparator(Path.GetFullPath(folder));
         var staging = folder + ".new";
+        var old = folder + ".old";
         DeleteFolder(staging);
+        // Left by an interrupted earlier install (the new module was then in place, or the old one put back).
+        DeleteFolderQuietly(old);
         try
         {
             ExtractPrograms(zip, staging);
             if (!File.Exists(ExecutableIn(staging))) throw new InvalidDataException($"bin/ffmpeg.exe absent de {Path.GetFileName(zip)}");
             File.WriteAllText(Path.Combine(staging, "version.txt"), version);
-            DeleteFolder(folder);
-            Directory.Move(staging, folder);
+            bool hadOld = Directory.Exists(folder);
+            if (hadOld) Directory.Move(folder, old);
+            try
+            {
+                Directory.Move(staging, folder);
+            }
+            catch
+            {
+                if (hadOld) Directory.Move(old, folder);
+                throw;
+            }
         }
         catch
         {
             DeleteFolder(staging);
             throw;
+        }
+        // The new module is in place: the old one only takes space now.
+        DeleteFolderQuietly(old);
+    }
+
+    private static void DeleteFolderQuietly(string folder)
+    {
+        try
+        {
+            DeleteFolder(folder);
+        }
+        catch (Exception ex)
+        {
+            ErrorLog.Write("Suppression de l'ancien module ffmpeg", ex);
         }
     }
 
