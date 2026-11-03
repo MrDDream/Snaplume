@@ -2,7 +2,6 @@ using Avalonia;
 using Avalonia.Controls;
 using Snaplume.Core;
 using Snaplume.Platform;
-using PixelRect = Snaplume.Capturing.PixelRect;
 
 namespace Snaplume.Capturing;
 

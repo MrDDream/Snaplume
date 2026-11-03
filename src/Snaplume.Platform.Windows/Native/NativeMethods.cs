@@ -173,14 +173,6 @@ internal static class NativeMethods
     [return: MarshalAs(UnmanagedType.Bool)]
     public static extern bool SetForegroundWindow(IntPtr hWnd);
 
-    [DllImport("user32.dll")]
-    [return: MarshalAs(UnmanagedType.Bool)]
-    public static extern bool EnableWindow(IntPtr hWnd, [MarshalAs(UnmanagedType.Bool)] bool enable);
-
-    [DllImport("user32.dll")]
-    [return: MarshalAs(UnmanagedType.Bool)]
-    public static extern bool IsWindow(IntPtr hWnd);
-
     [DllImport("dwmapi.dll")]
     public static extern int DwmGetWindowAttribute(IntPtr hWnd, int attribute, out RECT value, int size);
 

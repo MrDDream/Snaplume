@@ -6,7 +6,6 @@ using Avalonia.Media;
 using Avalonia.Media.Imaging;
 using Avalonia.Media.Immutable;
 using Snaplume.Core;
-using PixelRect = Snaplume.Capturing.PixelRect;
 
 namespace Snaplume.Capturing;
 
@@ -47,8 +46,6 @@ internal sealed class SelectionOverlay : Control
     }
 
     private SelectionModel Model => _session.Model;
-    private int W => Model.Width;
-    private int H => Model.Height;
 
     /// <summary>The pointer in desktop-image pixels: exact on every monitor, whatever its scaling.</summary>
     private void TrackPointer(PointerEventArgs e)

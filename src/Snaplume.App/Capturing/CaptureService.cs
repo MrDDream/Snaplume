@@ -373,21 +373,14 @@ public sealed class CaptureService
         {
             for (int remaining = seconds; remaining > 0; remaining--)
             {
-                _app.Tray?.SetTooltip(Loc.T("Capture.Countdown", remaining));
+                _app.SetTrayStatus(Loc.T("Capture.Countdown", remaining));
                 await Task.Delay(1000, stop);
             }
         }
         finally
         {
-            _app.Tray?.SetTooltip(TrayText());
+            _app.SetTrayStatus(null);
         }
-    }
-
-    /// <summary>The usual tooltip of the tray icon: the application, and the active workspace if not the base one.</summary>
-    private static string TrayText()
-    {
-        var workspace = Workspaces.ActiveName;
-        return workspace.Length == 0 ? "Snaplume" : Loc.T("Tray.TooltipWorkspace", Workspaces.DisplayName(workspace));
     }
 
     /// <summary>

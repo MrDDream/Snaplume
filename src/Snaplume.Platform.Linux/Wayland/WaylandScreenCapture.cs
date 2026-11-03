@@ -43,7 +43,7 @@ internal sealed class WaylandScreenCapture : IScreenCapture
         return new DesktopImage(image, bounds, monitors, null);
     }
 
-    public IScreenGrabber CreateGrabber(PixelRect area) => new Grabber(this, area);
+    public IScreenGrabber CreateGrabber(PixelRect area) => new Grabber(area);
 
     /// <summary>One screenshot through the portal, decoded; the portal's file is deleted when it is a temporary one.</summary>
     /// <exception cref="OperationCanceledException">The user refused.</exception>
@@ -119,17 +119,9 @@ internal sealed class WaylandScreenCapture : IScreenCapture
     }
 
     /// <summary>Scrolling capture under Wayland: a full screenshot per step, cropped. Slow, but the only way.</summary>
-    private sealed class Grabber : IScreenGrabber
+    private sealed class Grabber(PixelRect area) : IScreenGrabber
     {
-        private readonly WaylandScreenCapture _owner;
-
-        public Grabber(WaylandScreenCapture owner, PixelRect area)
-        {
-            _owner = owner;
-            Area = area;
-        }
-
-        public PixelRect Area { get; }
+        public PixelRect Area { get; } = area;
 
         public async Task GrabAsync(byte[] target, CancellationToken cancel = default)
         {

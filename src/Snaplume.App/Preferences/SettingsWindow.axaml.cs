@@ -437,11 +437,13 @@ public partial class SettingsWindow : Window
         // E.g. deleted captures do not go to the trash on a network folder: they are lost. Asked only for a new folder.
         bool changed = !string.Equals(folder, Path.TrimEndingDirectorySeparator(Result.WorkspaceFolder), App.PathComparison);
         string? warning = null;
+        bool network = false;
         if (changed && AppServices.HasPlatform)
         {
             try
             {
                 warning = AppServices.Platform.Shell.CheckWorkspaceFolder(folder);
+                network = AppServices.Platform.Shell.IsNetworkFolder(folder);
             }
             catch (Exception ex)
             {
@@ -450,6 +452,13 @@ public partial class SettingsWindow : Window
         }
         if (warning != null &&
             await Dialogs.ShowAsync(this, Loc.T("Settings.FolderWarningConfirm", warning), Loc.T("Settings.Title"),
+                DialogButtons.OkCancel, DialogIcon.Warning, DialogResult.Cancel) != DialogResult.Ok)
+        {
+            FocusFolder();
+            return null;
+        }
+        if (network &&
+            await Dialogs.ShowAsync(this, Loc.T("Settings.NetworkFolderWarning", folder), Loc.T("Settings.Title"),
                 DialogButtons.OkCancel, DialogIcon.Warning, DialogResult.Cancel) != DialogResult.Ok)
         {
             FocusFolder();

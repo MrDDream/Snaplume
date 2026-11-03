@@ -65,8 +65,6 @@ public sealed class VideoService
     /// <summary>True while the recorder runs (paused or not), until it is stopped.</summary>
     public bool IsRecording => _recording != null && !_stopping;
 
-    public bool IsPaused => _paused && IsRecording;
-
     /// <summary>
     /// Raised on the UI thread at every change: start, recording begun, paused or resumed,
     /// finishing, back to idle (to update menus and buttons).

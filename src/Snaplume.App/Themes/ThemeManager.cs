@@ -24,7 +24,4 @@ public static class ThemeManager
             _ => ThemeVariant.Default,
         };
     }
-
-    /// <summary>True when the interface is dark now (forced, or the system is dark).</summary>
-    public static bool IsDark => Avalonia.Application.Current?.ActualThemeVariant == ThemeVariant.Dark;
 }

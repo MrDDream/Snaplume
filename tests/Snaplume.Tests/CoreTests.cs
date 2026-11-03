@@ -1,6 +1,5 @@
 using System.Reflection;
 using System.Text;
-using Snaplume.Capturing;
 using Snaplume.Core;
 using Snaplume.Export;
 using Snaplume.Imaging;

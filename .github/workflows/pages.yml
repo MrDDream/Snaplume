@@ -36,17 +36,10 @@ jobs:
       - name: Configure Pages
         uses: actions/configure-pages@983d7736d9b0ae728b81ab479565c72886d7745b # v5.0.0
 
-      # The site is docs/ without the logo drafts (docs/branding/proposals): only the final logo is published.
-      - name: Prepare the site
-        run: |
-          mkdir -p "$RUNNER_TEMP/site"
-          cp -R docs/. "$RUNNER_TEMP/site/"
-          rm -rf "$RUNNER_TEMP/site/branding/proposals"
-
       - name: Upload the site
         uses: actions/upload-pages-artifact@56afc609e74202658d3ffba0e8f6dda462b719fa # v3.0.1
         with:
-          path: ${{ runner.temp }}/site
+          path: docs
 
       - name: Deploy to GitHub Pages
         id: deployment

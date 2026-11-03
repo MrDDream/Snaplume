@@ -47,8 +47,6 @@
 
             <!-- Accent: the violet of the logo -->
             <SolidColorBrush x:Key="AccentBrush" Color="#6D28D9" />
-            <SolidColorBrush x:Key="AccentHoverBrush" Color="#5B21B6" />
-            <SolidColorBrush x:Key="AccentPressedBrush" Color="#4C1D95" />
             <SolidColorBrush x:Key="OnAccentBrush" Color="#FFFFFF" />
             <SolidColorBrush x:Key="OnAccentLineBrush" Color="#33FFFFFF" />
             <SolidColorBrush x:Key="RecordBrush" Color="#E53935" />
@@ -56,11 +54,6 @@
             <!-- Inputs -->
             <SolidColorBrush x:Key="InputBrush" Color="#FFFFFF" />
             <SolidColorBrush x:Key="InputBorderBrush" Color="#C4C9D2" />
-            <SolidColorBrush x:Key="ScrollThumbBrush" Color="#C1C6CE" />
-            <SolidColorBrush x:Key="ScrollThumbHoverBrush" Color="#9CA3AF" />
-            <SolidColorBrush x:Key="SwitchTrackBrush" Color="#FFFFFF" />
-            <SolidColorBrush x:Key="SwitchBorderBrush" Color="#6B7280" />
-            <SolidColorBrush x:Key="SwitchKnobBrush" Color="#4B5563" />
 
             <!-- Notices -->
             <SolidColorBrush x:Key="WarningBrush" Color="#FFFBEB" />
@@ -212,8 +205,6 @@
 
             <!-- Accent: the violet of the logo, lighter to stay readable on dark -->
             <SolidColorBrush x:Key="AccentBrush" Color="#7C3AED" />
-            <SolidColorBrush x:Key="AccentHoverBrush" Color="#8B5CF6" />
-            <SolidColorBrush x:Key="AccentPressedBrush" Color="#6D28D9" />
             <SolidColorBrush x:Key="OnAccentBrush" Color="#FFFFFF" />
             <SolidColorBrush x:Key="OnAccentLineBrush" Color="#40FFFFFF" />
             <SolidColorBrush x:Key="RecordBrush" Color="#EF5350" />
@@ -221,11 +212,6 @@
             <!-- Inputs -->
             <SolidColorBrush x:Key="InputBrush" Color="#2B2B2B" />
             <SolidColorBrush x:Key="InputBorderBrush" Color="#4B4B4B" />
-            <SolidColorBrush x:Key="ScrollThumbBrush" Color="#4A4A4A" />
-            <SolidColorBrush x:Key="ScrollThumbHoverBrush" Color="#6B6B6B" />
-            <SolidColorBrush x:Key="SwitchTrackBrush" Color="#2B2B2B" />
-            <SolidColorBrush x:Key="SwitchBorderBrush" Color="#9CA3AF" />
-            <SolidColorBrush x:Key="SwitchKnobBrush" Color="#D1D5DB" />
 
             <!-- Notices -->
             <SolidColorBrush x:Key="WarningBrush" Color="#33290F" />

@@ -6,7 +6,6 @@ using Avalonia.Media.Imaging;
 using Snaplume.Core;
 using Snaplume.Imaging;
 using Snaplume.Platform;
-using PixelRect = Snaplume.Capturing.PixelRect;
 
 namespace Snaplume.Capturing;
 

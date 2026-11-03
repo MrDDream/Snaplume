@@ -46,13 +46,6 @@ public partial class WorkspaceList : UserControl
     /// <summary>The entries shown, in their order (Base first).</summary>
     public IReadOnlyList<WorkspaceEntry> Entries => EntryList.ItemsSource as IReadOnlyList<WorkspaceEntry> ?? Array.Empty<WorkspaceEntry>();
 
-    /// <summary>Gives the keyboard focus to the active workspace.</summary>
-    public void FocusActive()
-    {
-        if (EntryList.SelectedItem != null && EntryList.ContainerFromItem(EntryList.SelectedItem) is { } item) item.Focus(NavigationMethod.Tab);
-        else EntryList.Focus(NavigationMethod.Tab);
-    }
-
     private Window? Owner => TopLevel.GetTopLevel(this) as Window;
 
     protected override void OnAttachedToVisualTree(VisualTreeAttachmentEventArgs e)

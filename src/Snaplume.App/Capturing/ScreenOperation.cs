@@ -27,9 +27,6 @@ internal sealed class ScreenOperation
     /// <summary>True until the hidden window is shown again.</summary>
     public bool HasHiddenWindow => _hidden != null;
 
-    /// <summary>True while any operation is in its interactive part.</summary>
-    public static bool AnyInteractive => _interactive != null;
-
     /// <summary>Marks the operation as running (and interactive) and hides the window.</summary>
     /// <returns>False if this operation, or another interactive one, is already running (nothing is done).</returns>
     public bool TryBegin(Window? hide)
