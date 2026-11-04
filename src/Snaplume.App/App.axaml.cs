@@ -211,30 +211,43 @@ public partial class App : Application
     private bool _checkingUpdates;
 
     /// <summary>
-    /// Automatic update check, when the user turned it on: a minute after startup (not to slow it down),
-    /// then every hour, each time doing nothing until a day has passed since the last check.
+    /// Automatic update check, when the user turned it on: a few seconds after startup (not to slow it down), where a
+    /// newer version is offered in a window (<see cref="OfferUpdateWhenIdleAsync"/>); then every hour, each time doing
+    /// nothing until a day has passed since the last check, a newer version being announced by a notification.
     /// </summary>
     private void StartUpdateChecks()
     {
-        _updateTimer = new DispatcherTimer { Interval = TimeSpan.FromMinutes(1) };
+        bool startup = true;
+        _updateTimer = new DispatcherTimer { Interval = TimeSpan.FromSeconds(5) };
         _updateTimer.Tick += async (_, _) =>
         {
             _updateTimer.Interval = TimeSpan.FromHours(1);
-            await CheckForUpdatesInBackgroundAsync();
+            bool atStartup = startup;
+            startup = false;
+            await CheckForUpdatesInBackgroundAsync(atStartup);
         };
         _updateTimer.Start();
     }
 
-    private async Task CheckForUpdatesInBackgroundAsync()
+    /// <param name="atStartup">Checked at each start, whenever the last check was; a newer version is offered in a window.</param>
+    private async Task CheckForUpdatesInBackgroundAsync(bool atStartup)
     {
         if (!Settings.CheckForUpdates || _checkingUpdates || IsExiting) return;
-        if (DateTime.UtcNow - Settings.LastUpdateCheckUtc < TimeSpan.FromDays(1)) return;
+        if (!atStartup && DateTime.UtcNow - Settings.LastUpdateCheckUtc < TimeSpan.FromDays(1)) return;
         _checkingUpdates = true;
+        UpdateChecker.Release? offer = null;
         try
         {
             var release = await UpdateChecker.GetLatestAsync();
             Settings.LastUpdateCheckUtc = DateTime.UtcNow;
-            if (release.IsNewer && release.DisplayVersion != Settings.UpdateNotifiedVersion)
+            // "Don't remind me": that version is never offered again (a newer one is).
+            if (release.IsNewer && release.DisplayVersion != Settings.UpdateSkippedVersion && atStartup)
+            {
+                Settings.UpdateNotifiedVersion = release.DisplayVersion;
+                offer = release;
+            }
+            else if (release.IsNewer && release.DisplayVersion != Settings.UpdateSkippedVersion
+                && release.DisplayVersion != Settings.UpdateNotifiedVersion)
             {
                 Settings.UpdateNotifiedVersion = release.DisplayVersion;
                 // A click offers to install it when this copy can be updated from here, else opens the release page.
@@ -257,6 +270,18 @@ public partial class App : Application
         {
             _checkingUpdates = false;
         }
+        if (offer != null) await OfferUpdateWhenIdleAsync(offer);
+    }
+
+    /// <summary>
+    /// Offers the newer version found at startup: Update, Remind me later, Don't remind me (see <see cref="UpdateWindow"/>).
+    /// Never over a capture or a recording in progress (it would be in the picture): once they are over.
+    /// </summary>
+    private async Task OfferUpdateWhenIdleAsync(UpdateChecker.Release release)
+    {
+        while (!IsExiting && (Captures is { IsBusy: true } || Videos is { IsBusy: true }))
+            await Task.Delay(TimeSpan.FromSeconds(2));
+        if (!IsExiting) UpdateWindow.Show(null, release, offer: true);
     }
 
     /// <summary>

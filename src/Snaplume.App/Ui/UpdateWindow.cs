@@ -22,7 +22,8 @@ public sealed class UpdateWindow : Window
     private static UpdateWindow? _open;
 
     private readonly UpdateChecker.Release _release;
-    private readonly UpdatePackage _plan;
+    /// <summary>Null when this copy cannot be updated from here: the offer's Update button opens the download page.</summary>
+    private readonly UpdatePackage? _plan;
     private readonly SelectableTextBlock _message;
     private readonly ProgressBar _progress;
     private readonly TextBlock _detail;
@@ -49,8 +50,12 @@ public sealed class UpdateWindow : Window
         return kind == InstallKind.Unknown ? null : UpdatePackages.Choose(release, kind, RuntimeInformation.OSArchitecture);
     }
 
-    /// <param name="owner">Window asking (Settings), or null from the notification.</param>
-    /// <param name="offer">True asks first (notification); false starts downloading at once (the Settings button).</param>
+    /// <param name="owner">Window asking (Settings), or null from the notification or the startup check.</param>
+    /// <param name="offer">
+    /// True asks first: Update, Remind me later, Don't remind me (startup check, notification), even for a copy that
+    /// cannot be updated from here (Update then opens the download page); false starts downloading at once (the Settings
+    /// button).
+    /// </param>
     public static void Show(Window? owner, UpdateChecker.Release release, bool offer)
     {
         if (_open != null)
@@ -59,7 +64,7 @@ public sealed class UpdateWindow : Window
             return;
         }
         var plan = Plan(release);
-        if (plan == null)
+        if (plan == null && !offer)
         {
             FileOps.OpenWithDefaultApp(release.Page);
             return;
@@ -90,12 +95,12 @@ public sealed class UpdateWindow : Window
         window.Activate();
     }
 
-    private UpdateWindow(UpdateChecker.Release release, UpdatePackage plan, bool owned)
+    private UpdateWindow(UpdateChecker.Release release, UpdatePackage? plan, bool owned)
     {
         _release = release;
         _plan = plan;
         Title = Loc.T("Update.WindowTitle");
-        Width = 480;
+        Width = 540;
         SizeToContent = SizeToContent.Height;
         CanResize = false;
         ShowInTaskbar = !owned;
@@ -116,7 +121,7 @@ public sealed class UpdateWindow : Window
         Content = body;
 
         Opened += (_, _) => (_buttons.Children.FirstOrDefault() as Button)?.Focus();
-        // Escape closes like the last button (Later, Cancel, Close); not while the package manager works.
+        // Escape closes like Remind me later, Cancel or Close; not while the package manager works.
         KeyDown += (_, e) =>
         {
             if (e.Key != Avalonia.Input.Key.Escape || e.Handled) return;
@@ -138,16 +143,38 @@ public sealed class UpdateWindow : Window
 
     // ---- States ----
 
+    /// <summary>
+    /// Update; Remind me later (closes: offered again at the next start); Don't remind me (this version is never offered
+    /// again, a newer one will be).
+    /// </summary>
     private void ShowOffer()
     {
         SetState(Loc.T("Update.Available", _release.DisplayVersion, UpdateChecker.CurrentVersion.ToString(3)) + "\n\n" + KindHint(), progress: null);
-        SetButtons(("Update.Install", () => _ = DownloadAsync()), ("Update.Open", OpenPage), ("Update.Later", Close));
+        SetButtons(("Update.UpdateNow", _plan == null ? OpenPage : () => _ = DownloadAsync()), ("Update.RemindLater", Close),
+            ("Update.Skip", SkipVersion));
+    }
+
+    private void SkipVersion()
+    {
+        var settings = AppServices.Settings;
+        settings.UpdateSkippedVersion = _release.DisplayVersion;
+        settings.UpdateNotifiedVersion = _release.DisplayVersion;
+        try
+        {
+            settings.Save();
+        }
+        catch (Exception ex)
+        {
+            ErrorLog.Write("Enregistrement des paramètres (mise à jour ignorée)", ex);
+        }
+        Close();
     }
 
     /// <summary>What will happen, for this kind of installation.</summary>
-    private string KindHint() => _plan.Kind switch
+    private string KindHint() => _plan?.Kind switch
     {
-        InstallKind.InnoSetup when Installer.InstallerRestartsSnaplume => Loc.T("Update.HintRestart"),
+        null => Loc.T("Update.HintPage"),
+        InstallKind.InnoSetup or InstallKind.Msi when Installer.InstallerRestartsSnaplume => Loc.T("Update.HintRestart"),
         InstallKind.InnoSetup or InstallKind.Msi => Loc.T("Update.HintReopen"),
         InstallKind.Portable => Loc.T("Update.HintPortable"),
         _ => Loc.T("Update.HintPackage"),
@@ -157,7 +184,12 @@ public sealed class UpdateWindow : Window
     {
         using var cancel = new CancellationTokenSource();
         _download = cancel;
-        var package = _plan.Package;
+        if (_plan is not { } plan)
+        {
+            OpenPage();
+            return;
+        }
+        var package = plan.Package;
         SetState(Loc.T("Update.Downloading", _release.DisplayVersion), progress: 0);
         ShowProgress(0, package.Size);
         SetButtons(("Dialog.Cancel", Close));
@@ -174,7 +206,7 @@ public sealed class UpdateWindow : Window
             {
                 if (_download == cancel) ShowProgress(received, package.Size);
             });
-            download = await new UpdateDownloader().DownloadVerifiedAsync(_plan, folder, progress, cancel.Token);
+            download = await new UpdateDownloader().DownloadVerifiedAsync(plan, folder, progress, cancel.Token);
         }
         catch (OperationCanceledException) when (cancel.IsCancellationRequested)
         {
@@ -199,7 +231,7 @@ public sealed class UpdateWindow : Window
         }
         if (_closed) return;
 
-        switch (_plan.Kind)
+        switch (plan.Kind)
         {
             case InstallKind.InnoSetup or InstallKind.Msi:
                 ShowReadyToInstall(download, postponed: false);
@@ -225,7 +257,7 @@ public sealed class UpdateWindow : Window
         {
             Close();
             App.Instance.QuitForUpdate(() => StartInstaller(download),
-                () => ShowPostponed(_release, _plan, window => window.ShowReadyToInstall(download, postponed: true)));
+                () => ShowPostponed(_release, _plan!, window => window.ShowReadyToInstall(download, postponed: true)));
         }
         ), ("Dialog.Cancel", Close));
     }
@@ -299,7 +331,7 @@ public sealed class UpdateWindow : Window
         {
             Close();
             App.Instance.QuitForUpdate(() => StartPortable(Path.Combine(folder, executable)),
-                () => ShowPostponed(_release, _plan, window => window.ShowPortableReady(folder, executable, postponed: true)));
+                () => ShowPostponed(_release, _plan!, window => window.ShowPortableReady(folder, executable, postponed: true)));
         }
         ), ("Update.OpenFolder", () =>
         {

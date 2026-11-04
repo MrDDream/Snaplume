@@ -11,8 +11,8 @@ internal static class WindowFit
 {
     /// <summary>
     /// When <paramref name="window"/> opens larger than the work area of its screen, it is maximized
-    /// (<paramref name="maximize"/>: editors and players, which use every pixel) or shrunk to the work area and
-    /// centered on it; its minimum size is lowered too if needed.
+    /// (<paramref name="maximize"/>: players and the workspace window, which use every pixel) or shrunk to the work area,
+    /// title bar and borders included, and centered on it; its minimum size is lowered too if needed.
     /// </summary>
     public static void FitToScreen(Window window, bool maximize)
     {
@@ -23,7 +23,11 @@ internal static class WindowFit
             if (screen == null || screen.Scaling <= 0) return;
             var area = screen.WorkingArea;
             double scale = screen.Scaling;
-            double maxWidth = area.Width / scale, maxHeight = area.Height / scale;
+            // Bounds is the inside of the window: its title bar and borders must fit too.
+            var frame = window.FrameSize ?? window.Bounds.Size;
+            double borderWidth = Math.Max(0, frame.Width - window.Bounds.Width);
+            double borderHeight = Math.Max(0, frame.Height - window.Bounds.Height);
+            double maxWidth = area.Width / scale - borderWidth, maxHeight = area.Height / scale - borderHeight;
             if (window.Bounds.Width <= maxWidth && window.Bounds.Height <= maxHeight) return;
 
             window.MinWidth = Math.Min(window.MinWidth, maxWidth);
@@ -36,8 +40,8 @@ internal static class WindowFit
             window.Width = Math.Min(window.Width, maxWidth);
             window.Height = Math.Min(window.Height, maxHeight);
             window.Position = new PixelPoint(
-                area.X + Math.Max(0, (int)((area.Width - window.Width * scale) / 2)),
-                area.Y + Math.Max(0, (int)((area.Height - window.Height * scale) / 2)));
+                area.X + Math.Max(0, (int)((area.Width - (window.Width + borderWidth) * scale) / 2)),
+                area.Y + Math.Max(0, (int)((area.Height - (window.Height + borderHeight) * scale) / 2)));
         };
     }
 }

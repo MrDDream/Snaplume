@@ -20,8 +20,11 @@ internal sealed class UpdateInstaller : IUpdateInstaller
 
     public InstallKind InstallKind => _kind.Value;
 
-    /// <summary>installer/Snaplume.iss starts Snaplume again after a silent update started with /RELAUNCH=1.</summary>
-    public bool InstallerRestartsSnaplume => InstallKind == InstallKind.InnoSetup;
+    /// <summary>
+    /// installer/Snaplume.iss starts Snaplume again after a silent update started with /RELAUNCH=1; msiexec cannot, so
+    /// a hidden PowerShell waits for it and starts Snaplume (see <see cref="StartRelauncher"/>).
+    /// </summary>
+    public bool InstallerRestartsSnaplume => InstallKind is InstallKind.InnoSetup or InstallKind.Msi;
 
     private static InstallKind Detect()
     {
@@ -70,6 +73,7 @@ internal sealed class UpdateInstaller : IUpdateInstaller
     /// starts Snaplume again (/RELAUNCH=1, see installer/Snaplume.iss). Started through the shell, so that an
     /// installation for all users can ask for elevation.
     /// MSI: msiexec with its basic interface (progress only, /passive); the per-machine package asks for elevation.
+    /// Snaplume is started again once msiexec is done (<see cref="StartRelauncher"/>), whether it installed or not.
     /// The package is opened without sharing write, delete or rename, checked against <paramref name="sha256"/> through
     /// that handle, and kept open until the process has started: it cannot be replaced between the check and the start.
     /// </summary>
@@ -92,12 +96,54 @@ internal sealed class UpdateInstaller : IUpdateInstaller
             case InstallKind.Msi:
                 var info = new ProcessStartInfo(MsiExec) { UseShellExecute = false };
                 foreach (var argument in new[] { "/i", package, "/passive", "/norestart" }) info.ArgumentList.Add(argument);
-                Process.Start(info)?.Dispose();
+                using (var msiexec = Process.Start(info))
+                {
+                    if (msiexec != null) StartRelauncher(msiexec.Id);
+                }
                 break;
             default:
                 throw new NotSupportedException($"Pas d'installateur pour {InstallKind}");
         }
     }
+
+    /// <summary>
+    /// Starts Snaplume again once msiexec (<paramref name="msiexecId"/>) is done: a hidden PowerShell, running as the
+    /// user who started the update (never elevated, unlike the installation), waits for it, then starts this executable
+    /// with "--restarted" (it waits for this instance to quit). The installation goes on without it if it cannot start.
+    /// </summary>
+    private static void StartRelauncher(int msiexecId)
+    {
+        if (Environment.ProcessPath is not { } executable) return;
+        try
+        {
+            var info = new ProcessStartInfo(Path.Combine(Environment.SystemDirectory, @"WindowsPowerShell\v1.0\powershell.exe"))
+            {
+                UseShellExecute = false,
+                CreateNoWindow = true,
+                WorkingDirectory = Environment.SystemDirectory,
+            };
+            foreach (var argument in new[] { "-NoLogo", "-NoProfile", "-NonInteractive", "-WindowStyle", "Hidden", "-EncodedCommand" })
+                info.ArgumentList.Add(argument);
+            info.ArgumentList.Add(Convert.ToBase64String(Encoding.Unicode.GetBytes(RelaunchScript(msiexecId, "msiexec", executable))));
+            Process.Start(info)?.Dispose();
+        }
+        catch (Exception ex)
+        {
+            ErrorLog.Write("Redémarrage après la mise à jour", ex);
+        }
+    }
+
+    /// <summary>
+    /// Waits while process <paramref name="processId"/> is still <paramref name="processName"/> (an identifier reused by
+    /// another program after it ended is not waited for), then starts <paramref name="executable"/> "--restarted".
+    /// </summary>
+    internal static string RelaunchScript(int processId, string processName, string executable) =>
+        $"$p = Get-Process -Id {processId} -ErrorAction SilentlyContinue; " +
+        $"if ($p -and $p.ProcessName -eq {PowerShellString(processName)}) {{ $p.WaitForExit() }}; " +
+        $"Start-Process -FilePath {PowerShellString(executable)} -ArgumentList '--restarted'";
+
+    /// <summary>Single-quoted PowerShell string: nothing in it is expanded, a quote is doubled.</summary>
+    private static string PowerShellString(string value) => "'" + value.Replace("'", "''") + "'";
 
     /// <summary>SHA-256 of what the stream reads, compared in constant time with the expected hexadecimal value.</summary>
     private static bool HasSha256(Stream stream, string expectedHex)

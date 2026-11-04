@@ -106,13 +106,15 @@ public sealed class AppSettings
     public string EditorCanvasBackground { get; set; } = "#FFFFFFFF";
 
     /// <summary>
-    /// Asks GitHub once a day whether a newer version was published (see <see cref="UpdateChecker"/>). Off by
+    /// Asks GitHub at startup and once a day whether a newer version was published (see <see cref="UpdateChecker"/>). Off by
     /// default: Snaplume contacts nothing unless the user asks for it.
     /// </summary>
     public bool CheckForUpdates { get; set; }
     public DateTime LastUpdateCheckUtc { get; set; }
     /// <summary>Version already announced by a notification: each new version is announced once.</summary>
     public string UpdateNotifiedVersion { get; set; } = "";
+    /// <summary>Version the user asked not to be reminded of ("Don't remind me"): a newer one is offered again.</summary>
+    public string UpdateSkippedVersion { get; set; } = "";
 
     /// <summary>Corners the webcam picture can be placed in (values of <see cref="VideoWebcamCorner"/>).</summary>
     public static readonly string[] WebcamCorners = { "TopLeft", "TopRight", "BottomLeft", "BottomRight" };
@@ -216,6 +218,7 @@ public sealed class AppSettings
         HotkeyText ??= defaults.HotkeyText;
         OcrLanguage ??= defaults.OcrLanguage;
         UpdateNotifiedVersion ??= defaults.UpdateNotifiedVersion;
+        UpdateSkippedVersion ??= defaults.UpdateSkippedVersion;
         if (LastUpdateCheckUtc > DateTime.UtcNow) LastUpdateCheckUtc = default;
 
         WorkspaceFolder = NormalizeFolder(WorkspaceFolder) ?? defaults.WorkspaceFolder;

@@ -308,10 +308,9 @@
                         <RadioButton Classes="rail" GroupName="Tools" Tag="Magnifier" ToolTip.Tip="{l:T Editor.Tool.MagnifierTip}">
                             <Path Classes="icon" Data="{DynamicResource IconMagnifier}" />
                         </RadioButton>
-                        <Rectangle Classes="rail-separator" />
-                        <RadioButton Classes="rail" GroupName="Tools" Tag="Crop" ToolTip.Tip="{l:T Editor.Tool.CropTip}">
-                            <Path Classes="icon" Data="{DynamicResource IconCrop}" />
-                        </RadioButton>
+                        <!-- Crop: chosen with the Crop button of the toolbar (or C), not shown here twice -->
+                        <RadioButton Classes="rail" GroupName="Tools" Tag="Crop" IsVisible="False" />
+
                     </StackPanel>
                 </ScrollViewer>
             </Border>

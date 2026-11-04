@@ -158,6 +158,74 @@ public class AppUiTests
         }
     }
 
+    private static readonly UpdateChecker.Release NewerRelease =
+        new(new Version(99, 0, 0), "99.0.0", UpdateChecker.ReleasesPage, Array.Empty<ReleaseAsset>());
+
+    /// <summary>The update offer, owned by a visible window so that the test can find it.</summary>
+    private static (Window Owner, Window Offer, List<Button> Buttons) ShowUpdateOffer()
+    {
+        var owner = new Window { Width = 900, Height = 700 };
+        owner.Show();
+        UpdateWindow.Show(owner, NewerRelease, offer: true);
+        Dispatcher.UIThread.RunJobs();
+        var offer = Assert.Single(owner.OwnedWindows);
+        return (owner, offer, offer.GetVisualDescendants().OfType<Button>().ToList());
+    }
+
+    [AvaloniaTheory]
+    [InlineData("fr")]
+    [InlineData("en")]
+    [InlineData("de")]
+    [InlineData("es")]
+    [InlineData("it")]
+    [InlineData("ar")]
+    public void Update_offer_shows_its_three_choices_in_full(string language)
+    {
+        using var themes = new Themes();
+        Loc.Initialize(language);
+        var (owner, offer, buttons) = ShowUpdateOffer();
+        Assert.IsType<UpdateWindow>(offer);
+        try
+        {
+            Assert.Equal(new[] { Loc.T("Update.UpdateNow"), Loc.T("Update.RemindLater"), Loc.T("Update.Skip") },
+                buttons.Select(b => b.Content as string));
+            foreach (var button in buttons)
+            {
+                var origin = button.TranslatePoint(default, offer)!.Value;
+                Assert.True(origin.X >= 0 && origin.X + button.Bounds.Width <= offer.Bounds.Width, $"{button.Content} dépasse");
+                Assert.True(button.DesiredSize.Width <= button.Bounds.Width + 0.5, $"{button.Content} est coupé");
+            }
+        }
+        finally
+        {
+            offer.Close();
+            owner.Close();
+            Loc.Initialize("fr");
+        }
+    }
+
+    [AvaloniaFact]
+    public void Update_offer_remembers_dont_remind_me_but_not_later()
+    {
+        using var themes = new Themes();
+        AppServices.Settings = new AppSettings();
+
+        var (owner, offer, buttons) = ShowUpdateOffer();
+        Assert.IsType<UpdateWindow>(offer);
+        offer.KeyPress(Key.Escape, RawInputModifiers.None, PhysicalKey.Escape, null);
+        Dispatcher.UIThread.RunJobs();
+        owner.Close();
+        Assert.False(offer.IsVisible);
+        Assert.Equal("", AppServices.Settings.UpdateSkippedVersion);
+
+        (owner, offer, buttons) = ShowUpdateOffer();
+        buttons[2].RaiseEvent(new Avalonia.Interactivity.RoutedEventArgs(Button.ClickEvent));
+        Dispatcher.UIThread.RunJobs();
+        owner.Close();
+        Assert.False(offer.IsVisible);
+        Assert.Equal("99.0.0", AppServices.Settings.UpdateSkippedVersion);
+    }
+
     [AvaloniaFact]
     public void Settings_keep_what_changed_elsewhere_while_the_window_was_open()
     {
