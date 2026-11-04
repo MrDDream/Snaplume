@@ -3,6 +3,11 @@
 
 **Free, open-source screenshots, annotations and screen recording for Windows and Linux. 100% offline.**
 
+## New in 1.2.1
+
+- **Enlarge the canvas, like in Paint**: drag the handles on the right, bottom or corner of the image, or choose "Enlarge the canvas" in Resize for an exact size, where the image stays (9 positions) and the background (white, transparent, black or any color). The image is not stretched, annotations follow, one Ctrl+Z undoes it.
+- **Small screens**: the editor, the player and the workspace window open maximized when they do not fit (15-inch laptops at 125-150 %); the other windows shrink to the screen.
+
 ## What's new in 1.2
 
 - **Linux version**: `.deb` and `.rpm` packages for x64 and ARM64, under X11 and Wayland (through the desktop portals). The whole interface was rebuilt with Avalonia: the same Snaplume on Windows and Linux.
@@ -54,6 +59,8 @@ All packages are self-contained: **no .NET installation needed**.
 ## En français
 
 Snaplume {{VERSION}} : capture d'écran, annotation et enregistrement vidéo libres (MIT) pour Windows et Linux, 100 % hors ligne, sans compte ni télémétrie.
+
+**Nouveau dans la 1.2.1** : **agrandissement de la zone de dessin comme dans Paint** (poignées à droite, en bas ou dans le coin de l'image, ou « Agrandir la zone de dessin » dans Redimensionner pour une taille exacte, la position de l'image et le fond : blanc, transparent, noir ou une couleur au choix ; l'image n'est pas étirée et un seul Ctrl+Z annule), et des **fenêtres adaptées aux petits écrans** (éditeur, lecteur et espaces de travail en plein écran quand ils ne tiennent pas).
 
 **Nouveautés de la 1.2** :
 

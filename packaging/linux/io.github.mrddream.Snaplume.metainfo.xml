@@ -88,7 +88,13 @@
   <content_rating type="oars-1.1" />
 
   <releases>
-    <release version="1.2.0" date="2026-10-30">
+    <release version="1.2.1" date="2026-11-04">
+      <description>
+        <p>Enlarge the canvas like in Paint (handles or an exact size, white or transparent background), and windows that fit small screens.</p>
+        <p xml:lang="fr">Agrandissement de la zone de dessin comme dans Paint (poignées ou taille exacte, fond blanc ou transparent), et fenêtres adaptées aux petits écrans.</p>
+      </description>
+    </release>
+    <release version="1.2.0" date="2026-11-03">
       <description>
         <p>First version for Linux (X11 and Wayland), with the same interface as the Windows version.</p>
         <p xml:lang="fr">Première version pour Linux (X11 et Wayland), avec la même interface que la version Windows.</p>
