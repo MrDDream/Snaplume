@@ -2,29 +2,82 @@
         xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
         xmlns:l="using:Snaplume.Ui"
         x:Class="Snaplume.Editor.ResizeDialog"
-        Title="{l:T Resize.Title}" Width="380" SizeToContent="Height" CanResize="False"
+        Title="{l:T Resize.Title}" Width="420" SizeToContent="Height" CanResize="False"
         WindowStartupLocation="CenterOwner" ShowInTaskbar="False">
+    <Window.Styles>
+        <!-- The background chosen for the canvas is outlined -->
+        <Style Selector="Button.swatch.selected /template/ Border#Bd">
+            <Setter Property="BorderBrush" Value="{DynamicResource AccentBrush}" />
+            <Setter Property="BorderThickness" Value="2" />
+        </Style>
+        <Style Selector="ToggleButton.anchor">
+            <Setter Property="Width" Value="30" />
+            <Setter Property="Height" Value="30" />
+            <Setter Property="Padding" Value="0" />
+            <Setter Property="Margin" Value="1" />
+            <Setter Property="BorderBrush" Value="{DynamicResource LineBrush}" />
+        </Style>
+    </Window.Styles>
     <StackPanel Margin="20,16,20,18">
-        <TextBlock x:Name="CurrentSizeText" Foreground="{DynamicResource MutedTextBrush}" Margin="0,0,0,12" />
+        <TextBlock x:Name="CurrentSizeText" Foreground="{DynamicResource MutedTextBrush}" Margin="0,0,0,10" />
 
-        <TextBlock Text="{l:T Resize.Percentage}" FontWeight="SemiBold" Margin="0,0,0,6" />
-        <WrapPanel x:Name="PercentButtons" Margin="0,0,0,14" />
+        <!-- Stretch the image, or change the size of the canvas around it (like "Canvas size" in Paint) -->
+        <WrapPanel Margin="0,0,0,12">
+            <RadioButton x:Name="StretchModeButton" GroupName="ResizeMode" Content="{l:T Canvas.ModeStretch}" IsChecked="True" Margin="0,0,20,0" />
+            <RadioButton x:Name="CanvasModeButton" GroupName="ResizeMode" Content="{l:T Canvas.ModeCanvas}" />
+        </WrapPanel>
 
-        <Grid ColumnDefinitions="*,Auto,*">
-            <StackPanel>
-                <TextBlock Text="{l:T Resize.Width}" FontWeight="SemiBold" Margin="0,0,0,4" />
-                <TextBox x:Name="WidthBox" />
-            </StackPanel>
-            <TextBlock Grid.Column="1" Text="×" FontSize="18" VerticalAlignment="Bottom" Margin="10,0,10,6"
-                       Foreground="{DynamicResource MutedTextBrush}" />
-            <StackPanel Grid.Column="2">
-                <TextBlock Text="{l:T Resize.Height}" FontWeight="SemiBold" Margin="0,0,0,4" />
-                <TextBox x:Name="HeightBox" />
-            </StackPanel>
-        </Grid>
-        <CheckBox x:Name="KeepRatioCheck" Content="{l:T Resize.KeepRatio}" IsChecked="True" Margin="0,10,0,0" />
+        <StackPanel x:Name="StretchPanel">
+            <TextBlock Text="{l:T Resize.Percentage}" FontWeight="SemiBold" Margin="0,0,0,6" />
+            <WrapPanel x:Name="PercentButtons" Margin="0,0,0,14" />
+
+            <Grid ColumnDefinitions="*,Auto,*">
+                <StackPanel>
+                    <TextBlock Text="{l:T Resize.Width}" FontWeight="SemiBold" Margin="0,0,0,4" />
+                    <TextBox x:Name="WidthBox" />
+                </StackPanel>
+                <TextBlock Grid.Column="1" Text="×" FontSize="18" VerticalAlignment="Bottom" Margin="10,0,10,6"
+                           Foreground="{DynamicResource MutedTextBrush}" />
+                <StackPanel Grid.Column="2">
+                    <TextBlock Text="{l:T Resize.Height}" FontWeight="SemiBold" Margin="0,0,0,4" />
+                    <TextBox x:Name="HeightBox" />
+                </StackPanel>
+            </Grid>
+            <CheckBox x:Name="KeepRatioCheck" Content="{l:T Resize.KeepRatio}" IsChecked="True" Margin="0,10,0,0" />
+            <TextBlock Text="{l:T Resize.Note}" Foreground="{DynamicResource MutedTextBrush}" TextWrapping="Wrap" Margin="0,10,0,0" FontSize="11.5" />
+        </StackPanel>
+
+        <StackPanel x:Name="CanvasPanel" IsVisible="False">
+            <Grid ColumnDefinitions="*,Auto,*">
+                <StackPanel>
+                    <TextBlock Text="{l:T Resize.Width}" FontWeight="SemiBold" Margin="0,0,0,4" />
+                    <TextBox x:Name="CanvasWidthBox" />
+                </StackPanel>
+                <TextBlock Grid.Column="1" Text="×" FontSize="18" VerticalAlignment="Bottom" Margin="10,0,10,6"
+                           Foreground="{DynamicResource MutedTextBrush}" />
+                <StackPanel Grid.Column="2">
+                    <TextBlock Text="{l:T Resize.Height}" FontWeight="SemiBold" Margin="0,0,0,4" />
+                    <TextBox x:Name="CanvasHeightBox" />
+                </StackPanel>
+            </Grid>
+
+            <Grid ColumnDefinitions="Auto,24,*" Margin="0,14,0,0">
+                <StackPanel>
+                    <TextBlock Text="{l:T Canvas.Anchor}" FontWeight="SemiBold" Margin="0,0,0,6" />
+                    <!-- Where the image stays: laid out as the image is, never mirrored -->
+                    <Grid x:Name="AnchorGrid" FlowDirection="LeftToRight" HorizontalAlignment="Left"
+                          RowDefinitions="Auto,Auto,Auto" ColumnDefinitions="Auto,Auto,Auto" />
+                </StackPanel>
+                <StackPanel Grid.Column="2">
+                    <TextBlock Text="{l:T Effects.Background}" FontWeight="SemiBold" Margin="0,0,0,6" />
+                    <StackPanel x:Name="BackgroundSwatches" Orientation="Horizontal" />
+                    <TextBlock x:Name="BackgroundName" Foreground="{DynamicResource MutedTextBrush}" Margin="0,6,0,0" />
+                </StackPanel>
+            </Grid>
+            <TextBlock Text="{l:T Canvas.Note}" Foreground="{DynamicResource MutedTextBrush}" TextWrapping="Wrap" Margin="0,12,0,0" FontSize="11.5" />
+        </StackPanel>
+
         <TextBlock x:Name="ErrorText" Foreground="{DynamicResource ErrorTextBrush}" Margin="0,8,0,0" IsVisible="False" TextWrapping="Wrap" />
-        <TextBlock Text="{l:T Resize.Note}" Foreground="{DynamicResource MutedTextBrush}" TextWrapping="Wrap" Margin="0,10,0,0" FontSize="11.5" />
 
         <StackPanel Orientation="Horizontal" HorizontalAlignment="Right" Margin="0,16,0,0" Spacing="8">
             <Button x:Name="OkButton" Classes="accent" Content="{l:T Resize.Ok}" IsDefault="True" Padding="14,4" />

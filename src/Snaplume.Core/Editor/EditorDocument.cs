@@ -345,8 +345,17 @@ public sealed class EditorDocument
         SetBaseImage(cropped);
         var offset = new Vector(-x, -y);
         foreach (var annotation in Annotations) annotation.Translate(offset);
-        // Annotations left entirely outside would be invisible but still saved.
-        var bounds = new Rect(0, 0, width, height);
+        KeepAnnotationsInside();
+        CommitChange(before);
+    }
+
+    /// <summary>
+    /// After the image got smaller: the annotations left entirely outside are dropped (they would be invisible but
+    /// still saved), and so are the magnifiers whose area left the image; a lens left outside comes back in.
+    /// </summary>
+    private void KeepAnnotationsInside()
+    {
+        var bounds = BaseImage.Bounds;
         Annotations.RemoveAll(a => !Rects.Touch(a.GetBounds(), bounds));
         foreach (var magnifier in Annotations.OfType<MagnifierAnnotation>().ToList())
         {
@@ -355,6 +364,81 @@ public sealed class EditorDocument
             if (source is not Rect s || s.Width <= 0 || s.Height <= 0) Annotations.Remove(magnifier);
             else if (!Rects.Touch(magnifier.GetLensRect(), bounds)) magnifier.PlaceLens(bounds);
         }
+    }
+
+    /// <summary>
+    /// Changes the size of the canvas without stretching the image, like "Canvas size" in Paint: space is added on
+    /// each side by its margin (cut off where it is negative), the new parts filled with <paramref name="background"/>
+    /// (transparent stays see-through), and the image keeps its pixels, the annotations following it. One undo step;
+    /// the effects apply to the new size. See <see cref="CanvasSize.Margins"/> for the margins of a size and an anchor.
+    /// </summary>
+    /// <exception cref="ArgumentOutOfRangeException">The canvas would be empty, or would leave out the whole image.</exception>
+    /// <exception cref="InvalidDataException">The result, margins of the effects included, would be too big.</exception>
+    public void ExtendCanvas(int left, int top, int right, int bottom, Color background)
+    {
+        int w = BaseImage.Width, h = BaseImage.Height;
+        long width = (long)w + left + right, height = (long)h + top + bottom;
+        // Some of the image must stay: each margin cuts less than the whole image.
+        if (width < 1 || height < 1 || -(long)left >= w || -(long)top >= h || -(long)right >= w || -(long)bottom >= h)
+            throw new ArgumentOutOfRangeException(nameof(left), $"Marges {left}, {top}, {right}, {bottom} pour une image de {w} × {h}");
+        if (left == 0 && top == 0 && right == 0 && bottom == 0) return;
+        CheckCanvasSize(width, height);
+        // Computed first: running out of memory must leave the document and its history untouched.
+        var pixels = CanvasPixels(new PixelRect(-left, -top, (int)width, (int)height), background);
+        ReplaceCanvas(pixels, new Vector(left, top), cuts: left < 0 || top < 0 || right < 0 || bottom < 0);
+    }
+
+    /// <summary>Refuses a canvas too big to edit, margins of the effects included, before anything is allocated.</summary>
+    /// <exception cref="InvalidDataException">Wider or higher than <see cref="MaxDimension"/>, or too many pixels.</exception>
+    private void CheckCanvasSize(long width, long height)
+    {
+        if (width > MaxDimension || height > MaxDimension)
+            throw new InvalidDataException(Loc.T("App.ImageTooLarge", width, height));
+        var (outputWidth, outputHeight) = OutputSizeOf((int)width, (int)height, Effects);
+        ImageIO.CheckSize(outputWidth, outputHeight);
+    }
+
+    /// <summary>
+    /// The base image on a canvas of <paramref name="canvas"/>, given in the coordinates of the image (it may start left
+    /// of or above it, and stop before its other edges): its pixels copied exactly, the rest filled with <paramref name="background"/>.
+    /// </summary>
+    private PixelBuffer CanvasPixels(PixelRect canvas, Color background)
+    {
+        var source = BaseImage.Pixels;
+        var result = new PixelBuffer(canvas.Width, canvas.Height);
+        int stride = result.Stride;
+        if (background.A != 0)
+        {
+            // Straight alpha BGRA, like the pixels of the image; the first row is copied to the others.
+            for (int i = 0; i < stride; i += 4)
+            {
+                result.Pixels[i] = background.B;
+                result.Pixels[i + 1] = background.G;
+                result.Pixels[i + 2] = background.R;
+                result.Pixels[i + 3] = background.A;
+            }
+            for (int row = 1; row < canvas.Height; row++) Buffer.BlockCopy(result.Pixels, 0, result.Pixels, row * stride, stride);
+        }
+        int x0 = Math.Max(0, canvas.X), x1 = Math.Min(source.Width, canvas.Right);
+        int y0 = Math.Max(0, canvas.Y), y1 = Math.Min(source.Height, canvas.Bottom);
+        for (int y = y0; y < y1; y++)
+            Buffer.BlockCopy(source.Pixels, y * source.Stride + x0 * 4, result.Pixels, (y - canvas.Y) * stride + (x0 - canvas.X) * 4, (x1 - x0) * 4);
+        return result;
+    }
+
+    /// <summary>
+    /// Replaces the base image by a canvas of another size as one undo step, the annotations moved by
+    /// <paramref name="offset"/>; when the canvas <paramref name="cuts"/> into the image, those left outside are dropped.
+    /// </summary>
+    private void ReplaceCanvas(PixelBuffer pixels, Vector offset, bool cuts)
+    {
+        var before = BeginChange();
+        SetBaseImage(new EditorImage(pixels));
+        if (offset != default)
+        {
+            foreach (var annotation in Annotations) annotation.Translate(offset);
+        }
+        if (cuts) KeepAnnotationsInside();
         CommitChange(before);
     }
 
@@ -441,19 +525,16 @@ public sealed class EditorDocument
     {
         int w = BaseImage.Width, h = BaseImage.Height;
         var bounds = InsertedBounds(w, h, area);
-        if (bounds.Width > MaxDimension || bounds.Height > MaxDimension)
-            throw new InvalidDataException(Loc.T("App.ImageTooLarge", bounds.Width, bounds.Height));
-        var (outputWidth, outputHeight) = OutputSizeOf(bounds.Width, bounds.Height, Effects);
-        ImageIO.CheckSize(outputWidth, outputHeight);
+        CheckCanvasSize(bounds.Width, bounds.Height);
         var offset = new Vector(-bounds.X, -bounds.Y);
         bool grows = bounds.Width != w || bounds.Height != h;
 
         // Computed first: running out of memory must leave the document and its history untouched.
+        var grown = grows ? CanvasPixels(bounds, background) : BaseImage.Pixels;
         var merged = SkiaPixels.Render(bounds.Width, bounds.Height, canvas =>
         {
-            canvas.Clear(grows ? new SKColor(background.R, background.G, background.B, background.A) : SKColors.Transparent);
-            using (var baseImage = SkiaPixels.ToImage(BaseImage.Pixels))
-                canvas.DrawImage(baseImage, (float)offset.X, (float)offset.Y);
+            using (var baseImage = SkiaPixels.ToImage(grown))
+                canvas.DrawImage(baseImage, 0, 0);
             var target = Rects.Offset(area, offset);
             bool shrinks = target.Width < image.Width || target.Height < image.Height;
             var sampling = shrinks
@@ -463,13 +544,7 @@ public sealed class EditorDocument
             using var paint = new SKPaint { IsAntialias = true };
             canvas.DrawImage(inserted, new SKRect((float)target.Left, (float)target.Top, (float)target.Right, (float)target.Bottom), sampling, paint);
         });
-        var before = BeginChange();
-        SetBaseImage(new EditorImage(merged));
-        if (offset != default)
-        {
-            foreach (var annotation in Annotations) annotation.Translate(offset);
-        }
-        CommitChange(before);
+        ReplaceCanvas(merged, offset, cuts: false);
     }
 
     /// <summary>Base image with all annotations burnt in, and the image effects around it (Avalonia rendering).</summary>

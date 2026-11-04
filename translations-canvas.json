@@ -1,0 +1,62 @@
+{
+  "fr": {
+    "Canvas.ModeStretch": "Étirer l'image",
+    "Canvas.ModeCanvas": "Agrandir la zone de dessin",
+    "Canvas.Anchor": "Position de l'image",
+    "Canvas.AnchorTip": "L'image reste de ce côté : l'espace est ajouté (ou retiré) de l'autre",
+    "Canvas.CustomColor": "Autre couleur",
+    "Canvas.Note": "L'image n'est pas étirée : de l'espace est ajouté autour d'elle pour écrire ou dessiner (ou retiré si la zone est plus petite). Les annotations restent en place.",
+    "Canvas.Resized": "Zone de dessin : {0} × {1} px",
+    "Canvas.Error": "Impossible de changer la taille de la zone de dessin :\n{0}"
+  },
+  "en": {
+    "Canvas.ModeStretch": "Stretch the image",
+    "Canvas.ModeCanvas": "Enlarge the canvas",
+    "Canvas.Anchor": "Image position",
+    "Canvas.AnchorTip": "The image stays on this side: space is added (or removed) on the other",
+    "Canvas.CustomColor": "Other color",
+    "Canvas.Note": "The image is not stretched: space is added around it to write or draw in (or removed if the canvas is smaller). Annotations stay in place.",
+    "Canvas.Resized": "Canvas: {0} × {1} px",
+    "Canvas.Error": "Could not change the canvas size:\n{0}"
+  },
+  "de": {
+    "Canvas.ModeStretch": "Bild strecken",
+    "Canvas.ModeCanvas": "Zeichenfläche vergrößern",
+    "Canvas.Anchor": "Position des Bildes",
+    "Canvas.AnchorTip": "Das Bild bleibt auf dieser Seite: Auf der anderen wird Platz hinzugefügt (oder entfernt)",
+    "Canvas.CustomColor": "Andere Farbe",
+    "Canvas.Note": "Das Bild wird nicht gestreckt: Um das Bild herum wird Platz zum Schreiben oder Zeichnen hinzugefügt (oder entfernt, wenn die Fläche kleiner ist). Anmerkungen bleiben an ihrem Platz.",
+    "Canvas.Resized": "Zeichenfläche: {0} × {1} px",
+    "Canvas.Error": "Die Größe der Zeichenfläche konnte nicht geändert werden:\n{0}"
+  },
+  "es": {
+    "Canvas.ModeStretch": "Estirar la imagen",
+    "Canvas.ModeCanvas": "Ampliar el lienzo",
+    "Canvas.Anchor": "Posición de la imagen",
+    "Canvas.AnchorTip": "La imagen se queda en este lado: el espacio se añade (o se quita) en el otro",
+    "Canvas.CustomColor": "Otro color",
+    "Canvas.Note": "La imagen no se estira: se añade espacio a su alrededor para escribir o dibujar (o se quita si el lienzo es más pequeño). Las anotaciones se quedan en su sitio.",
+    "Canvas.Resized": "Lienzo: {0} × {1} px",
+    "Canvas.Error": "No se pudo cambiar el tamaño del lienzo:\n{0}"
+  },
+  "it": {
+    "Canvas.ModeStretch": "Allunga l'immagine",
+    "Canvas.ModeCanvas": "Allarga l'area di disegno",
+    "Canvas.Anchor": "Posizione dell'immagine",
+    "Canvas.AnchorTip": "L'immagine resta da questo lato: lo spazio viene aggiunto (o tolto) dall'altro",
+    "Canvas.CustomColor": "Altro colore",
+    "Canvas.Note": "L'immagine non viene allungata: attorno a essa viene aggiunto spazio per scrivere o disegnare (o tolto se l'area è più piccola). Le annotazioni restano al loro posto.",
+    "Canvas.Resized": "Area di disegno: {0} × {1} px",
+    "Canvas.Error": "Impossibile cambiare la dimensione dell'area di disegno:\n{0}"
+  },
+  "ar": {
+    "Canvas.ModeStretch": "تمديد الصورة",
+    "Canvas.ModeCanvas": "توسيع مساحة الرسم",
+    "Canvas.Anchor": "موضع الصورة",
+    "Canvas.AnchorTip": "تبقى الصورة في هذا الجانب: تُضاف المساحة (أو تُزال) في الجانب الآخر",
+    "Canvas.CustomColor": "لون آخر",
+    "Canvas.Note": "لا تُمدَّد الصورة: تُضاف مساحة حولها للكتابة أو الرسم (أو تُزال إذا كانت المساحة أصغر). تبقى التعليقات التوضيحية في مكانها.",
+    "Canvas.Resized": "مساحة الرسم: {0} × {1} بكسل",
+    "Canvas.Error": "تعذّر تغيير حجم مساحة الرسم:\n{0}"
+  }
+}

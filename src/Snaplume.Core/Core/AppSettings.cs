@@ -100,6 +100,12 @@ public sealed class AppSettings
     public double WebExportMegabytes { get; set; } = 10;
 
     /// <summary>
+    /// Background of the space added around an image in the editor ("#AARRGGBB": white, transparent, black or a color
+    /// of the user's), last chosen in the "Canvas size" dialog. Absent from older settings files: white.
+    /// </summary>
+    public string EditorCanvasBackground { get; set; } = "#FFFFFFFF";
+
+    /// <summary>
     /// Asks GitHub once a day whether a newer version was published (see <see cref="UpdateChecker"/>). Off by
     /// default: Snaplume contacts nothing unless the user asks for it.
     /// </summary>
@@ -248,6 +254,9 @@ public sealed class AppSettings
         WebExportMegabytes = double.IsFinite(WebExportMegabytes)
             ? Math.Clamp(WebExportMegabytes, Player.SizeTargets.MinMegabytes, Player.SizeTargets.MaxMegabytes)
             : defaults.WebExportMegabytes;
+        EditorCanvasBackground = Editor.HexColor.TryParse(EditorCanvasBackground, out var canvasBackground)
+            ? Editor.HexColor.Format(canvasBackground)
+            : defaults.EditorCanvasBackground;
     }
 
     /// <summary>Full path of a folder, or null if it is relative or invalid.</summary>
