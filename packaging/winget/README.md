@@ -12,17 +12,17 @@ reused. They point to the Inno Setup installer of the GitHub release (current us
 1. Check the manifests (Windows 10/11, winget 1.6 or later):
 
    ```powershell
-   winget validate --manifest packaging\winget\manifests\m\MrDDream\Snaplume\1.2.0
+   winget validate --manifest packaging\winget\manifests\m\MrDDream\Snaplume\1.2.1
    winget settings --enable LocalManifestFiles   # once, as administrator
-   winget install --manifest packaging\winget\manifests\m\MrDDream\Snaplume\1.2.0
+   winget install --manifest packaging\winget\manifests\m\MrDDream\Snaplume\1.2.1
    ```
 
 2. Fork [microsoft/winget-pkgs](https://github.com/microsoft/winget-pkgs) on GitHub, copy the version folder to
-   `manifests/m/MrDDream/Snaplume/1.2.0/` in the fork, commit, and open a pull request to microsoft/winget-pkgs
-   (title: `New package: MrDDream.Snaplume version 1.2.0`). Fill in the checklist of the pull request template.
+   `manifests/m/MrDDream/Snaplume/1.2.1/` in the fork, commit, and open a pull request to microsoft/winget-pkgs
+   (title: `New package: MrDDream.Snaplume version 1.2.1`). Fill in the checklist of the pull request template.
 
    Or let [wingetcreate](https://github.com/microsoft/winget-create) (Microsoft) do the fork and the pull request:
-   `wingetcreate submit --token <GitHub token> packaging\winget\manifests\m\MrDDream\Snaplume\1.2.0`.
+   `wingetcreate submit --token <GitHub token> packaging\winget\manifests\m\MrDDream\Snaplume\1.2.1`.
 
 3. Automated checks run on the pull request (manifest, download, hash, installation in a sandbox, malware scan).
    A Microsoft moderator then merges it, usually within a few days. Answer the bot's comments if a check fails.
@@ -33,8 +33,8 @@ Once the package exists, each release only needs a new version folder. The simpl
 the installer, computes the hash and opens the pull request:
 
 ```powershell
-wingetcreate update MrDDream.Snaplume --version 1.2.1 `
-  --urls https://github.com/MrDDream/Snaplume/releases/download/v1.2.1/Snaplume-Setup-1.2.1.exe `
+wingetcreate update MrDDream.Snaplume --version 1.2.2 `
+  --urls https://github.com/MrDDream/Snaplume/releases/download/v1.2.2/Snaplume-Setup-1.2.2.exe `
   --submit --token <GitHub token>
 ```
 
