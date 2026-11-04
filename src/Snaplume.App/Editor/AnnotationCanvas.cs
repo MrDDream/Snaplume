@@ -4,6 +4,7 @@ using Avalonia.Input;
 using Avalonia.Media;
 using Avalonia.Media.Immutable;
 using Avalonia.Media.Imaging;
+using Snaplume.Core;
 using Snaplume.Imaging;
 
 namespace Snaplume.Editor;
@@ -16,7 +17,7 @@ namespace Snaplume.Editor;
 /// </summary>
 public sealed class AnnotationCanvas : Control
 {
-    private enum DragMode { None, Create, Move, Handle, Crop, FloatMove, FloatHandle }
+    private enum DragMode { None, Create, Move, Handle, Crop, FloatMove, FloatHandle, Canvas }
 
     /// <summary>Smallest width or height of an inserted image being resized, in image pixels.</summary>
     private const double MinFloatingSize = 4;
@@ -37,6 +38,13 @@ public sealed class AnnotationCanvas : Control
     private static readonly Cursor TextCursor = new(StandardCursorType.Ibeam);
     private static readonly Cursor HandCursor = new(StandardCursorType.Hand);
     private static readonly Cursor MoveCursor = new(StandardCursorType.SizeAll);
+    /// <summary>Cursors over the handles of the canvas, in the order of <see cref="CanvasHandles"/>.</summary>
+    private static readonly Cursor[] CanvasCursors =
+    {
+        new(StandardCursorType.SizeWestEast), new(StandardCursorType.SizeNorthSouth), new(StandardCursorType.BottomRightCorner),
+    };
+    private static readonly IImmutableSolidColorBrush CanvasHandleOutline = new ImmutableSolidColorBrush(Color.FromRgb(0x5F, 0x6B, 0x7A));
+    private static readonly IImmutableSolidColorBrush LabelBrush = new ImmutableSolidColorBrush(Color.FromArgb(0xE6, 0x1F, 0x29, 0x37));
 
     private readonly Layer _imageLayer, _belowLayer, _activeLayer, _aboveLayer, _overlayLayer;
 
@@ -64,8 +72,11 @@ public sealed class AnnotationCanvas : Control
     /// <summary>Place of the inserted image before the drag in progress.</summary>
     private Rect _floatingStart;
 
+    /// <summary>New size of the canvas while one of its handles is dragged (see <see cref="CanvasHandles"/>).</summary>
+    private PixelSize? _canvasSize;
+
     // Pens one screen pixel wide, rebuilt when the zoom changes.
-    private IPen? _selectionPen, _selectionDashPen, _cropPen, _floatingOutlinePen;
+    private IPen? _selectionPen, _selectionDashPen, _cropPen, _floatingOutlinePen, _canvasHandlePen, _canvasOutlinePen;
 
     public event Action? SelectionChanged;
     /// <summary>An image started or stopped floating (see <see cref="FloatImage"/>).</summary>
@@ -74,12 +85,18 @@ public sealed class AnnotationCanvas : Control
     public event Action<Exception>? FloatingImageFailed;
     /// <summary>The text annotation to edit, and whether it is a new one.</summary>
     public event Action<TextAnnotation, bool>? TextEditRequested;
+    /// <summary>A handle of the canvas was released: the image got its new size (see <see cref="EditorDocument.ExtendCanvas"/>).</summary>
+    public event Action? CanvasResized;
+    /// <summary>The new size of the canvas could not be applied (too big, not enough memory); the document is unchanged.</summary>
+    public event Action<Exception>? CanvasResizeFailed;
 
     /// <summary>Style of the next annotations drawn.</summary>
     public DrawingStyle CurrentStyle { get; set; } = DrawingStyle.Default;
     public string CurrentStampId { get; set; } = "ok-circle";
     /// <summary>Stamp size factor (1 = 64 px for the square stamps).</summary>
     public double CurrentStampScale { get; set; } = 1;
+    /// <summary>Background of the space added by dragging the handles of the canvas.</summary>
+    public Color CanvasBackground { get; set; } = CanvasSize.DefaultBackground;
 
     public AnnotationCanvas()
     {
@@ -131,6 +148,9 @@ public sealed class AnnotationCanvas : Control
                 _ => CrossCursor,
             };
             if (value == EditorTool.Crop) SetSelected(null);
+            // The handles of the canvas are hidden while cropping.
+            InvalidateVisual();
+            _overlayLayer.InvalidateVisual();
         }
     }
 
@@ -141,7 +161,7 @@ public sealed class AnnotationCanvas : Control
         set
         {
             _viewScale = value;
-            _selectionPen = _selectionDashPen = _cropPen = _floatingOutlinePen = null;
+            _selectionPen = _selectionDashPen = _cropPen = _floatingOutlinePen = _canvasHandlePen = _canvasOutlinePen = null;
             InvalidateVisual();
             _overlayLayer.InvalidateVisual();
         }
@@ -166,6 +186,9 @@ public sealed class AnnotationCanvas : Control
 
     /// <summary>Bounds of the image, in image pixels.</summary>
     public Rect ImageArea => _document == null ? default : _document.BaseImage.Bounds;
+
+    /// <summary>Size the canvas will take while one of its handles is dragged, else null.</summary>
+    public PixelSize? CanvasDragSize => _canvasSize;
 
     /// <summary>Hides the text annotation while its text box is shown (null to show it again).</summary>
     public void SetEditingText(TextAnnotation? text)
@@ -282,6 +305,7 @@ public sealed class AnnotationCanvas : Control
         _creating = null;
         _checkpoint = null;
         _cropRect = null;
+        _canvasSize = null;
         ReleaseCapture();
         InvalidateLayers();
         return true;
@@ -303,7 +327,8 @@ public sealed class AnnotationCanvas : Control
 
     /// <summary>
     /// Nothing visible: a transparent area where the canvas takes the mouse, the image with a margin for the
-    /// handles at its edges, and the inserted image wherever it is (it may be placed beside the capture).
+    /// handles at its edges, the inserted image wherever it is (it may be placed beside the capture), and the
+    /// handles of the canvas.
     /// </summary>
     public override void Render(DrawingContext context)
     {
@@ -311,6 +336,9 @@ public sealed class AnnotationCanvas : Control
         var area = Rects.Grow(_document.BaseImage.Bounds, 8 / _viewScale);
         if (_floatingImage != null) area = Rects.Union(area, Rects.Grow(_floatingRect, 8 / _viewScale));
         context.FillRectangle(Brushes.Transparent, area);
+        if (!ShowsCanvasHandles) return;
+        foreach (var handle in CanvasHandles(_document.BaseImage.Bounds))
+            context.FillRectangle(Brushes.Transparent, new Rect(handle.X - HandleReach, handle.Y - HandleReach, 2 * HandleReach, 2 * HandleReach));
     }
 
     private enum Part { Below, Active, Above }
@@ -383,7 +411,7 @@ public sealed class AnnotationCanvas : Control
         Pop(states);
     }
 
-    /// <summary>The border of the effects, the crop shade, then the selection frame and the inserted image's frame.</summary>
+    /// <summary>The border of the effects, the crop shade, then the selection frame, the inserted image's frame and the canvas handles.</summary>
     private void DrawOverlay(DrawingContext dc)
     {
         if (_document == null) return;
@@ -405,6 +433,45 @@ public sealed class AnnotationCanvas : Control
         if (_selected != null && !ReferenceEquals(_selected, _editingText) && _document.Annotations.Contains(_selected))
             DrawFrame(dc, _selected is LineAnnotation ? null : _selected.GetBounds(), _selected.GetHandles());
         if (_floatingBitmap != null) DrawFloatingOutside(dc, bounds);
+        if (ShowsCanvasHandles) DrawCanvasSize(dc, bounds);
+    }
+
+    /// <summary>
+    /// The handles of the canvas; while one is dragged, the new canvas: the space added in its background color, the
+    /// part cut off shaded, its dashed outline, and its size next to the mouse.
+    /// </summary>
+    private void DrawCanvasSize(DrawingContext dc, Rect image)
+    {
+        double unit = 1 / _viewScale;
+        var canvas = image;
+        if (_canvasSize is { } size)
+        {
+            canvas = new Rect(0, 0, size.Width, size.Height);
+            if (CanvasBackground.A > 0)
+            {
+                using (dc.PushGeometryClip(new CombinedGeometry(GeometryCombineMode.Exclude, new RectangleGeometry(canvas), new RectangleGeometry(image))))
+                    dc.DrawRectangle(new ImmutableSolidColorBrush(CanvasBackground), null, canvas);
+            }
+            dc.DrawGeometry(CropShade, null, new CombinedGeometry(GeometryCombineMode.Exclude, new RectangleGeometry(image), new RectangleGeometry(canvas)));
+            _canvasOutlinePen ??= new ImmutablePen(AccentBrush, unit, Dash);
+            dc.DrawRectangle(null, _canvasOutlinePen, canvas);
+            DrawSizeLabel(dc, Loc.T("Editor.Info.Size", size.Width, size.Height), unit);
+        }
+        _canvasHandlePen ??= new ImmutablePen(CanvasHandleOutline, unit);
+        double side = 7 * unit;
+        foreach (var h in CanvasHandles(canvas))
+            dc.DrawRectangle(Brushes.White, _canvasHandlePen, new Rect(h.X - side / 2, h.Y - side / 2, side, side));
+    }
+
+    /// <summary>"W × H px" in a dark label below and to the right of the mouse, the same size on screen whatever the zoom.</summary>
+    private void DrawSizeLabel(DrawingContext dc, string text, double unit)
+    {
+        var formatted = new FormattedText(text, Loc.Culture, Loc.IsRightToLeft ? FlowDirection.RightToLeft : FlowDirection.LeftToRight,
+            Typeface.Default, 12 * unit, Brushes.White);
+        var origin = _lastPosition + new Vector(16, 18) * unit;
+        var box = new Rect(origin, new Size(formatted.Width + 14 * unit, formatted.Height + 6 * unit));
+        dc.DrawRectangle(LabelBrush, null, box, 4 * unit, 4 * unit);
+        dc.DrawText(formatted, origin + new Vector(7, 3) * unit);
     }
 
     /// <summary>
@@ -535,6 +602,17 @@ public sealed class AnnotationCanvas : Control
                 BeginDrag(DragMode.Handle, p, e);
                 return;
             }
+        }
+
+        // Then those of the canvas, like in Paint: the image gets bigger (or smaller) without being stretched.
+        int canvasHandle = ShowsCanvasHandles ? HitHandle(CanvasHandles(ImageArea), p) : -1;
+        if (canvasHandle >= 0)
+        {
+            _handleIndex = canvasHandle;
+            _canvasSize = new PixelSize(_document.BaseImage.Width, _document.BaseImage.Height);
+            BeginDrag(DragMode.Canvas, p, e);
+            _overlayLayer.InvalidateVisual();
+            return;
         }
 
         switch (_tool)
@@ -678,6 +756,12 @@ public sealed class AnnotationCanvas : Control
             case DragMode.Crop:
                 _cropRect = Rects.Intersect(Rects.Between(_dragStart, p), ImageArea);
                 break;
+
+            case DragMode.Canvas:
+                _canvasSize = DraggedCanvasSize(p);
+                _lastPosition = p;
+                _overlayLayer.InvalidateVisual();
+                return;
         }
         _lastPosition = p;
         InvalidateActive();
@@ -720,6 +804,12 @@ public sealed class AnnotationCanvas : Control
 
             case DragMode.FloatMove or DragMode.FloatHandle:
                 // The inserted image is not part of the document yet: nothing to record.
+                break;
+
+            case DragMode.Canvas:
+                var size = _canvasSize;
+                _canvasSize = null;
+                if (size is { } s) ApplyCanvasSize(s);
                 break;
 
             default:
@@ -876,9 +966,63 @@ public sealed class AnnotationCanvas : Control
         return Rects.Between(anchor, anchor + new Vector(v.X < 0 ? -width : width, v.Y < 0 ? -height : height));
     }
 
+    /// <summary>
+    /// The handles of the canvas: the middle of its right edge, the middle of its bottom edge and its bottom right
+    /// corner, just outside it so as not to cover the image. None on the left and the top: the image would move under
+    /// the mouse (the "Resize" dialog adds space on any side).
+    /// </summary>
+    private Point[] CanvasHandles(Rect canvas)
+    {
+        double outside = 5 / _viewScale;
+        return new[]
+        {
+            new Point(canvas.Right + outside, canvas.Height / 2),
+            new Point(canvas.Width / 2, canvas.Bottom + outside),
+            new Point(canvas.Right + outside, canvas.Bottom + outside),
+        };
+    }
+
+    /// <summary>
+    /// The handles of the canvas are there except while cropping, while an inserted image is being placed, and while
+    /// something else is drawn or dragged.
+    /// </summary>
+    private bool ShowsCanvasHandles =>
+        _document != null && _tool != EditorTool.Crop && _floatingImage == null && _mode is DragMode.None or DragMode.Canvas;
+
+    /// <summary>Size of the canvas for the handle <see cref="_handleIndex"/> dragged to <paramref name="p"/>, in whole image pixels.</summary>
+    private PixelSize DraggedCanvasSize(Point p)
+    {
+        var image = ImageArea;
+        var moved = p - _dragStart;
+        int width = _handleIndex == 1 ? (int)image.Width : Math.Clamp((int)Math.Round(image.Width + moved.X), 1, EditorDocument.MaxDimension);
+        int height = _handleIndex == 0 ? (int)image.Height : Math.Clamp((int)Math.Round(image.Height + moved.Y), 1, EditorDocument.MaxDimension);
+        return new PixelSize(width, height);
+    }
+
+    /// <summary>Gives the image the size its canvas was dragged to, as one undo step: space added (or cut off) at the right and the bottom.</summary>
+    private void ApplyCanvasSize(PixelSize size)
+    {
+        var image = _document!.BaseImage;
+        if (size.Width == image.Width && size.Height == image.Height) return;
+        try
+        {
+            _document.ExtendCanvas(0, 0, size.Width - image.Width, size.Height - image.Height, CanvasBackground);
+        }
+        catch (Exception ex)
+        {
+            // Too big, or not enough memory: nothing changed.
+            CanvasResizeFailed?.Invoke(ex);
+            return;
+        }
+        CanvasResized?.Invoke();
+    }
+
+    /// <summary>Distance, in image pixels, at which a handle is grabbed: 7 pixels on screen.</summary>
+    private double HandleReach => 7 / _viewScale;
+
     private int HitHandle(IReadOnlyList<Point> handles, Point p)
     {
-        double tolerance = 7 / _viewScale;
+        double tolerance = HandleReach;
         for (int i = 0; i < handles.Count; i++)
         {
             if (Math.Abs(handles[i].X - p.X) <= tolerance && Math.Abs(handles[i].Y - p.Y) <= tolerance) return i;
@@ -892,6 +1036,7 @@ public sealed class AnnotationCanvas : Control
         if (_floatingImage != null)
             cursor = HitHandle(FloatingHandles(), p) >= 0 ? HandCursor : _floatingRect.Contains(p) ? MoveCursor : ArrowCursor;
         else if (_selected != null && _tool != EditorTool.Crop && HitHandle(_selected.GetHandles(), p) >= 0) cursor = HandCursor;
+        else if (ShowsCanvasHandles && HitHandle(CanvasHandles(ImageArea), p) is >= 0 and var canvasHandle) cursor = CanvasCursors[canvasHandle];
         else if (_tool == EditorTool.Select && HitTestAll(p) != null) cursor = MoveCursor;
         else if (_tool == EditorTool.Magnifier && HitTestAll(p) is MagnifierAnnotation) cursor = MoveCursor;
         else cursor = _tool switch

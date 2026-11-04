@@ -424,14 +424,237 @@ public class EditorWindowTests
         }
     }
 
+    [AvaloniaFact]
+    public void Canvas_handles_grow_the_canvas_in_one_undo_step_and_escape_cancels()
+    {
+        using var look = new AppLook(new AppSettings());
+        var (window, canvas, folder) = Open(200, 120);
+        using (folder)
+        {
+            var document = canvas.Document!;
+            var arrow = new ArrowAnnotation { Start = new(20, 20), End = new(150, 90), Color = Colors.Red, Thickness = 4 };
+            document.Annotations.Add(arrow);
+            document.NotifyChanged();
+            Dispatcher.UIThread.RunJobs();
+            Assert.Equal(1, canvas.ViewScale, 3);
+
+            // The corner handle, just outside the image, dragged by 100 × 60 pixels: the size follows the mouse.
+            window.MouseMove(OnWindow(window, canvas, 205, 125));
+            Assert.Same(CanvasCursor(2), canvas.Cursor);
+            window.MouseDown(OnWindow(window, canvas, 205, 125), MouseButton.Left);
+            window.MouseMove(OnWindow(window, canvas, 260, 160));
+            window.MouseMove(OnWindow(window, canvas, 305, 185));
+            Assert.Equal(new PixelSize(300, 180), canvas.CanvasDragSize);
+            Assert.Equal((200, 120), (document.BaseImage.Width, document.BaseImage.Height));
+            SaveRendering(window, "editor-canvas-drag.png", Around(window, canvas, 340, 230));
+            window.MouseUp(OnWindow(window, canvas, 305, 185), MouseButton.Left);
+            Assert.Null(canvas.CanvasDragSize);
+            Assert.Equal((300, 180), (document.BaseImage.Width, document.BaseImage.Height));
+            Assert.Equal(Colors.White, At(document.BaseImage.Pixels, 250, 150));
+            Assert.Equal(Color.FromRgb(0xDD, 0xE6, 0xF0), At(document.BaseImage.Pixels, 199, 119));
+            Assert.Equal(new Point(20, 20), arrow.Start);
+            Assert.Single(document.Annotations);
+            Dispatcher.UIThread.RunJobs();
+            SaveRendering(window, "editor-canvas-handles.png", Around(window, canvas, 340, 230));
+
+            // One undo step.
+            window.KeyPress(Key.Z, RawInputModifiers.Control, PhysicalKey.Z, "z");
+            Assert.Equal((200, 120), (document.BaseImage.Width, document.BaseImage.Height));
+            Assert.False(document.CanUndo);
+
+            // Escape during a drag: nothing changes, no undo step.
+            long version = document.Version;
+            window.MouseDown(OnWindow(window, canvas, 205, 60), MouseButton.Left);
+            window.MouseMove(OnWindow(window, canvas, 260, 60));
+            Assert.Equal(new PixelSize(255, 120), canvas.CanvasDragSize);
+            window.KeyPress(Key.Escape, RawInputModifiers.None, PhysicalKey.Escape, null);
+            Assert.Null(canvas.CanvasDragSize);
+            window.MouseUp(OnWindow(window, canvas, 260, 60), MouseButton.Left);
+            Assert.Equal((200, 120), (document.BaseImage.Width, document.BaseImage.Height));
+            Assert.Equal(version, document.Version);
+            Assert.Equal(EditorTool.Select, canvas.Tool);
+
+            // With another tool and zoomed in: the bottom handle (2.5 image pixels below at 200 %) adds whole pixels, nothing is drawn.
+            typeof(EditorWindow).GetMethod("SetZoom", BindingFlags.Instance | BindingFlags.NonPublic)!.Invoke(window, new object[] { 2.0 });
+            window.KeyPress(Key.A, RawInputModifiers.None, PhysicalKey.A, "a");
+            Dispatcher.UIThread.RunJobs();
+            Assert.Equal(2, canvas.ViewScale, 3);
+            window.MouseDown(OnWindow(window, canvas, 100, 122.5), MouseButton.Left);
+            window.MouseMove(OnWindow(window, canvas, 130, 152.75));
+            Assert.Equal(new PixelSize(200, 150), canvas.CanvasDragSize);
+            window.MouseUp(OnWindow(window, canvas, 130, 152.75), MouseButton.Left);
+            Assert.Equal((200, 150), (document.BaseImage.Width, document.BaseImage.Height));
+            Assert.Single(document.Annotations);
+
+            // Cropping: no handles, the drag crops as before.
+            window.KeyPress(Key.C, RawInputModifiers.None, PhysicalKey.C, "c");
+            window.MouseDown(OnWindow(window, canvas, 205, 77.5), MouseButton.Left);
+            window.MouseMove(OnWindow(window, canvas, 240, 77.5));
+            Assert.Null(canvas.CanvasDragSize);
+            window.KeyPress(Key.Escape, RawInputModifiers.None, PhysicalKey.Escape, null);
+            window.MouseUp(OnWindow(window, canvas, 240, 77.5), MouseButton.Left);
+            Assert.Equal((200, 150), (document.BaseImage.Width, document.BaseImage.Height));
+
+            // Dark and right to left: the image and its handles are never mirrored.
+            window.KeyPress(Key.V, RawInputModifiers.None, PhysicalKey.V, "v");
+            typeof(EditorWindow).GetMethod("SetZoom", BindingFlags.Instance | BindingFlags.NonPublic)!.Invoke(window, new object[] { 1.0 });
+            Application.Current!.RequestedThemeVariant = ThemeVariant.Dark;
+            window.FlowDirection = FlowDirection.RightToLeft;
+            Dispatcher.UIThread.RunJobs();
+            window.MouseDown(OnWindow(window, canvas, 205, 155), MouseButton.Left);
+            window.MouseMove(OnWindow(window, canvas, 285, 215));
+            Assert.Equal(new PixelSize(280, 210), canvas.CanvasDragSize);
+            SaveRendering(window, "editor-canvas-drag-dark-rtl.png", Around(window, canvas, 340, 260));
+            window.MouseUp(OnWindow(window, canvas, 285, 215), MouseButton.Left);
+            Assert.Equal((280, 210), (document.BaseImage.Width, document.BaseImage.Height));
+            Dispatcher.UIThread.RunJobs();
+            SaveRendering(window, "editor-canvas-handles-dark-rtl.png", Around(window, canvas, 340, 260));
+            ForceClose(window);
+        }
+    }
+
+    [AvaloniaFact]
+    public async Task Resize_dialog_in_canvas_mode_adds_space_evenly_around_the_image()
+    {
+        using var look = new AppLook(new AppSettings());
+        var (window, canvas, folder) = Open(400, 260);
+        using (folder)
+        {
+            var document = canvas.Document!;
+            document.Annotations.Add(new RectangleAnnotation { Start = new(10, 10), End = new(60, 40), Color = Colors.Red });
+            var resize = (Task)typeof(EditorWindow).GetMethod("ResizeAsync", BindingFlags.Instance | BindingFlags.NonPublic)!.Invoke(window, null)!;
+            Dispatcher.UIThread.RunJobs();
+            var dialog = Assert.IsType<ResizeDialog>(Assert.Single(window.OwnedWindows));
+            dialog.FindControl<RadioButton>("CanvasModeButton")!.IsChecked = true;
+            Dispatcher.UIThread.RunJobs();
+            Assert.True(dialog.FindControl<StackPanel>("CanvasPanel")!.IsVisible);
+            Assert.False(dialog.FindControl<StackPanel>("StretchPanel")!.IsVisible);
+            // Centred, on white, by default.
+            Assert.Equal(CanvasAnchor.Center, dialog.Anchor);
+            Assert.Equal(Colors.White, dialog.CanvasBackground);
+            dialog.FindControl<TextBox>("CanvasWidthBox")!.Text = "600";
+            dialog.FindControl<TextBox>("CanvasHeightBox")!.Text = "400";
+            Dispatcher.UIThread.RunJobs();
+            SaveRendering(dialog, "editor-canvas-dialog.png");
+
+            dialog.FindControl<Button>("OkButton")!.RaiseEvent(new RoutedEventArgs(Button.ClickEvent));
+            Dispatcher.UIThread.RunJobs();
+            await resize;
+            Assert.Equal((600, 400), (document.BaseImage.Width, document.BaseImage.Height));
+            var pixels = document.BaseImage.Pixels;
+            // 100 pixels on the left and on the right, 70 above and below.
+            Assert.Equal(Color.FromRgb(0xDD, 0xE6, 0xF0), At(pixels, 100, 70));
+            Assert.Equal(Color.FromRgb(0xDD, 0xE6, 0xF0), At(pixels, 499, 329));
+            Assert.Equal(Colors.White, At(pixels, 99, 69));
+            Assert.Equal(Colors.White, At(pixels, 500, 330));
+            Assert.Equal(new Point(110, 80), ((RectangleAnnotation)document.Annotations[0]).Start);
+            Assert.Equal("#FFFFFFFF", AppServices.Settings.EditorCanvasBackground);
+            window.KeyPress(Key.Z, RawInputModifiers.Control, PhysicalKey.Z, "z");
+            Assert.Equal((400, 260), (document.BaseImage.Width, document.BaseImage.Height));
+            ForceClose(window);
+        }
+    }
+
+    [AvaloniaFact]
+    public void Resize_dialog_remembers_the_background_and_keeps_the_anchor_grid_unmirrored()
+    {
+        using var look = new AppLook(new AppSettings { EditorCanvasBackground = "#00FFFFFF" });
+        using var folder = new TempFolder();
+        var path = folder.File("capture.png");
+        ImageIO.Save(Solid(320, 200, Colors.SteelBlue), path);
+        var dialog = new ResizeDialog(EditorDocument.Load(path));
+        dialog.Show();
+        Dispatcher.UIThread.RunJobs();
+        try
+        {
+            // The last background comes back.
+            Assert.Equal(Colors.Transparent, dialog.CanvasBackground);
+            dialog.FindControl<RadioButton>("CanvasModeButton")!.IsChecked = true;
+            var anchors = dialog.FindControl<Grid>("AnchorGrid")!.Children.OfType<ToggleButton>().ToList();
+            Assert.Equal(9, anchors.Count);
+            anchors.Single(b => (CanvasAnchor)b.Tag! == CanvasAnchor.TopLeft).RaiseEvent(new RoutedEventArgs(Button.ClickEvent));
+            Assert.Equal(CanvasAnchor.TopLeft, dialog.Anchor);
+            Assert.Equal(new[] { true }, anchors.Where(b => b.IsChecked == true).Select(b => (CanvasAnchor)b.Tag! == CanvasAnchor.TopLeft));
+            Dispatcher.UIThread.RunJobs();
+            SaveRendering(dialog, "editor-canvas-dialog-transparent.png");
+
+            // Right to left: the grid is laid out as the image, its top left button still on the left.
+            Application.Current!.RequestedThemeVariant = ThemeVariant.Dark;
+            dialog.FlowDirection = FlowDirection.RightToLeft;
+            Dispatcher.UIThread.RunJobs();
+            var topLeft = anchors.Single(b => (CanvasAnchor)b.Tag! == CanvasAnchor.TopLeft).TranslatePoint(default, dialog)!.Value;
+            var topRight = anchors.Single(b => (CanvasAnchor)b.Tag! == CanvasAnchor.TopRight).TranslatePoint(default, dialog)!.Value;
+            Assert.True(topLeft.X < topRight.X);
+            SaveRendering(dialog, "editor-canvas-dialog-dark-rtl.png");
+
+            // Black, remembered on OK.
+            var black = dialog.FindControl<StackPanel>("BackgroundSwatches")!.Children.OfType<Button>().ElementAt(2);
+            black.RaiseEvent(new RoutedEventArgs(Button.ClickEvent));
+            Assert.Equal(Colors.Black, dialog.CanvasBackground);
+            Assert.Contains("selected", black.Classes);
+            dialog.FindControl<TextBox>("CanvasWidthBox")!.Text = "400";
+            dialog.FindControl<Button>("OkButton")!.RaiseEvent(new RoutedEventArgs(Button.ClickEvent));
+            Assert.True(dialog.ExtendsCanvas);
+            Assert.Equal((400, 200), (dialog.NewWidth, dialog.NewHeight));
+            Assert.Equal("#FF000000", AppServices.Settings.EditorCanvasBackground);
+        }
+        finally
+        {
+            dialog.Close();
+        }
+    }
+
+    /// <summary>The cursor of the canvas over its handle <paramref name="index"/> (right, bottom, corner).</summary>
+    private static Cursor CanvasCursor(int index) =>
+        ((Cursor[])typeof(AnnotationCanvas).GetField("CanvasCursors", BindingFlags.Static | BindingFlags.NonPublic)!.GetValue(null)!)[index];
+
+    /// <summary>The part of the window showing the image from its top left corner (in image pixels), for a closer look.</summary>
+    private static PixelRect Around(EditorWindow window, AnnotationCanvas canvas, double width, double height)
+    {
+        var topLeft = OnWindow(window, canvas, -20, -20) * window.RenderScaling;
+        var bottomRight = OnWindow(window, canvas, width, height) * window.RenderScaling;
+        return new PixelRect((int)Math.Min(topLeft.X, bottomRight.X), (int)topLeft.Y, (int)Math.Abs(bottomRight.X - topLeft.X), (int)(bottomRight.Y - topLeft.Y));
+    }
+
+    /// <summary>The application's themes and other settings while a test runs, so that it is drawn as in the application.</summary>
+    private sealed class AppLook : IDisposable
+    {
+        private readonly Application _app = Application.Current!;
+        private readonly ResourceInclude _colors = new(new Uri("avares://Snaplume/")) { Source = new Uri("avares://Snaplume/Themes/Colors.axaml") };
+        private readonly ResourceInclude _icons = new(new Uri("avares://Snaplume/")) { Source = new Uri("avares://Snaplume/Themes/Icons.axaml") };
+        private readonly StyleInclude _styles = new(new Uri("avares://Snaplume/")) { Source = new Uri("avares://Snaplume/Themes/Styles.axaml") };
+        private readonly AppSettings _settings = AppServices.Settings;
+
+        public AppLook(AppSettings settings)
+        {
+            _app.Resources.MergedDictionaries.Add(_colors);
+            _app.Resources.MergedDictionaries.Add(_icons);
+            _app.Styles.Add(_styles);
+            AppServices.Settings = settings;
+        }
+
+        public void Dispose()
+        {
+            AppServices.Settings = _settings;
+            _app.RequestedThemeVariant = ThemeVariant.Default;
+            _app.Styles.Remove(_styles);
+            _app.Resources.MergedDictionaries.Remove(_icons);
+            _app.Resources.MergedDictionaries.Remove(_colors);
+        }
+    }
+
     /// <summary>The window, or what a popup shows, saved with the test results to look at it.</summary>
-    private static void SaveRendering(object shown, string name)
+    /// <param name="closeUp">Also saved alone, as "name-zoom.png", for a closer look.</param>
+    private static void SaveRendering(object shown, string name, PixelRect? closeUp = null)
     {
         var topLevel = shown is Popup popup ? TopLevel.GetTopLevel(popup.Child) : shown as TopLevel;
         Assert.NotNull(topLevel);
         var frame = topLevel!.CaptureRenderedFrame();
         Assert.NotNull(frame);
-        ImageIO.Save(AvaloniaImages.ToPixelBuffer(frame!), Path.Combine(AppContext.BaseDirectory, name));
+        var pixels = AvaloniaImages.ToPixelBuffer(frame!);
+        ImageIO.Save(pixels, Path.Combine(AppContext.BaseDirectory, name));
+        if (closeUp is { } area)
+            ImageIO.Save(pixels.Crop(area.X, area.Y, area.Width, area.Height), Path.Combine(AppContext.BaseDirectory, Path.GetFileNameWithoutExtension(name) + "-zoom.png"));
     }
 
     /// <summary>Closes without the save question (the document is left unsaved on purpose).</summary>

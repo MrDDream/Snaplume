@@ -219,6 +219,9 @@ public partial class EditorWindow : Window
         AnnotCanvas.TextEditRequested += BeginTextEdit;
         AnnotCanvas.FloatingImageChanged += OnFloatingImageChanged;
         AnnotCanvas.FloatingImageFailed += ex => _ = ShowInsertErrorAsync(ex);
+        AnnotCanvas.CanvasBackground = CanvasSize.BackgroundFrom(AppServices.Settings.EditorCanvasBackground);
+        AnnotCanvas.CanvasResized += OnCanvasResized;
+        AnnotCanvas.CanvasResizeFailed += ex => _ = ShowCanvasErrorAsync(ex);
         _document.Changed += UpdateUi;
 
         Opened += (_, _) =>
@@ -369,7 +372,7 @@ public partial class EditorWindow : Window
     }
 
     /// <summary>White and grey squares, under a color that is not opaque (transparent background of the effects).</summary>
-    private static readonly IBrush Checkerboard = new DrawingBrush(new DrawingGroup
+    internal static readonly IBrush Checkerboard = new DrawingBrush(new DrawingGroup
     {
         Children =
         {
@@ -383,7 +386,7 @@ public partial class EditorWindow : Window
     };
 
     /// <summary>The color of a swatch; a checkerboard shows through a transparent one.</summary>
-    private static IBrush ColorBrush(Color color) => color.A == 255 ? new ImmutableSolidColorBrush(color) : Checkerboard;
+    internal static IBrush ColorBrush(Color color) => color.A == 255 ? new ImmutableSolidColorBrush(color) : Checkerboard;
 
     // ---- Tools and style ----
 
@@ -1544,7 +1547,10 @@ public partial class EditorWindow : Window
         }
     }
 
-    /// <summary>Asks the new size, then resizes (the resampling in the background, see <see cref="EditorDocument.ResizeAsync"/>).</summary>
+    /// <summary>
+    /// Asks the new size, then resizes (the resampling in the background, see <see cref="EditorDocument.ResizeAsync"/>),
+    /// or changes the size of the canvas around the image (see <see cref="EditorDocument.ExtendCanvas"/>).
+    /// </summary>
     private async Task ResizeAsync()
     {
         if (_busy || !EndPendingEdits() || !TryBeginCommand()) return;
@@ -1553,6 +1559,24 @@ public partial class EditorWindow : Window
         {
             var dialog = new ResizeDialog(_document);
             if (!await dialog.ShowAsync(this)) return;
+            if (dialog.ExtendsCanvas)
+            {
+                // The background chosen is also the one of the handles of the canvas from now on.
+                AnnotCanvas.CanvasBackground = dialog.CanvasBackground;
+                var image = _document.BaseImage;
+                var (left, top, right, bottom) = CanvasSize.Margins(image.Width, image.Height, dialog.NewWidth, dialog.NewHeight, dialog.Anchor);
+                try
+                {
+                    _document.ExtendCanvas(left, top, right, bottom, dialog.CanvasBackground);
+                }
+                catch (Exception ex)
+                {
+                    await ShowCanvasErrorAsync(ex);
+                    return;
+                }
+                OnCanvasResized();
+                return;
+            }
             try
             {
                 // False when the size is the same, or when the image changed meanwhile (undo...): nothing to say.
@@ -1572,6 +1596,19 @@ public partial class EditorWindow : Window
         {
             EndCommand();
         }
+    }
+
+    /// <summary>The canvas got a new size (handles or dialog): all of it shown again if it no longer fits.</summary>
+    private void OnCanvasResized()
+    {
+        ZoomToFit(onlyShrink: true);
+        InfoText.Text = Loc.T("Canvas.Resized", _document.BaseImage.Width, _document.BaseImage.Height);
+    }
+
+    private Task ShowCanvasErrorAsync(Exception ex)
+    {
+        ErrorLog.Write("Taille de la zone de dessin", ex);
+        return Dialogs.ShowAsync(this, Loc.T("Canvas.Error", ex.Message), "Snaplume", DialogButtons.Ok, DialogIcon.Error);
     }
 
     private void Undo()
