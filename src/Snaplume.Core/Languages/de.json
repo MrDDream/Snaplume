@@ -1019,5 +1019,13 @@
   "Update.Postponed": "Ein Editor hat noch ungespeicherte Änderungen: Snaplume wurde nicht beendet, das Update wartet. Speichern oder schließen Sie den Editor und versuchen Sie es dann erneut.",
   "Workspaces.ConversionRunning": "Eine Videoaufnahme wird gerade in diesen Arbeitsbereich konvertiert: Warten Sie, bis die Konvertierung abgeschlossen ist.",
   "Workspaces.Folder.PickFailed": "Die Ordnerauswahl konnte nicht geöffnet werden",
-  "Workspaces.Folder.TooBroad": "„{0}“ ist ein zu allgemeiner Ordner für einen Arbeitsbereich (ein Laufwerk, ein persönlicher oder ein Systemordner). Wählen Sie einen Ordner nur für diese Aufnahmen, zum Beispiel einen seiner Unterordner."
+  "Workspaces.Folder.TooBroad": "„{0}“ ist ein zu allgemeiner Ordner für einen Arbeitsbereich (ein Laufwerk, ein persönlicher oder ein Systemordner). Wählen Sie einen Ordner nur für diese Aufnahmen, zum Beispiel einen seiner Unterordner.",
+  "Canvas.Anchor": "Position des Bildes",
+  "Canvas.AnchorTip": "Das Bild bleibt auf dieser Seite: Auf der anderen wird Platz hinzugefügt (oder entfernt)",
+  "Canvas.CustomColor": "Andere Farbe",
+  "Canvas.Error": "Die Größe der Zeichenfläche konnte nicht geändert werden:\n{0}",
+  "Canvas.ModeCanvas": "Zeichenfläche vergrößern",
+  "Canvas.ModeStretch": "Bild strecken",
+  "Canvas.Note": "Das Bild wird nicht gestreckt: Um das Bild herum wird Platz zum Schreiben oder Zeichnen hinzugefügt (oder entfernt, wenn die Fläche kleiner ist). Anmerkungen bleiben an ihrem Platz.",
+  "Canvas.Resized": "Zeichenfläche: {0} × {1} px"
 }

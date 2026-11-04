@@ -1019,5 +1019,13 @@
   "Update.Postponed": "Un editor todavía tiene cambios sin guardar: Snaplume no se ha cerrado y la actualización espera. Guarde o cierre el editor y vuelva a intentarlo.",
   "Workspaces.ConversionRunning": "Se está convirtiendo una grabación de vídeo hacia este espacio de trabajo: espere a que termine la conversión.",
   "Workspaces.Folder.PickFailed": "No se pudo abrir el selector de carpetas",
-  "Workspaces.Folder.TooBroad": "«{0}» es una carpeta demasiado general para un espacio de trabajo (una unidad, una carpeta personal o del sistema). Elija una carpeta reservada para estas capturas, por ejemplo una de sus subcarpetas."
+  "Workspaces.Folder.TooBroad": "«{0}» es una carpeta demasiado general para un espacio de trabajo (una unidad, una carpeta personal o del sistema). Elija una carpeta reservada para estas capturas, por ejemplo una de sus subcarpetas.",
+  "Canvas.Anchor": "Posición de la imagen",
+  "Canvas.AnchorTip": "La imagen se queda en este lado: el espacio se añade (o se quita) en el otro",
+  "Canvas.CustomColor": "Otro color",
+  "Canvas.Error": "No se pudo cambiar el tamaño del lienzo:\n{0}",
+  "Canvas.ModeCanvas": "Ampliar el lienzo",
+  "Canvas.ModeStretch": "Estirar la imagen",
+  "Canvas.Note": "La imagen no se estira: se añade espacio a su alrededor para escribir o dibujar (o se quita si el lienzo es más pequeño). Las anotaciones se quedan en su sitio.",
+  "Canvas.Resized": "Lienzo: {0} × {1} px"
 }

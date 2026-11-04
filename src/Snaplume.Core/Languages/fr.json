@@ -1019,5 +1019,13 @@
   "Update.Postponed": "Un éditeur a encore des modifications non enregistrées : Snaplume ne s'est pas fermé et la mise à jour attend. Enregistrez ou fermez l'éditeur, puis réessayez.",
   "Workspaces.ConversionRunning": "Un enregistrement vidéo est en cours de conversion vers cet espace de travail : attendez la fin de la conversion.",
   "Workspaces.Folder.PickFailed": "Impossible d'ouvrir le choix du dossier",
-  "Workspaces.Folder.TooBroad": "« {0} » est un dossier trop général pour un espace de travail (un lecteur, un dossier personnel ou du système). Choisissez un dossier réservé à ces captures, par exemple l'un de ses sous-dossiers."
+  "Workspaces.Folder.TooBroad": "« {0} » est un dossier trop général pour un espace de travail (un lecteur, un dossier personnel ou du système). Choisissez un dossier réservé à ces captures, par exemple l'un de ses sous-dossiers.",
+  "Canvas.Anchor": "Position de l'image",
+  "Canvas.AnchorTip": "L'image reste de ce côté : l'espace est ajouté (ou retiré) de l'autre",
+  "Canvas.CustomColor": "Autre couleur",
+  "Canvas.Error": "Impossible de changer la taille de la zone de dessin :\n{0}",
+  "Canvas.ModeCanvas": "Agrandir la zone de dessin",
+  "Canvas.ModeStretch": "Étirer l'image",
+  "Canvas.Note": "L'image n'est pas étirée : de l'espace est ajouté autour d'elle pour écrire ou dessiner (ou retiré si la zone est plus petite). Les annotations restent en place.",
+  "Canvas.Resized": "Zone de dessin : {0} × {1} px"
 }

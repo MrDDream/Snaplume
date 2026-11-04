@@ -1019,5 +1019,13 @@
   "Update.Postponed": "Un editor ha ancora modifiche non salvate: Snaplume non si è chiuso e l'aggiornamento è in attesa. Salva o chiudi l'editor, poi riprova.",
   "Workspaces.ConversionRunning": "Una registrazione video è in fase di conversione verso quest'area di lavoro: attendi la fine della conversione.",
   "Workspaces.Folder.PickFailed": "Impossibile aprire la scelta della cartella",
-  "Workspaces.Folder.TooBroad": "«{0}» è una cartella troppo generica per un'area di lavoro (un'unità, una cartella personale o di sistema). Scegli una cartella riservata a queste acquisizioni, ad esempio una delle sue sottocartelle."
+  "Workspaces.Folder.TooBroad": "«{0}» è una cartella troppo generica per un'area di lavoro (un'unità, una cartella personale o di sistema). Scegli una cartella riservata a queste acquisizioni, ad esempio una delle sue sottocartelle.",
+  "Canvas.Anchor": "Posizione dell'immagine",
+  "Canvas.AnchorTip": "L'immagine resta da questo lato: lo spazio viene aggiunto (o tolto) dall'altro",
+  "Canvas.CustomColor": "Altro colore",
+  "Canvas.Error": "Impossibile cambiare la dimensione dell'area di disegno:\n{0}",
+  "Canvas.ModeCanvas": "Allarga l'area di disegno",
+  "Canvas.ModeStretch": "Allunga l'immagine",
+  "Canvas.Note": "L'immagine non viene allungata: attorno a essa viene aggiunto spazio per scrivere o disegnare (o tolto se l'area è più piccola). Le annotazioni restano al loro posto.",
+  "Canvas.Resized": "Area di disegno: {0} × {1} px"
 }

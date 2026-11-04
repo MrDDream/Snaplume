@@ -1019,5 +1019,13 @@
   "Update.Postponed": "An editor still has unsaved changes: Snaplume did not close and the update is waiting. Save or close the editor, then try again.",
   "Workspaces.ConversionRunning": "A video recording is being converted into this workspace: wait until the conversion ends.",
   "Workspaces.Folder.PickFailed": "Could not open the folder picker",
-  "Workspaces.Folder.TooBroad": "“{0}” is too general a folder for a workspace (a drive, a personal or system folder). Choose a folder kept for these captures, for example one of its sub-folders."
+  "Workspaces.Folder.TooBroad": "“{0}” is too general a folder for a workspace (a drive, a personal or system folder). Choose a folder kept for these captures, for example one of its sub-folders.",
+  "Canvas.Anchor": "Image position",
+  "Canvas.AnchorTip": "The image stays on this side: space is added (or removed) on the other",
+  "Canvas.CustomColor": "Other color",
+  "Canvas.Error": "Could not change the canvas size:\n{0}",
+  "Canvas.ModeCanvas": "Enlarge the canvas",
+  "Canvas.ModeStretch": "Stretch the image",
+  "Canvas.Note": "The image is not stretched: space is added around it to write or draw in (or removed if the canvas is smaller). Annotations stay in place.",
+  "Canvas.Resized": "Canvas: {0} × {1} px"
 }
