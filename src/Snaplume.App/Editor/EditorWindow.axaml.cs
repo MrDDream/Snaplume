@@ -197,6 +197,7 @@ public partial class EditorWindow : Window
     public EditorWindow(string path)
     {
         InitializeComponent();
+        WindowFit.FitToScreen(this, maximize: true);
         FlowDirection = Loc.IsRightToLeft ? FlowDirection.RightToLeft : FlowDirection.LeftToRight;
         _document = EditorDocument.Load(path);
         AnnotCanvas.Document = _document;

@@ -24,6 +24,7 @@ public partial class QrWindow : Window
     public QrWindow(PixelBuffer image)
     {
         InitializeComponent();
+        WindowFit.FitToScreen(this, maximize: false);
         _image = image;
         Opened += (_, _) => _ = ReadAsync();
         Closed += (_, _) =>

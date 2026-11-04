@@ -4,6 +4,7 @@ using Avalonia.Interactivity;
 using Snaplume.Core;
 using Snaplume.Imaging;
 using Snaplume.Platform;
+using Snaplume.Ui;
 
 namespace Snaplume.Ocr;
 
@@ -25,6 +26,7 @@ public partial class OcrWindow : Window
     public OcrWindow(PixelBuffer image)
     {
         InitializeComponent();
+        WindowFit.FitToScreen(this, maximize: false);
         _image = image;
 
         var ocr = AppServices.Platform.Ocr;

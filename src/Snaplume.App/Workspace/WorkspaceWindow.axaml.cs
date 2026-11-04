@@ -2,6 +2,7 @@ using Avalonia.Controls;
 using Avalonia.Interactivity;
 using Snaplume.Core;
 using Snaplume.Platform;
+using Snaplume.Ui;
 
 namespace Snaplume.Workspace;
 
@@ -19,6 +20,7 @@ public partial class WorkspaceWindow : CaptureHostWindow
     public WorkspaceWindow()
     {
         InitializeComponent();
+        WindowFit.FitToScreen(this, maximize: true);
         _activeFolder = Workspaces.ActiveFolder;
         Host(Gallery, WorkspaceList);
         if (WorkspaceMenuButton.Flyout is MenuFlyout activeMenu) activeMenu.Opening += OnActiveWorkspaceMenuOpening;

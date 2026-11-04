@@ -79,6 +79,7 @@ public partial class PlayerWindow : Window
     public PlayerWindow(string path)
     {
         InitializeComponent();
+        WindowFit.FitToScreen(this, maximize: true);
         FilePath = path;
         Title = Loc.T("Player.TitleWithFile", Path.GetFileName(path));
         PlayIcon.Data = PauseGeometry;

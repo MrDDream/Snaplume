@@ -105,6 +105,7 @@ public partial class DocumentWindow : Window
     public DocumentWindow(IReadOnlyList<string> paths)
     {
         InitializeComponent();
+        WindowFit.FitToScreen(this, maximize: false);
 
         foreach (var path in paths.Where(ImageIO.IsImage)) _entries.Add(new DocumentEntry(path));
         EntryList.ItemsSource = _entries;

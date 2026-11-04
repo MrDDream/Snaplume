@@ -50,6 +50,7 @@ public partial class SettingsWindow : Window
     public SettingsWindow(AppSettings settings, string? page = null)
     {
         InitializeComponent();
+        WindowFit.FitToScreen(this, maximize: false);
         Result = settings;
         _original = settings.Clone();
 
